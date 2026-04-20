@@ -1,0 +1,7 @@
+target
+.idea/*
+!.idea/runConfigurations/
+!.idea/runConfigurations/**
+!.idea/codeStyles/
+!.idea/codeStyles/**
+/profile.json.gz

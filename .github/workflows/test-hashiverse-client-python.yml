@@ -1,0 +1,47 @@
+name: test-hashiverse-client-python
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "hashiverse-rust/hashiverse-client-python/**"
+      - "hashiverse-rust/hashiverse-lib/**"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "hashiverse-rust/hashiverse-client-python/**"
+      - "hashiverse-rust/hashiverse-lib/**"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hashiverse-rust/hashiverse-client-python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust"
+          workspaces: hashiverse-rust -> target
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Create venv and install dependencies
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install maturin pytest
+      - name: Build native extension
+        run: |
+          source .venv/bin/activate
+          maturin develop --release
+      - name: Run tests
+        run: |
+          source .venv/bin/activate
+          python -m pytest tests/ -v

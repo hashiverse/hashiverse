@@ -1,0 +1,37 @@
+---
+import Doc from './Doc.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description } = Astro.props;
+
+const sidebar = [
+  { href: '/dev/', label: 'Overview' },
+  { href: '/dev/cryptography', label: 'Cryptographic Foundation' },
+  { href: '/dev/pow', label: 'Proof of Work' },
+  { href: '/dev/network', label: 'The DHT Network' },
+  { href: '/dev/posts', label: 'Post Protocol' },
+  { href: '/dev/moderation', label: 'Content Moderation' },
+  { href: '/dev/resilience', label: 'Resilience & Self-Healing' },
+  { href: '/dev/future', label: 'Future Directions' },
+  { href: '/dev/geeking-out', label: 'Geeking Out' },
+  {
+    href: 'https://github.com/hashiverse',
+    label: 'API Reference',
+    children: [
+      { href: '/dev/hashiverse-rust/hashiverse_lib/', label: 'hashiverse_lib' },
+      { href: '/dev/hashiverse-rust/hashiverse_server_lib/', label: 'hashiverse_server_lib' },
+      { href: '/dev/hashiverse-rust/hashiverse_server/', label: 'hashiverse_server' },
+      { href: '/dev/hashiverse-rust/hashiverse_client_wasm/', label: 'hashiverse_client_wasm' },
+      { href: '/dev/hashiverse-client-web/', label: 'hashiverse-client-web' },
+    ],
+  },
+];
+---
+
+<Doc title={title} description={description} sidebar={sidebar}>
+  <slot />
+</Doc>

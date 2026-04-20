@@ -1,0 +1,111 @@
+---
+interface Props {
+  title: string;
+  description?: string;
+  fullscreen?: boolean;
+}
+
+const { title, description = 'Your decentralized P2P social network.', fullscreen = false } = Astro.props;
+const prerelease_tag = import.meta.env.PUBLIC_PRERELEASE_TAG;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <title>{title === 'Hashiverse' ? 'Hashiverse' : `${title} — Hashiverse`}</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  </head>
+  <body class:list={[{ fullscreen }]}>
+    {prerelease_tag && (
+      <div class="prerelease-banner">Prerelease: {prerelease_tag}</div>
+    )}
+    <slot />
+  </body>
+</html>
+
+<style is:global>
+  :root {
+    --bg:          #221100;
+    --bg-raised:   #2c1600;
+    --bg-surface:  #361b00;
+    --accent:      #c87820;
+    --accent-bright: #e89030;
+    --text:        #e8d5b0;
+    --text-muted:  #8a6a40;
+    --border:      #3d2200;
+    --code-bg:     #1a0d00;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+  }
+
+  body.fullscreen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { color: var(--accent-bright); text-decoration: underline; }
+
+  h1, h2, h3, h4 {
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.1em 0.4em;
+    font-size: 0.875em;
+    font-family: 'Courier New', monospace;
+  }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.25rem;
+    overflow-x: auto;
+  }
+
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.875rem;
+  }
+
+  .prerelease-banner {
+    position: fixed;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 9999;
+    background: #c87820;
+    color: #221100;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-weight: 600;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.55rem;
+    letter-spacing: 0.02em;
+    border-radius: 3px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+  }
+</style>

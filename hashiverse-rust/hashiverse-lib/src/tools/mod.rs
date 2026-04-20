@@ -1,0 +1,36 @@
+//! # Shared primitives
+//!
+//! The foundation layer the rest of the crate builds on: core identity and hash
+//! newtypes, wire-format time and duration, the Blake3/Ed25519/ChaCha20 crypto
+//! stack, the multi-algorithm proof-of-work chain and its parallel search engine,
+//! hierarchical time buckets, compression, serde helpers, and the
+//! [`runtime_services::RuntimeServices`] bundle that lets the same protocol code
+//! run on native, WASM, and deterministic test environments.
+
+pub mod types;
+pub mod config;
+pub mod keys;
+pub mod keys_post_quantum;
+pub mod time;
+pub mod tools;
+pub mod server_id;
+pub mod client_id;
+pub mod encryption;
+pub mod compression;
+pub mod signing;
+pub mod hashing;
+pub mod pow;
+pub mod pow_required_estimator;
+pub mod parallel_pow_generator;
+pub mod runtime_services;
+pub mod anyhow_asserts;
+pub mod buckets;
+pub mod json;
+pub mod time_provider;
+pub mod bytes_gatherer;
+pub use bytes_gatherer::BytesGatherer;
+pub mod url_preview;
+pub mod hyper_log_log;
+pub mod plain_text_post;
+
+

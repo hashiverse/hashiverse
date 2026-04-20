@@ -1,0 +1,21 @@
+[package]
+name = "hashiverse-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+hashiverse-lib = { path = "../hashiverse-lib" }
+hashiverse-server-lib = { path = "../hashiverse-server-lib" }
+
+anyhow = { workspace = true }
+log = { workspace = true }
+
+clap = { version = "4.5.38", features = ["derive"] }
+tokio = { version = "1.45", features = ["full"] }
+tokio-util = { version = "0.7.14", features = ["rt"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "tls12"] }

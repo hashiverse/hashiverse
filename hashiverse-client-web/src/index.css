@@ -1,0 +1,606 @@
+@keyframes hashtag-marquee {
+	from {
+		transform: translateX(0);
+	}
+	to {
+		transform: translateX(-50%);
+	}
+}
+
+html,
+body {
+	height: 100%;
+	margin: 0;
+	padding: 0;
+}
+
+#root {
+	height: 100dvh;
+	width: 100dvw;
+	margin: 0;
+	padding: 0;
+	justify-content: center;
+	position: relative;
+	display: flex;
+	overflow: hidden;
+}
+
+.App {
+	width: 100dvw;
+	height: 100dvh;
+	max-width: 550px;
+	max-height: 100dvh;
+	position: relative;
+	overflow: hidden;
+	background-color: #99999950;
+}
+
+/* Make the router wrapper actually take the remaining space and allow inner scroll areas to shrink */
+.App > * {
+	flex: 1 1 auto;
+	min-height: 0;
+}
+
+.FullColumnParent {
+	display: flex;
+	flex-direction: column;
+}
+
+.FullColumnChild {
+	flex: 1 1 0;
+	overflow-y: auto;
+	overflow-x: hidden;
+	display: flex;
+	flex-direction: column;
+}
+
+.FullColumnChild > * {
+	flex: 1 1 0;
+	min-height: 0;
+}
+
+/* As a flex child, mantine-RichTextEditor-content defaults to min-height:auto,
+   which lets ProseMirror's content growth escape to the outer scroll container.
+   min-height:0 constrains it to the available flex space so overflow-y:auto works.
+   display:block replaces flex so block overflow-containment applies correctly. */
+.mantine-RichTextEditor-content {
+	display: block !important;
+	min-height: 0;
+}
+
+/* ProseMirror needs height:100% so its min-height:100% has a definite reference
+   and fills the editor area when content is short. */
+.mantine-RichTextEditor-content > .ProseMirror {
+	height: 100%;
+}
+
+.FullColumnChildScrollable {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+.FullColumnChildAndParent {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 0;
+	min-height: 0;
+}
+
+.PostPanel {
+	border: 1px solid #ffffff22;
+	background: #99999910;
+	margin-bottom: 10px;
+}
+
+.PostPanelHeader {
+	background: #22222220;
+	padding-right: 5px;
+}
+
+.PostPanelContentWrapper {
+	position: relative;
+}
+
+.PostPanelContentWrapper--collapsed .PostPanelReadMore {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	padding: 30px 0 6px 0;
+	background: linear-gradient(to bottom, transparent, #1a1a1a);
+}
+
+.PostPanelContent {
+	padding: 5px;
+	margin: 5px;
+}
+
+.PostPanelContent--collapsed {
+	max-height: 300px;
+	overflow: hidden;
+}
+
+.PostPanelReadMore {
+	text-align: center;
+	padding: 2px 0;
+	cursor: pointer;
+	color: #ffffff;
+	font-size: 0.8em;
+	font-variant: small-caps;
+	user-select: none;
+}
+
+.PostPanelReadMore:hover {
+	color: #ffffffcc;
+}
+
+.PostPanelContent > :first-child,
+.PostPanelContent reply > :first-child,
+.plugin-reply > :first-child,
+.plugin-reply reply > :first-child,
+.plugin-repost reply > :first-child {
+	margin-top: 0;
+}
+
+.PostPanelContent > :last-child,
+.PostPanelContent reply > :last-child,
+.plugin-reply > :last-child,
+.plugin-reply reply > :last-child,
+.plugin-repost reply > :last-child {
+	margin-bottom: 0;
+}
+
+.PostPanelContent reply p,
+.plugin-reply p,
+.plugin-reply reply p,
+.plugin-repost reply p {
+	margin: 0;
+}
+
+.PostPanelContent hashtag,
+.plugin-hashtag-clickable {
+	cursor: pointer;
+}
+
+.PostPanelContent hashtag:hover,
+.plugin-hashtag-clickable:hover {
+	border-radius: 10px;
+	box-shadow: 0 0 10px 10px color-mix(in srgb, #779 45%, transparent);
+}
+
+.PostPanelContent mention,
+.plugin-mention-clickable {
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.PostPanelContent mention:hover,
+.plugin-mention-clickable:hover {
+	border-radius: 10px;
+	box-shadow: 0 0 10px 10px color-mix(in srgb, #797 45%, transparent);
+}
+
+.PostPanel:hover {
+	background: #dddddd10;
+}
+
+.PostPanel img {
+	border-radius: 20px;
+	filter: brightness(0.85) saturate(0.8) contrast(1.1);
+}
+
+.unblur-image {
+	/* used as a selector target for :not(.unblur-image) */
+}
+
+.blur-images img:not(.unblur-image) {
+	filter: blur(20px) brightness(0.85) saturate(0.8) contrast(1.1);
+	cursor: zoom-in;
+}
+
+/* Topmost reply/repost is height-capped so deeply nested quotes don't dominate the screen */
+.PostPanelContent > reply,
+.PostPanelContent > repost,
+.plugin-reply,
+.plugin-repost {
+	max-height: 120px;
+	overflow-y: auto;
+}
+
+/* Reply (quoted post) block — works in PostPanel rendered HTML, editor NodeView, and nested inside plugin-reply/plugin-repost */
+.PostPanelContent reply,
+.plugin-reply reply,
+.plugin-repost reply,
+.plugin-reply {
+	display: block;
+	position: relative;
+	padding: 0 2px 2px 30px;
+	margin: 4px 0;
+	background-color: rgba(255, 255, 255, 0.06);
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+.PostPanelContent reply::before,
+.plugin-reply reply::before,
+.plugin-repost reply::before,
+.plugin-reply::before {
+	content: "\201C";
+	position: absolute;
+	left: 3px;
+	top: 0;
+	bottom: 0;
+	overflow: hidden;
+	font-size: 48px;
+	line-height: 1;
+	color: rgba(192, 192, 255, 0.55);
+	font-family: Georgia, "Times New Roman", serif;
+	pointer-events: none;
+}
+
+.plugin-reply,
+.plugin-reply reply,
+.plugin-reply repost,
+.plugin-repost reply,
+.plugin-repost repost {
+	cursor: default;
+	user-select: none;
+}
+
+/* Repost block — also nested inside plugin-reply/plugin-repost */
+.PostPanelContent repost,
+.plugin-reply repost,
+.plugin-repost repost,
+.plugin-repost {
+	display: block;
+	position: relative;
+	padding: 0 2px 2px 30px;
+
+	margin: 4px 0;
+	background-color: rgba(100, 220, 150, 0.06);
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+.PostPanelContent repost::before,
+.plugin-reply repost::before,
+.plugin-repost repost::before,
+.plugin-repost::before {
+	content: "❯❯";
+	position: absolute;
+	left: 3px;
+	top: 2px;
+	font-size: 18px;
+	line-height: 1;
+	color: rgba(100, 220, 150, 0.6);
+	pointer-events: none;
+}
+
+.PostPanelContent repost p,
+.plugin-reply repost p,
+.plugin-repost repost p,
+.plugin-repost p {
+	margin: 0;
+}
+
+.PostPanelContent repost > :first-child,
+.plugin-reply repost > :first-child,
+.plugin-repost repost > :first-child,
+.plugin-repost > :first-child {
+	margin-top: 0;
+}
+
+.PostPanelContent repost > :last-child,
+.plugin-reply repost > :last-child,
+.plugin-repost repost > :last-child,
+.plugin-repost > :last-child {
+	margin-bottom: 0;
+}
+
+.plugin-repost {
+	cursor: default;
+	user-select: none;
+}
+
+/* Sequel block — shared styles for editor and rendered content */
+.plugin-sequel,
+.PostPanelContent sequel {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 8px;
+	margin: 4px 0;
+	background-color: rgba(100, 150, 255, 0.08);
+	border-radius: 4px;
+	font-size: 0.85em;
+	color: rgba(150, 180, 255, 0.9);
+	min-height: 1.6em;
+}
+
+.plugin-sequel::before,
+.PostPanelContent sequel::before {
+	/* Tabler IconArrowForward SVG */
+	content: "";
+	display: inline-block;
+	flex-shrink: 0;
+	width: 18px;
+	height: 18px;
+	background-color: rgba(100, 150, 255, 0.6);
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 11l4 4l-4 4m4-4h-11a4 4 0 0 1 0-8h1'/%3E%3C/svg%3E");
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 11l4 4l-4 4m4-4h-11a4 4 0 0 1 0-8h1'/%3E%3C/svg%3E");
+	-webkit-mask-size: contain;
+	mask-size: contain;
+	-webkit-mask-repeat: no-repeat;
+	mask-repeat: no-repeat;
+}
+
+.plugin-sequel {
+	cursor: default;
+	user-select: none;
+}
+
+.plugin-sequel-clickable,
+.PostPanelContent sequel {
+	cursor: pointer;
+}
+
+.plugin-nowrap {
+	white-space: nowrap;
+	word-break: keep-all;
+	overflow-wrap: normal;
+}
+
+.plugin-hashtag-left {
+	padding: 2px 5px 2px 8px;
+	margin-left: 0;
+	background-color: #557;
+	border-start-start-radius: 10px;
+	border-end-start-radius: 10px;
+}
+
+.plugin-hashtag-right {
+	padding: 2px 8px 2px 5px;
+	margin-right: 0;
+	background-color: #446;
+	border-start-end-radius: 10px;
+	border-end-end-radius: 10px;
+}
+
+.plugin-mention-left {
+	padding: 2px 5px 2px 8px;
+	margin-left: 0;
+	background-color: #575;
+	border-start-start-radius: 10px;
+	border-end-start-radius: 10px;
+}
+
+.plugin-mention-right {
+	padding: 2px 8px 2px 5px;
+	margin-right: 0;
+	background-color: #464;
+	border-start-end-radius: 10px;
+	border-end-end-radius: 10px;
+}
+
+.PostPanelContent urlpreview,
+.plugin-url-preview {
+	display: block;
+}
+
+.plugin-urlpreview-dismiss {
+	position: absolute;
+	top: 10px;
+	right: 10px;
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	border: none;
+	background: rgba(0, 0, 0, 0.6);
+	color: #ccc;
+	font-size: 16px;
+	line-height: 1;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	z-index: 1;
+}
+
+.plugin-urlpreview-dismiss:hover {
+	background: rgba(0, 0, 0, 0.85);
+	color: #fff;
+}
+
+.plugin-urlpreview-card {
+	display: block;
+	position: relative;
+	border: 1px solid rgba(255, 255, 255, 0.15);
+	border-radius: 8px;
+	overflow: hidden;
+	width: 100%;
+	margin: 8px 0;
+	background: rgba(255, 255, 255, 0.04);
+}
+
+.plugin-urlpreview-card-image-container {
+	position: relative;
+	display: block;
+	width: 100%;
+}
+
+.plugin-urlpreview-card-image {
+	display: block;
+	width: 100%;
+	height: 240px;
+	object-fit: cover;
+	border-radius: 0 !important;
+}
+
+.plugin-urlpreview-card-image-container .plugin-urlpreview-card-domain {
+	position: absolute;
+	top: 0;
+	left: 0;
+	background: rgba(0, 0, 0, 0.8);
+	padding: 2px 6px;
+	border-radius: 4px 0 0 0;
+	font-size: 11px;
+	color: #ccc;
+}
+
+.plugin-urlpreview-card-inner {
+	padding: 4px 10px;
+}
+
+.plugin-urlpreview-card-domain {
+	font-size: 12px;
+}
+
+.plugin-urlpreview-card-title {
+	display: block;
+	font-weight: bold;
+	font-size: 15px;
+	color: inherit;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.plugin-urlpreview-card-description {
+	font-size: 13px;
+	color: #999;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.plugin-urlpreview-card-loading {
+	font-size: 13px;
+	color: #666;
+}
+
+.PostPanelContent [data-type="block-math"],
+.ProseMirror [data-type="block-math"] {
+	display: block;
+	width: 100%;
+	overflow-x: auto;
+	overflow-y: clip;
+	text-align: center;
+	margin: 0.5em 0 0.75em;
+}
+
+.PostPanelContent [data-type="block-math"] .katex-display,
+.ProseMirror [data-type="block-math"] .katex-display {
+	margin: 0;
+}
+
+.PostPanelContent blockquote,
+.ProseMirror blockquote {
+	border-left: 5px solid rgba(100, 100, 100, 0.8);
+	padding-left: 0.75em;
+	margin-left: 0;
+}
+
+.PostPanelContent [data-youtube-video],
+.ProseMirror [data-youtube-video] {
+	border-radius: 8px;
+	overflow: hidden;
+	margin: 8px 0;
+	border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.PostPanelContent [data-youtube-video] iframe,
+.ProseMirror [data-youtube-video] iframe {
+	display: block;
+	border: none;
+}
+
+.PostPanelContent pre,
+.ProseMirror pre {
+	white-space: pre !important;
+	overflow-x: auto;
+}
+
+.PostPanelContent .table-scroll-wrapper {
+	overflow-x: auto;
+	margin: 8px 0;
+}
+
+.PostPanelContent table,
+.ProseMirror table {
+	border-collapse: collapse;
+	table-layout: auto;
+	width: 100%;
+	min-width: max-content;
+	margin: 0;
+}
+
+.PostPanelContent table td,
+.PostPanelContent table th,
+.ProseMirror table td,
+.ProseMirror table th {
+	border: 1px solid var(--mantine-color-default-border);
+	padding: 4px 8px;
+	vertical-align: top;
+	position: relative;
+	min-width: 1em;
+	box-sizing: border-box;
+}
+
+.PostPanelContent table th,
+.ProseMirror table th {
+	font-weight: 600;
+	background: var(--mantine-color-default-hover);
+	text-align: left;
+}
+
+.PostPanelContent table td > p,
+.PostPanelContent table th > p,
+.ProseMirror table td > p,
+.ProseMirror table th > p {
+	margin: 0;
+}
+
+.BannerImage > * {
+	width: 100%;
+	height: unset;
+	min-width: unset;
+}
+
+.login-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 6px;
+}
+
+.login-row label {
+	flex: 0 0 50%;
+	text-align: right;
+	font-size: 14px;
+	padding-right: 4px;
+}
+
+.login-row .mantine-TextInput-root {
+	flex: 1 1 0;
+	min-width: 0;
+}
+
+@media (max-width: 500px) {
+	.login-row {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+	}
+
+	.login-row label {
+		flex: none;
+		text-align: left;
+		width: 100%;
+		padding-right: 0;
+	}
+
+	.login-row .mantine-TextInput-root {
+		width: 100%;
+	}
+}

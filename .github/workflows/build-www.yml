@@ -1,0 +1,119 @@
+name: build-www
+
+on:
+  release:
+    types: [released, prereleased]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Rust docs ---
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust"
+          workspaces: hashiverse-rust -> target
+
+      - name: Build Rust docs
+        working-directory: hashiverse-rust
+        run: cargo doc --no-deps --workspace --release
+
+      # --- Astro site ---
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: www/package-lock.json
+
+      - name: Install www packages
+        working-directory: www
+        run: npm install
+
+      - name: Build Astro site
+        working-directory: www
+        env:
+          PUBLIC_PRERELEASE_TAG: ${{ github.event.release.prerelease && github.event.release.tag_name || '' }}
+        run: npm run build
+
+      # --- TypeScript docs ---
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: hashiverse-client-web/package-lock.json
+
+      - name: Install client-web packages
+        working-directory: hashiverse-client-web
+        run: npm install
+
+      - name: Build TypeScript docs
+        working-directory: hashiverse-client-web
+        run: npm run docs
+
+      # --- Assemble dist ---
+
+      - name: Copy Rust docs into dist
+        run: |
+          mkdir -p www/dist/dev/hashiverse-rust
+          cp -r hashiverse-rust/target/doc/. www/dist/dev/hashiverse-rust/
+
+      - name: Copy TypeScript docs into dist
+        run: |
+          mkdir -p www/dist/dev/hashiverse-client-web
+          cp -r hashiverse-client-web/docs/. www/dist/dev/hashiverse-client-web/
+
+      # --- Deploy ---
+
+      - name: Add README to dist
+        run: |
+          cat > www/dist/README.md << 'EOF'
+          > [!WARNING]
+          > This repository is automatically generated from [hashiverse/hashiverse](https://github.com/hashiverse/hashiverse).
+          > Do not edit or fork this repository — any changes will be overwritten on the next build.
+          EOF
+
+      - name: Write version.json to dist
+        run: |
+          cat > www/dist/version.json <<EOF
+          {
+            "tag": "${{ github.event.release.tag_name }}",
+            "commit": "${{ github.sha }}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "prerelease": ${{ github.event.release.prerelease }}
+          }
+          EOF
+
+      - name: Deploy release to hashiverse/www
+        if: github.event_name == 'release' && !github.event.release.prerelease
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          personal_token: ${{ secrets.HASHIVERSE_DEPLOY_TOKEN }}
+          external_repository: hashiverse/www
+          publish_branch: main
+          publish_dir: ./www/dist
+          cname: www.hashiverse.com
+          force_orphan: true
+          commit_message: Deploy ${{ github.event.release.tag_name }}
+
+      - name: Deploy prerelease to hashiverse/www-prerelease
+        if: github.event_name == 'release' && github.event.release.prerelease
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          personal_token: ${{ secrets.HASHIVERSE_DEPLOY_TOKEN }}
+          external_repository: hashiverse/www-prerelease
+          publish_branch: main
+          publish_dir: ./www/dist
+          cname: www-prerelease.hashiverse.com
+          force_orphan: true
+          commit_message: Deploy ${{ github.event.release.tag_name }}

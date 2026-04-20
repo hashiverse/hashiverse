@@ -1,0 +1,56 @@
+[workspace]
+members = [
+    "hashiverse-lib",
+    "hashiverse-server-lib",
+    "hashiverse-server",
+    "hashiverse-client-wasm",
+    "hashiverse-client-python",
+    "hashiverse-integration-tests",
+]
+
+# Require newer resolver so features are handled per-package
+resolver = "2"
+
+[workspace.package]
+version = "1.0.0"
+edition = "2024"
+authors = ["James Jardine <mail@jimme.net>"]
+license = "MIT OR Apache-2.0"
+
+# Workspace-wide dependencies (can be inherited by members)
+[workspace.lints.clippy]
+module_inception = "allow"
+collapsible_match = "allow"
+collapsible_if = "allow"
+collapsible_else_if = "allow"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }  # Tell the linter that we are happy with tokio_unstable being used as a condition name.
+
+[workspace.dependencies]
+anyhow = "1.0.102"
+log = "0.4.29"
+bytes = { version = "1.10.1", features = ["serde"] }
+digest = "0.10.7"
+scopeguard = "1.2.0"
+hex = "0.4.3"
+parking_lot = "0.12.5"
+async-trait = "0.1.89"
+
+# Make sure our dependencies always use the release-level optimisations
+[profile.dev.package."*"]
+opt-level = 3
+
+# Required by cargo-bolero for coverage-guided fuzzing with libFuzzer
+[profile.fuzz]
+inherits = "dev"
+
+# For use with samply / perf / other sampling profilers.  Release-level optimisations
+# with debug symbols kept so stack frames resolve, and debug-assertions kept on so
+# `config::TESTING` (and thus POW_REDUCTION_FACTOR / CLOCK_LENIENCE_FACTOR) stays
+# true in dependent crates that don't see cfg(test).
+[profile.profiling]
+inherits = "release"
+debug = true
+debug-assertions = true
+strip = false

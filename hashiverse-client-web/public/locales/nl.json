@@ -1,0 +1,15 @@
+{
+	"nav": {
+		"compose": "Schrijven",
+		"people": "Mensen",
+		"hashtags": "Hashtags"
+	},
+	"post": {
+		"sequel": "Vervolg schrijven",
+		"sequel_to_previous": "Vervolg op een eerder bericht",
+		"see_sequels": "Bekijk vervolgen..."
+	},
+	"banner": {
+		"sequels_to_post": "Vervolgen op dit bericht"
+	}
+}

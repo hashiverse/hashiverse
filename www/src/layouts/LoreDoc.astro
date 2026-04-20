@@ -1,0 +1,38 @@
+---
+import Doc from './Doc.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description } = Astro.props;
+
+const sidebar = [
+  { href: '/lore/', label: 'Why Hashiverse?' },
+  { href: '/lore/sovereignty', label: 'Data Sovereignty' },
+  { href: '/lore/advertising', label: 'Freedom from Advertising' },
+  { href: '/lore/invisible-hand', label: 'The Invisible Hand' },
+  { href: '/lore/ownership', label: 'Resistance to Ownership' },
+  { href: '/lore/moderation', label: 'Responsible Decentralization' },
+  { href: '/lore/competitors', label: 'How Hashiverse Compares' },
+  { href: '/lore/contribute', label: 'How to Contribute' },
+];
+
+const bannerMap: Record<string, string> = {
+  '/lore/': '/lore_banners/why-hashiverse.svg',
+  '/lore/sovereignty': '/lore_banners/data-sovereignty.svg',
+  '/lore/advertising': '/lore_banners/freedom-from-advertising.svg',
+  '/lore/invisible-hand': '/lore_banners/the-invisible-hand.svg',
+  '/lore/ownership': '/lore_banners/resistance-to-ownership.svg',
+  '/lore/moderation': '/lore_banners/responsible-decentralization.svg',
+  '/lore/competitors': '/lore_banners/how-hashiverse-compares.svg',
+  '/lore/contribute': '/lore_banners/how-to-contribute.svg',
+};
+
+const banner = bannerMap[Astro.url.pathname] ?? bannerMap[Astro.url.pathname.replace(/\/$/, '')] ?? undefined;
+---
+
+<Doc title={title} description={description} sidebar={sidebar} banner={banner}>
+  <slot />
+</Doc>

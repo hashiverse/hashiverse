@@ -1,0 +1,176 @@
+---
+import DevDoc from '../../layouts/DevDoc.astro';
+---
+
+<DevDoc title="Future Directions">
+  <p>
+    Hashiverse is a working protocol, not a finished one. Several important areas are either
+    partially solved or known to need improvement as the network scales. This page describes
+    the most significant planned directions.
+  </p>
+
+  <h2>Key recovery and management</h2>
+  <p>
+    Self-sovereign identity has a fundamental vulnerability: if you lose your private key, you
+    lose your identity. There is no "forgot password" on a cryptographic key pair. This is
+    the most significant usability barrier to real adoption of Hashiverse.
+  </p>
+  <p>
+    The planned approach is <strong>Shamir's secret sharing</strong>: split your private key
+    into N shares such that any M of them (M ≤ N) can reconstruct the key, but M-1 shares
+    reveal nothing. You distribute shares to trusted parties — friends, family members,
+    institutional key holders — and can recover your key if M of them cooperate. The security
+    assumption is that no M-1 of your key holders will collude against you.
+  </p>
+  <p>
+    Variations on this theme include:
+  </p>
+  <ul>
+    <li>
+      <strong>Third-party key holders</strong>: specialized services that hold one share and
+      release it upon identity verification (biometric, recovery code, etc.), providing a
+      familiar recovery mechanism without holding the full key.
+    </li>
+    <li>
+      <strong>Hardware tokens</strong>: Yubikeys and similar devices can hold one share or the
+      root key directly, with the hardware providing tamper resistance and PIN protection.
+    </li>
+    <li>
+      <strong>Delegate keys</strong>: already partially implemented — a root key can authorize
+      delegate keys for day-to-day signing without exposing the root. Losing a device means
+      revoking its delegate key, not losing your identity.
+    </li>
+  </ul>
+
+  <h2>Interoperability</h2>
+  <p>
+    Hashiverse does not need to replace existing social networks to be useful. Bridges that
+    import existing social graphs — Twitter/X history, Mastodon/ActivityPub feeds, Bluesky
+    AT Protocol data — lower the switching cost for users who already have communities
+    elsewhere. This is a deliberate growth strategy: make Hashiverse the place where your
+    identity is sovereign, and let existing networks feed into it rather than requiring
+    users to start over.
+  </p>
+
+  <h2>Extended signing schemes for post authorship</h2>
+  <p>
+    At present, every post must be signed directly by the key that generates the poster's
+    <code>client_id</code>. Two important real-world patterns require more flexibility.
+  </p>
+
+  <h3>Ephemeral keys</h3>
+  <p>
+    A client may not want to unlock their master signing key every time they post — for
+    example, on a mobile device where the master key is stored in a hardware enclave or
+    behind a slow biometric check. Ephemeral keys solve this: the client generates a
+    short-lived key pair, signs the ephemeral public key once with the master key, and then
+    uses the ephemeral key for day-to-day posting without touching the master key again.
+  </p>
+  <p>
+    Servers would accept such posts by performing a three-step check:
+  </p>
+  <ol>
+    <li>
+      Verify that the post body signature is valid under the supplied
+      <code>ephemeral_signature_pub</code>.
+    </li>
+    <li>
+      Verify that <code>ephemeral_signature_pub</code> itself carries a signature that
+      is valid under the supplied <code>signature_pub</code> (the master public key).
+    </li>
+    <li>
+      Verify that <code>signature_pub</code> hashes to the poster's <code>client_id</code>,
+      confirming the chain of trust leads back to the declared identity.
+    </li>
+  </ol>
+  <p>
+    Ephemeral keys can carry an expiry timestamp signed alongside the public key, so that
+    a leaked or stolen device key becomes invalid after a bounded window even if revocation
+    is delayed.
+  </p>
+
+  <h3>Organisational delegation</h3>
+  <p>
+    An organisation may wish to publish under a single shared identity while distributing
+    the ability to post across multiple individual accounts — a news outlet whose journalists
+    each hold a separate <code>client_id</code> but all write under the outlet's identity,
+    for example.
+  </p>
+  <p>
+    The planned model is for the organisation's root identity to publish a signed delegation
+    list: a set of <code>client_id</code>s that are authorised to post on its behalf. Servers
+    accepting a post from a delegated author would verify that the signing key belongs to a
+    delegated <code>client_id</code> and that the delegation record carries a valid signature
+    from the organisation's root key. Any one of the delegated clients can post; none of them
+    need the organisation's master key.
+  </p>
+
+  <h2>Client reputation and real-world attestation</h2>
+  <p>
+    Proof-of-work raises the cost of creating large numbers of fake identities, but it is
+    not the only tool available. A complementary direction is <strong>client reputation</strong>:
+    mechanisms that let a client demonstrate, alongside a post or piece of feedback, that they
+    are a real, long-standing, or externally-verified participant. Several approaches are being
+    explored.
+  </p>
+
+  <h3>External identity attestation</h3>
+  <p>
+    Third-party identity providers can vouch that a Hashiverse key belongs to a verified human
+    without revealing who that human is. Two broad models are under consideration:
+  </p>
+  <ul>
+    <li>
+      <strong>OIDC providers</strong>: an OpenID Connect flow in which the client proves
+      ownership of an account at a reputable provider (Google, Apple, a national identity
+      scheme, etc.) and receives a signed attestation binding that account to their
+      Hashiverse <code>client_id</code>. The attestation travels with posts as an optional
+      anti-sybil signal; servers and readers can choose how much weight to give it.
+    </li>
+    <li>
+      <strong>Government-issued identity</strong>: schemes modelled on
+      <a href="https://www.yivi.app/">Yivi</a> and
+      <a href="https://www.digidentity.eu/">Digidentity</a> (Dutch eID providers) allow a
+      government or regulated institution to attest specific attributes — age, nationality,
+      unique citizen number — against a cryptographic key, without disclosing the underlying
+      personal data to the network. A client could prove "verified unique human in jurisdiction
+      X" to a server without revealing their name or document number.
+    </li>
+  </ul>
+  <p>
+    Both approaches are strictly opt-in: clients with no attestation continue to participate
+    normally at the base PoW level. Attestations are signals, not gatekeepers.
+  </p>
+
+  <h3>Accumulated PoW as reputation</h3>
+  <p>
+    Every time a client performs an RPC it must include a fresh proof-of-work. This is currently
+    spent and discarded, but it represents an observable track record: a client that has been
+    active for months has necessarily performed far more cumulative PoW than one created
+    yesterday.
+  </p>
+  <p>
+    A planned extension stores a client's best-seen PoW on a <strong>day and month decay
+    model</strong> — the same half-life scheme used for server reputation today. A client
+    that posts regularly accumulates a strong decayed score; a freshly-minted bot that has
+    only existed for hours has a near-zero score and must compensate with a higher per-request
+    PoW to be accepted. This shifts the economics against sybil farms: the attacker must either
+    invest significant real time warming up each identity, or pay a continuously higher PoW tax
+    per request for every identity that skips the warm-up period.
+  </p>
+  <p>
+    Because the accumulated score decays over time rather than growing without bound, a dormant
+    account that returns after a long absence would face a modest PoW surcharge until it
+    re-establishes recent activity — a minor inconvenience for legitimate users and a meaningful
+    barrier for bots that are created, used in a burst, then discarded.
+  </p>
+
+  <h2>Miscellaneous improvements</h2>
+  <ul>
+    <li>
+      <strong>Async traits</strong>: async traits are natively supported in recent Rust nightly,
+      but <code>async_trait</code> is still needed for correct <code>Send + Sync</code> bounds
+      across trait objects. When the standard library stabilizes this, the macro can be removed.
+    </li>
+  </ul>
+</DevDoc>

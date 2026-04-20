@@ -1,0 +1,34 @@
+name: hashiverse-lib-wasm
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "hashiverse-rust/hashiverse-lib/**"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "hashiverse-rust/hashiverse-lib/**"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hashiverse-rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bytecodealliance/actions/wasmtime/setup@v1
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust-wasm"
+          workspaces: hashiverse-rust -> target
+      - name: Run tests
+        run: cargo test --release --target wasm32-wasip1 -p hashiverse-lib

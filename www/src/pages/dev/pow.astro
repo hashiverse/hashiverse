@@ -1,0 +1,93 @@
+---
+import DevDoc from '../../layouts/DevDoc.astro';
+import { github as g } from '../../github';
+---
+
+<DevDoc title="Proof of Work">
+  <p>
+    In Hashiverse, proof of work is not a blockchain feature — it is a spam filter that needs
+    no gatekeeper. Rather than requiring a central authority to decide who is allowed to do what,
+    PoW makes every action carry a real cost in computation. Bad actors wanting to flood the
+    network with garbage must pay for every piece of it, while legitimate users pay a cost too
+    small to notice.
+  </p>
+  <p>
+    PoW is not used in one place in the system. It is woven through every layer, with the
+    cost scaled to the potential for abuse at each layer.
+  </p>
+
+  <h2>RPC envelope PoW</h2>
+  <p>
+    Every request sent to a server must include a valid PoW solution: a salt such that
+    <code>Blake3(timestamp || salt || payload_hash)</code> has a minimum number of leading
+    zero bits. The minimum is set by <code>Config.POW_MINIMUM_PER_ENVELOPE</code>.
+    Servers reject any request that doesn't meet this threshold before processing the payload.
+  </p>
+  <p>
+    This is the first line of defense against DDoS. A requester cannot send ten thousand
+    junk requests per second — each request requires real computation. The timestamp in the
+    PoW input prevents replay attacks; a solution computed an hour ago is not valid now.
+  </p>
+  <p>
+    <strong>Source:</strong> <a href={`${g.lib}/src/protocol/rpc/rpc.rs`}><code>rpc.rs</code></a>
+  </p>
+
+  <h2>Server identity PoW</h2>
+  <p>
+    Creating a server identity requires finding key pairs such that the resulting server ID
+    has a sufficient number of leading zero bits in its Blake3 hash. This takes several hours
+    on commodity hardware. You cannot spin up ten thousand fake servers in seconds.
+    The PoW cost of server creation is the mechanism that makes Sybil attacks on the DHT ring
+    expensive without requiring any central authority to approve new servers.
+  </p>
+  <p>
+    <strong>Source:</strong> <a href={`${g.lib}/src/tools/server_id.rs`}><code>server_id.rs</code></a>
+  </p>
+
+  <h2>Post submission PoW</h2>
+  <p>
+    Submitting a post is a two-phase protocol: <strong>Claim</strong> then <strong>Commit</strong>.
+    The claim phase requires PoW and reserves a submission slot. The commit phase delivers the
+    actual content. This prevents a class of attack where an adversary floods servers with large
+    payloads without doing any work upfront.
+  </p>
+  <p>
+    Posting to hashtag servers and posting to reply servers
+      requires prior submission to your own timeline servers (at least three servers presently)
+      before the rehash post is published, adding an additional barrier to bulk spam amplification.
+      The more frequently you post to your own timeline, the more PoW you need to do for submission.
+  </p>
+  <p>
+    <strong>Source:</strong> <a href={`${g.lib}/src/protocol/posting/`}><code>hashiverse-lib/src/protocol/posting/</code></a>,
+    <a href={`${g.server}/src/server/handlers/`}><code>hashiverse-server/src/server/handlers/</code></a>
+  </p>
+
+  <h2>Interaction PoW and feedback ranking</h2>
+  <p>
+    Every interaction — like, dislike, report — requires PoW beyond the base RPC envelope
+    requirement. The PoW behind a feedback signal determines its weight in the network's harm
+    metrics: higher PoW signals are preferred over lower PoW signals for the same
+    (post, feedback type) pair. A network-wide maximum is maintained and healed across servers.
+  </p>
+  <p>
+    This creates an interesting game theory: you can increase the signal strength of a feedback
+    by investing more computation. A user who cares strongly about a piece of content — a
+    journalist flagging a dangerous post, a community member boosting a valuable one — can
+    put real computational weight behind their signal.  However, the cumulative signal from thousands or millions of
+    moderate-PoW interactions will outweigh a single high-PoW signal from an adversary trying
+    to game the ranking.
+  </p>
+  <p>
+    <strong>Source:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>,
+    <a href={`${g.lib}/src/client/post_bundle/post_bundle_feedback_healing.rs`}><code>post_bundle_feedback_healing.rs</code></a>
+  </p>
+
+  <h2>PoW algorithm design</h2>
+  <p>
+    Rather than using a single hash function (which invites ASIC optimization), Hashiverse PoW
+    chains multiple algorithms in a pseudo-random sequence derived from the input. A valid PoW
+    solution must have traversed all algorithms in the chain. This raises the bar for specialized
+    hardware: an ASIC that is fast at Blake3 but slow at SHA3 will be outcompeted by a general
+    CPU that handles all algorithms efficiently.
+  </p>
+</DevDoc>

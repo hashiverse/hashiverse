@@ -1,0 +1,33 @@
+name: test-hashiverse-server-lib-default
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "hashiverse-rust/hashiverse-lib/**"
+      - "hashiverse-rust/hashiverse-server-lib/**"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "hashiverse-rust/hashiverse-lib/**"
+      - "hashiverse-rust/hashiverse-server-lib/**"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hashiverse-rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust"
+          workspaces: hashiverse-rust -> target
+      - name: Run tests
+        run: cargo test --release -p hashiverse-server-lib

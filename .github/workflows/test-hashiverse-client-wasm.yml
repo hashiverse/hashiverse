@@ -1,0 +1,36 @@
+name: test-hashiverse-client-wasm
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "hashiverse-rust/hashiverse-lib/**"
+      - "hashiverse-rust/hashiverse-client-wasm/**"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "hashiverse-rust/hashiverse-lib/**"
+      - "hashiverse-rust/hashiverse-client-wasm/**"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hashiverse-rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust-wasm"
+          workspaces: hashiverse-rust -> target
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - name: Run tests
+        run: wasm-pack test --chrome --headless hashiverse-client-wasm --lib

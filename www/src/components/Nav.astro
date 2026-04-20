@@ -1,0 +1,77 @@
+---
+const links = [
+  { href: '/lore/', label: 'Lore' },
+  { href: '/dev/', label: 'Dev' },
+];
+
+const current = Astro.url.pathname;
+---
+
+<nav>
+  <a href="/" class="nav-logo">
+    <img src="/logo.webp" alt="Hashiverse" height="28" />
+  </a>
+  <ul>
+    <li>
+      <a id="nav-app-link" href="#">App</a>
+    </li>
+    {links.map(({ href, label }) => (
+      <li>
+        <a href={href} class:list={[{ active: current.startsWith(href) }]}>
+          {label}
+        </a>
+      </li>
+    ))}
+    <li>
+      <a href="https://github.com/hashiverse">GitHub</a>
+    </li>
+  </ul>
+</nav>
+
+<script>
+  const a = document.getElementById('nav-app-link') as HTMLAnchorElement;
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1') {
+    a.href = 'http://localhost:3000';
+  } else {
+    const bare = host.startsWith('www.') ? host.slice(4) : host;
+    a.href = `https://app.${bare}`;
+  }
+</script>
+
+<style>
+  nav {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    padding: 1rem 2rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  .nav-logo img {
+    display: block;
+  }
+
+  ul {
+    display: flex;
+    gap: 1.5rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.9rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    transition: color 0.15s;
+  }
+
+  a:hover,
+  a.active {
+    color: var(--accent);
+  }
+</style>

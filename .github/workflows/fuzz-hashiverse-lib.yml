@@ -1,0 +1,62 @@
+name: fuzz-hashiverse-lib
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hashiverse-rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust-fuzz"
+          workspaces: hashiverse-rust -> target
+      - name: Cache cargo-bolero
+        id: cache-bolero
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-bolero
+          key: cargo-bolero-${{ runner.os }}
+      - name: Install cargo-bolero
+        if: steps.cache-bolero.outputs.cache-hit != 'true'
+        run: cargo install cargo-bolero --locked
+      - name: Discover and run fuzz targets
+        run: |
+          targets=$(
+            grep -rn "fn fuzz_" hashiverse-lib/src/ --include="*.rs" -l \
+              | while read file; do
+                  mod_path=$(echo "$file" \
+                    | sed 's|hashiverse-lib/src/||; s|/|::|g; s|\.rs$||')
+                  grep -oP 'fn \Kfuzz_\w+' "$file" \
+                    | while read fn_name; do
+                        echo "${mod_path}::tests::bolero_fuzz::${fn_name}"
+                      done
+                done
+          )
+
+          count=$(echo "$targets" | wc -l)
+          echo "Found ${count} fuzz targets"
+          echo "$targets"
+
+          first=$(echo "$targets" | head -1)
+          echo "::group::Compiling (single fuzz iteration)"
+          cargo bolero test -p hashiverse-lib "${first}" --runs 1
+          echo "::endgroup::"
+
+          echo "$targets" | while read target; do
+            echo "::group::Fuzzing ${target}"
+            timeout 60 cargo bolero test -p hashiverse-lib "${target}" || true
+            echo "::endgroup::"
+          done

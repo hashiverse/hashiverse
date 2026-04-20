@@ -1,0 +1,128 @@
+---
+import LoreDoc from '../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Responsible Decentralization">
+    <p>
+        Decentralization is not a moral position. It is an architectural one. And a decentralized
+        network can host content that is harmful, illegal, or simply corrosive to the communities
+        that use it. "No central authority" cannot be an excuse for "anything goes." The question is
+        not whether to moderate, but how to moderate without reintroducing the single point of
+        control that decentralization is trying to eliminate.
+    </p>
+    <p>
+        This is one of the hardest problems in the design of Hashiverse, and it is one the team
+        takes seriously rather than dismissing it as someone else's concern.
+    </p>
+
+    <h2>The constraint: no gatekeeper</h2>
+    <p>
+        On a centralized platform, moderation is straightforward in principle: a team reviews
+        content, applies policies, and removes violations. The outcome depends entirely on the
+        quality and consistency of that team and those policies — which is why centralized moderation
+        has its own serious failures. But the mechanism is clear.
+    </p>
+    <p>
+        In Hashiverse, there is no moderation team. There is no policy board. Posts are signed by
+        their authors, stored on independent servers, and retrieved by clients. No single entity
+        has the authority to delete a post from the network. Any mechanism that introduces that
+        authority reintroduces the ownership problem.
+    </p>
+    <p>
+        So the design has to work differently: it has to make harmful content expensive to produce,
+        difficult to surface, and self-limiting over time — without requiring any central actor to
+        make per-content decisions.
+    </p>
+
+    <h2>How the layers work</h2>
+    <p>
+        Hashiverse uses a layered approach where each layer addresses a different dimension of the
+        problem, and the layers reinforce each other:
+    </p>
+
+    <h3>Natural expiry</h3>
+    <p>
+        Content in Hashiverse survives because people keep reading it. The principle behind both
+        healing and caching is simple: data worth replicating — data that is relevant to someone,
+        somewhere — gets replicated. When a client fetches a post, it checks which servers are
+        missing it and heals those gaps. Content that people keep visiting keeps getting replicated.
+        Content that no one visits stops being healed, and as servers fill up and apply their
+        eviction policies, forgotten content quietly disappears — without anyone having to decide
+        to remove it.
+    </p>
+    <p>
+        This is not censorship. It is the same mechanism by which a book goes out of print, a
+        website goes dark when nobody renews the domain, a conversation is forgotten. Most
+        coordinated harm is acute — a harassment campaign, a doxxing post, a false accusation.
+        Once the immediate harm runs its course and people stop engaging with it, the network
+        stops replicating it. Content that endures does so because it continues to matter to
+        someone.
+    </p>
+    <p>
+        There is a Mexican saying that captures this perfectly:
+    </p>
+    <blockquote>
+        <p>
+            <em>Uno muere dos veces. La primera, cuando dejas de respirar. La segunda, cuando alguien pronuncia tu nombre por última vez.</em>
+            —
+            You die twice. First, when you stop breathing. Second, when your name is spoken for the last time.
+        </p>
+    </blockquote>
+
+    <h3>Proof-of-work feedback</h3>
+    <p>
+        Users can signal about content — likes, dislikes, reports — and each signal requires a small
+        proof of work. The work requirement makes bulk signal-stuffing expensive. More importantly,
+        the quality of a signal is measured by the work behind it: a report backed by more
+        computation carries more weight than a report backed by less. The
+        result is a community-weighted harm metric that no single actor can easily game.
+    </p>
+
+    <h3>Configurable categories</h3>
+    <p>
+        Users can configure which harm categories they want filtered: violence, threats, spam,
+        adult content, self-harm. CSAM is most aggressively filtered — that is a non-negotiable default.
+        Other categories are filtered by default but can be adjusted for contexts
+        where different norms apply (adult content platforms, for instance). This respects that
+        different communities have different standards while maintaining a hard floor on the worst
+        content.
+    </p>
+
+    <h3>Friction, not censorship</h3>
+    <p>
+        Rather than hiding flagged content entirely, Hashiverse introduces friction proportional
+        to the severity of community feedback. Content with mild downvote signals might require
+        a few seconds of delay before being shown; content with severe signals might require a
+        minute of waiting. This means the content is not censored — a user who genuinely wants
+        to see it can — but casual browsing naturally routes around it. The friction is temporary
+        and session-based, so it doesn't accumulate into permanent blocks.
+    </p>
+
+    <h3>Image restrictions and classifiers</h3>
+    <p>
+        Images in hashtag and mention contexts — where content surfaces to people who didn't
+        specifically subscribe to a user — are automatically restricted by default.
+    </p>
+    <p>
+        As client-side AI improves,
+        an on-device nudity classifier (specifically <a href="https://github.com/infinitered/nsfwjs">NSFWJS</a>)
+        will provide a further layer without requiring any content to be sent to a central service
+        for analysis. The classifier runs locally, the decision stays local.
+    </p>
+
+    <h2>The honest gaps</h2>
+    <p>
+        These layers do not eliminate all harm. Text-based harm — coordinated harassment, targeted
+        disinformation, sophisticated scams — is harder to detect without semantic understanding.
+        The content expiration window means serious harm can persist for months before expiry. Without
+        centralised content moderation there is no equivalent of a takedown notice for urgent situations.
+    </p>
+    <p>
+        Hashiverse does not pretend otherwise. These are real limitations of an architecture that
+        refuses to introduce a central authority. The belief underlying the design is that the
+        harms of centralized content control — suppression, bias, chilling effects on legitimate
+        speech — are at least as serious as the harms that central moderation prevents, and that
+        a layered, distributed approach is worth pursuing even if it is imperfect. The team continues
+        to work on improving these mechanisms without compromising the core architecture.
+    </p>
+</LoreDoc>

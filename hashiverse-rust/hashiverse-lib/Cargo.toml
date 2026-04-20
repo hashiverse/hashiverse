@@ -1,0 +1,80 @@
+[package]
+name = "hashiverse-lib"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+generic-tests = []
+
+[dependencies]
+anyhow = { workspace = true }
+log = { workspace = true }
+bytes = { workspace = true }
+digest = { workspace = true }
+scopeguard = { workspace = true }
+hex = { workspace = true }
+parking_lot = { workspace = true }
+async-trait = { workspace = true }
+
+
+ed25519-dalek = {  version = "2.1.1" , features = ["rand_core", "serde", "pkcs8"] }
+num-traits = "0.2.19"
+strum_macros = "0.27.1"
+chacha20poly1305 = "0.10.1"
+argon2 = "0.5.3"
+chrono = "0.4.41"
+tokio = { version = "1.45", features = ["macros", "time", "rt", "io-util"] }
+tokio-util = { version = "0.7.14", features = ["codec", "rt"] }
+clap = { version = "4.5.38", features = ["derive"] }
+base64 = "0.22.1"
+uuid = { version = "1.17.0", features = ["v4", "js"] }
+lz4_flex="0.12.0"
+brotli="8.0.2"
+scraper = "0.23.1"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.145"
+derive_more = "0.99.20"
+serde_with = { version = "3.16.1", features = ["hex"] }
+blake2 = "0.10.6"
+blake3 = "1.8.3"
+sha2 = "0.10.9"
+sha3 = "0.10.8"
+whirlpool = "0.10.4"
+groestl = "0.10.1"
+skein = "0.1.1"
+futures = "0.3"
+gloo-timers = { version = "0.3.0", features = ["futures"] }
+send_wrapper = { version = "0.6.0", features = ["futures"]}
+tempfile = "3.25.0"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "registry", "fmt"] }
+ml-dsa = "0.1.0-rc.7"
+falcon-rust = "0.1"
+bitflags="2.11.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+moka = { version = "0.12", features = ["sync"] }
+rayon = "1.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+rusqlite = { version = "0.36", features = ["bundled"] }
+dirs-next = "2.0"
+hickory-resolver = { version = "0.25", features = ["https-ring", "dnssec-ring", "webpki-roots"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"
+
+[target.'cfg(all(tokio_unstable, not(target_arch = "wasm32")))'.dependencies]
+console-subscriber = { version = "0.5.0" }
+
+[dependencies.getrandom]
+version = "0.2.16"
+features = [ 'js' ]
+
+
+[dev-dependencies]
+wasm-bindgen-test = "*"
+bolero = "0.11"

@@ -1,0 +1,110 @@
+---
+import DevDoc from '../../layouts/DevDoc.astro';
+import { github as g } from '../../github';
+---
+
+<DevDoc title="Post Protocol">
+  <p>
+    A post in Hashiverse is HTML — authored in the browser with a rich-text editor, DOMPurify
+    sanitized before display. Between authorship and display is a pipeline of compression,
+    encryption, signing, two-phase submission, DHT routing, and bundle aggregation. This page
+    follows a post through that pipeline.
+  </p>
+
+  <h2>The encoded post</h2>
+  <p>
+    <code>EncodedPostV1</code> is the wire format for a single post. It contains:
+  </p>
+  <ul>
+    <li><strong>header</strong>: verification key bytes, post-quantum commitment bytes, timestamp, post length, and <code>linked_base_ids</code> — references to prior posts this post is replying to or building on.</li>
+    <li><strong>signature</strong>: Ed25519 (or PQ) signature over the header and post hashes.</li>
+    <li><strong>post</strong>: the HTML content, Brotli-compressed and encrypted.</li>
+    <li><strong>post_id</strong>: Blake3 hash of the signature — a stable, verifiable content address.</li>
+  </ul>
+  <p>
+    Encryption uses multiple passphrases — one per context the post appears in — via a custom
+    multi-key scheme inspired by the <code>age</code> encryption format. A post that is both in
+    a user's timeline and under a hashtag is encrypted with both the user's public ID and the
+    hashtag string as passphrases. Either key decrypts it. Servers holding the encrypted bytes
+    cannot read either.
+  </p>
+
+  <h2>Submission: Claim then Commit</h2>
+  <p>
+    Post submission is a two-phase protocol:
+  </p>
+  <ol>
+    <li>
+      <strong>SubmitClaim</strong>: The client sends a claim request with PoW. The server
+      validates the PoW and, if the post ID is not already present, issues a token granting
+      permission to commit.
+    </li>
+    <li>
+      <strong>SubmitCommit</strong>: The client sends the actual post bytes with the token.
+      The server stores the post and returns a confirmation signature.
+    </li>
+  </ol>
+  <p>
+    Separating claim from commit prevents payload-flooding attacks: a server can reject
+    bad-faith claims cheaply (just verify PoW) before accepting any large payload.
+    The confirmation signature from the server is the client's proof that the post was accepted.
+  </p>
+  <p>
+    <strong>Source:</strong> <a href={`${g.server}/src/server/handlers/`}><code>hashiverse-server/src/server/handlers/</code></a>
+  </p>
+
+  <h2>Bundles and buckets</h2>
+  <p>
+    Posts are not stored or fetched individually — they are grouped into
+    <code>EncodedPostBundleV1</code> objects, one bundle per bucket per server. A bundle
+    contains around 20 posts from a particular location ID (a specific time window for a
+    specific user, hashtag, or reply context), but this number can be larger with healing and eventual consistency delays.
+      Bundles are signed by the serving peer.
+  </p>
+  <p>
+    Fetching a user's timeline means traversing the bucket hierarchy recursively: start with
+    the monthly bucket, drill into the weekly, daily, hourly, and finer buckets where posts
+    exist. The <code>RecursiveBucketVisitor</code> handles this with a callback that decides
+    at each level whether to recurse into finer granularity or skip, allowing efficient
+    pagination even across sparse timelines.
+  </p>
+  <p>
+    <strong>Source:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_bundle.rs`}><code>encoded_post_bundle.rs</code></a>,
+    <a href={`${g.lib}/src/client/timeline/`}><code>hashiverse-lib/src/client/timeline/</code></a>
+  </p>
+
+  <h2>Bucket types</h2>
+  <p>
+    Four (at the time of writing) bucket types determine how posts are indexed and discovered:
+  </p>
+  <ul>
+    <li><strong>User (0)</strong>: the author's personal timeline</li>
+    <li><strong>Hashtag (1)</strong>: posts containing a given hashtag</li>
+    <li><strong>Mention (2)</strong>: posts mentioning a specific user</li>
+    <li><strong>ReplyToPost (3)</strong>: posts replying to a specific post</li>
+  </ul>
+  <p>
+    A single post may appear in multiple buckets simultaneously, each encrypted with the
+    appropriate passphrase for that bucket.
+  </p>
+  <p>
+    <strong>Source:</strong> <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a>
+  </p>
+
+  <h2>Storage</h2>
+  <p>
+    On the server, post bundles are persisted to disk, while their metadata is persisted to <strong>fjall</strong> — a pure-Rust embedded
+    key-value store with automatic compaction and good write throughput. fjall was chosen over
+    redb and sled for its maintenance track record and operational simplicity. Posts are
+    stored as Brotli-compressed, encrypted bytes.
+  </p>
+  <p>
+    On the browser client, posts are cached in <strong>IndexedDB</strong> via
+    <code>indexed_db_futures</code>, with an in-memory stub for testing. Each category of
+    client-side data is encrypted at rest with a different key, chosen to match its access model.
+  </p>
+  <p>
+    <strong>Source:</strong> <a href={`${g.server}/src/environment/`}><code>hashiverse-server/src/environment/</code></a>,
+    <a href={`${g.wasm}/src/wasm_client_storage.rs`}><code>wasm_client_storage.rs</code></a>
+  </p>
+</DevDoc>
