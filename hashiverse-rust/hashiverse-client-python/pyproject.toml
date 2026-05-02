@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "hashiverse-client"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Python client for the Hashiverse decentralized social network"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -22,7 +22,7 @@ keywords = [
     "dht",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",

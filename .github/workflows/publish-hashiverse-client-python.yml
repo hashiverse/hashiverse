@@ -1,6 +1,8 @@
 name: publish-hashiverse-client-python
 
 on:
+  release:
+    types: [released, prereleased]
   workflow_dispatch:
     inputs:
       target:
@@ -10,6 +12,7 @@ on:
         default: "testpypi"
         options:
           - testpypi
+          - pypi
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,10 +32,11 @@ jobs:
           - runner: ubuntu-24.04-arm
             target: aarch64
             manylinux: auto
-          - runner: macos-13
+          - runner: macos-latest
             target: x86_64
             manylinux: ""
-          - runner: macos-14
+            cross: true
+          - runner: macos-latest
             target: aarch64
             manylinux: ""
           - runner: windows-latest
@@ -62,6 +66,7 @@ jobs:
           rust-toolchain: nightly
 
       - name: Smoke-test wheel
+        if: ${{ !matrix.platform.cross }}
         shell: bash
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
@@ -78,7 +83,7 @@ jobs:
   publish-testpypi:
     name: publish to TestPyPI
     needs: build-wheels
-    if: ${{ inputs.target == 'testpypi' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi' }}
     runs-on: ubuntu-latest
     environment:
       name: testpypi
@@ -100,4 +105,45 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
           packages-dir: dist
           skip-existing: true
+          verbose: true
+
+  publish-pypi:
+    name: publish to PyPI
+    needs: build-wheels
+    if: |
+      (github.event_name == 'release') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/hashiverse-client
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: wheels-*
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la dist
+
+      - name: Verify wheel version matches release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          tag_version="${tag#v}"
+          wheel=$(ls dist/*.whl | head -1)
+          wheel_version=$(basename "$wheel" | sed -E 's|^hashiverse_client-([^-]+)-.*|\1|')
+          echo "tag=$tag_version wheel=$wheel_version"
+          if [ "$tag_version" != "$wheel_version" ]; then
+            echo "::error::release tag $tag_version does not match built wheel version $wheel_version"
+            exit 1
+          fi
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
           verbose: true
