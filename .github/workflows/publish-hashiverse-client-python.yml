@@ -29,10 +29,11 @@ jobs:
           - runner: ubuntu-24.04-arm
             target: aarch64
             manylinux: auto
-          - runner: macos-13
+          - runner: macos-latest
             target: x86_64
             manylinux: ""
-          - runner: macos-14
+            cross: true
+          - runner: macos-latest
             target: aarch64
             manylinux: ""
           - runner: windows-latest
@@ -62,6 +63,7 @@ jobs:
           rust-toolchain: nightly
 
       - name: Smoke-test wheel
+        if: ${{ !matrix.platform.cross }}
         shell: bash
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
