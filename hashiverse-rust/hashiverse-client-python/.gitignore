@@ -3,3 +3,4 @@
 *.pyc
 *.so
 *.pdb
+dist/
