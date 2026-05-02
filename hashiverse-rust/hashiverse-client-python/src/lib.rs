@@ -1,5 +1,3 @@
-#![feature(try_blocks)]
-
 #[macro_use]
 pub mod py_try;
 pub mod hashiverse_client_python;
