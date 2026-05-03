@@ -11,6 +11,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: ./.github/actions/set-cargo-version-from-tag
+
       - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: wasm32-unknown-unknown
