@@ -17,7 +17,7 @@ runs:
         tag="${{ github.event.release.tag_name }}"
         version="${tag#v}"
         file=hashiverse-rust/Cargo.toml
-        sed -E '/^\[workspace\.package\]/,/^\[/{s/^version = "[^"]*"/version = "'"$version"'"/}' "$file" > "$file.new"
+        sed -E '/^\[workspace\.package\]/,/^\[/ s/^version = "[^"]*"/version = "'"$version"'"/' "$file" > "$file.new"
         mv "$file.new" "$file"
         echo "--- workspace.package after rewrite ---"
         sed -n '/^\[workspace\.package\]/,/^\[/p' "$file"
