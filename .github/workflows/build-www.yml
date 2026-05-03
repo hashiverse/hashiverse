@@ -14,6 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: ./.github/actions/set-cargo-version-from-tag
+
       # --- Rust docs ---
 
       - uses: dtolnay/rust-toolchain@nightly

@@ -45,6 +45,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: ./.github/actions/set-cargo-version-from-tag
+
       - uses: dtolnay/rust-toolchain@nightly
 
       - uses: actions/setup-python@v5
@@ -128,20 +130,6 @@ jobs:
 
       - name: List artifacts
         run: ls -la dist
-
-      - name: Verify wheel version matches release tag
-        if: github.event_name == 'release'
-        shell: bash
-        run: |
-          tag="${{ github.event.release.tag_name }}"
-          tag_version="${tag#v}"
-          wheel=$(ls dist/*.whl | head -1)
-          wheel_version=$(basename "$wheel" | sed -E 's|^hashiverse_client-([^-]+)-.*|\1|')
-          echo "tag=$tag_version wheel=$wheel_version"
-          if [ "$tag_version" != "$wheel_version" ]; then
-            echo "::error::release tag $tag_version does not match built wheel version $wheel_version"
-            exit 1
-          fi
 
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
