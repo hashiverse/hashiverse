@@ -1,0 +1,25 @@
+name: mirror-hashiverse
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.CODEBERG_SSH_KEY_HASHIVERSE }}
+
+      - name: Trust codeberg.org host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan codeberg.org >> ~/.ssh/known_hosts
+
+      - name: Mirror to Codeberg
+        run: |
+          git clone --mirror https://github.com/hashiverse/hashiverse.git mirror
+          git -C mirror push --mirror git@codeberg.org:hashiverse/hashiverse.git
