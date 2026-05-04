@@ -109,13 +109,15 @@ const summary = {
 };
 
 const prompt =
-  "You are updating translations for hashiverse-client-web. For each lang in actions_required, work key-by-key. " +
+  "You are updating translations for hashiverse-client-web. " +
+  "Run `node hashiverse-client-web/translations/check-translations.mjs` from the repo root to (re)generate this JSON — its stdout is exactly the {prompt, summary, actions_required} structure you are reading, with a fresh actions_required block. Exit code is 1 while any work remains and 0 once everything is registered fresh. " +
+  "For each lang in actions_required, work key-by-key. " +
   "For each entry in `translate` and `create`: write the translated value into the matching nested path in `hashiverse-client-web/public/locales/<lang>.json`, " +
   "AND set `hashiverse-client-web/translations/state.json`[<lang>][<key>] to entry.new_hash. " +
   "Both edits must happen together for every key you fix — if you skip a key, leave both files alone for that key (it stays stale). " +
   "For each entry in `delete`: remove the key from `<lang>.json` AND from `state.json`[<lang>]. " +
-  "Do NOT translate: Hashiverse, Kademlia, Ed25519, ChaCha20Poly1305, proof-of-work, Blake2, Blake3, SHA2, SHA3, ML-DSA, FN-DSA, Whirlpool, Groestl, Skein, hashtag, P2P. " +
-  "Re-run `node hashiverse-client-web/translations/check-translations.mjs` after; exit 0 confirms every key you intended to fix is registered fresh.";
+  "Do NOT translate the product name (Hashiverse) or technical/cryptographic terms (e.g. Kademlia, Ed25519, P2P, hashtag). " +
+  "When you are done, re-run the same command to confirm exit 0.";
 
 const result = { prompt, summary, actions_required };
 console.log(JSON.stringify(result, null, 2));
