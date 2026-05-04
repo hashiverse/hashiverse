@@ -23,6 +23,14 @@ const state_path_for = (lang) => path.join(translations_dir, `state-${lang}.json
 
 const sha256_prefix = (buf) => crypto.createHash("sha256").update(buf).digest("hex").slice(0, 4);
 
+function hash_source(p) {
+  // Normalize CRLF → LF and strip a leading BOM so the hash is stable across
+  // Windows working copies (CRLF on disk via git autocrlf) and Linux CI (LF).
+  let s = fs.readFileSync(p, "utf8");
+  if (s.charCodeAt(0) === 0xfeff) s = s.slice(1);
+  return sha256_prefix(s.replace(/\r\n/g, "\n"));
+}
+
 function read_json_or_empty(p) {
   if (!fs.existsSync(p)) return {};
   return JSON.parse(fs.readFileSync(p, "utf8"));
@@ -42,10 +50,10 @@ const rel_posix = (p) => path.relative(www_root, p).split(path.sep).join("/");
 
 const sources = {};
 for (const f of walk_astro(pages_en_dir)) {
-  sources[rel_posix(f)] = sha256_prefix(fs.readFileSync(f));
+  sources[rel_posix(f)] = hash_source(f);
 }
 if (fs.existsSync(en_strings)) {
-  sources[rel_posix(en_strings)] = sha256_prefix(fs.readFileSync(en_strings));
+  sources[rel_posix(en_strings)] = hash_source(en_strings);
 }
 
 const actions_required = {};
