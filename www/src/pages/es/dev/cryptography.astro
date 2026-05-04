@@ -1,0 +1,152 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Fundamentos criptográficos">
+  <p>
+    Cada afirmación de Hashiverse sobre soberanía de los datos, resistencia a la censura e
+    independencia de propiedad está respaldada por criptografía. No es decoración — es la
+    razón por la que esas afirmaciones se sostienen. Comprender la capa criptográfica es
+    comprender los cimientos sobre los que se levanta todo lo demás.
+  </p>
+
+  <h2>Identidad</h2>
+  <p>
+    Una identidad de Hashiverse no la asigna un servidor. Se deriva de claves:
+  </p>
+  <pre><code>ID = Blake3(ed25519_pub || Blake3(Falcon_pub)[0..16] || Blake3(Dilithium_pub)[0..16])</code></pre>
+  <p>
+    Tu identificador público es un hash de 256 bits de tres claves públicas — una clásica
+    (Ed25519), dos post-cuánticas (FN-DSA/Falcon y ML-DSA/Dilithium). Los compromisos de 16
+    bytes con las claves PQ las atan a tu identidad ya hoy, antes de que los ordenadores
+    cuánticos sean una amenaza práctica. Cuando ocurra la migración cuántica, el camino de
+    actualización ya está incrustado en cada identidad de la red.
+  </p>
+  <p>
+    Las identidades de servidor funcionan igual, con el requisito adicional de que el ID
+    debe satisfacer una condición de proof-of-work (un prefijo de ceros a la izquierda en
+    el hash). Esto hace costosa la creación de identidad de servidor, evitando ataques
+    Sybil sobre el anillo DHT.
+  </p>
+  <p>
+    La clave privada Ed25519 de firma del cliente se almacena exclusivamente en la
+    <strong>enclave segura de la Web Crypto API</strong> del navegador como un objeto
+    <code>CryptoKey</code> no extraíble. El navegador expone solo una operación de firma —
+    los bytes en bruto de la clave privada nunca son accesibles a JavaScript, ni al
+    módulo WASM, ni a ningún otro código de la página. No existe mecanismo para exportar
+    o recuperar la clave privada una vez importada. La firma ocurre dentro de la capa
+    criptográfica del navegador; la clave nunca sale de allí.
+  </p>
+  <p>
+    Es una restricción deliberada, no una limitación. Aunque el cliente WASM de
+    Hashiverse estuviera completamente comprometido, un atacante podría, como mucho,
+    invocar la operación de firma en nombre de la víctima — no podría robar la clave para
+    usarla en otro sitio.
+  </p>
+  <p>
+    <strong>Fuente:</strong> <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a> —
+    tipos <code>Hash</code>, <code>Id</code>, <code>Signature</code>;
+    <a href={`${g.lib}/src/tools/server_id.rs`}><code>server_id.rs</code></a> para la
+    proof-of-work de identidad de servidor.
+  </p>
+
+  <h2>Firmas híbridas post-cuánticas</h2>
+  <p>
+    La identidad de tres claves habilita un camino de migración progresivo:
+  </p>
+  <ul>
+    <li>Hoy: las publicaciones se firman con Ed25519. La verificación es rápida y bien comprendida.</li>
+    <li>Cuando Ed25519 se vea amenazado: migrar la firma primaria a FN-DSA (Falcon), cuyas firmas son más pequeñas que las de Dilithium.</li>
+    <li>Si los algoritmos basados en retículos se rompieran después: caer a ML-DSA (Dilithium) como capa final.</li>
+  </ul>
+  <p>
+    SPHINCS+ se valoró y se descartó: sus firmas pesan varios kilobytes, lo que es
+    prohibitivo para una red de publicaciones de alto rendimiento. La combinación
+    Falcon+Dilithium aporta dos supuestos de seguridad basados en retículos
+    independientes, lo que significa que ambos tendrían que romperse simultáneamente para
+    que la identidad quedara comprometida.
+  </p>
+  <p>
+    <strong>Fuente:</strong> <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a> primitivas criptográficas;
+    <a href={`${g.lib}/src/protocol/posting/encoded_post.rs`}><code>encoded_post.rs</code></a> para la selección del mecanismo de firma por publicación.
+  </p>
+
+  <h2>Hashing</h2>
+  <p>
+    Blake3 es la función hash primaria — rápida, paralelizable y adecuada para sumas de
+    comprobación, direccionamiento por contenido y derivación de claves. Para
+    proof-of-work, el conjunto completo de hashes disponibles en el protocolo incluye
+    Blake2, Blake3, SHA2, SHA3, Whirlpool, Groestl y Skein. La proof-of-work encadena
+    varios algoritmos en una secuencia pseudoaleatoria, lo que aumenta la resistencia a
+    los ASIC al exigir la coimplementación eficiente de varios algoritmos dependientes
+    del camino simultáneamente.
+  </p>
+  <p>
+    Todas las bibliotecas de hash se compilan con <code>opt-level=3</code> incluso en
+    modo debug — está configurado en las sobrescrituras de perfil del
+    <code>Cargo.toml</code> del workspace para que las suites de pruebas no estén
+    cuelladas por el cómputo de hashes.
+  </p>
+
+  <h2>Cifrado en reposo</h2>
+  <p>
+    Las publicaciones almacenadas en los servidores se cifran con ChaCha20-Poly1305. La
+    clave se deriva de una passphrase que depende del tipo de bucket:
+  </p>
+  <ul>
+    <li><strong>Cronología de usuario</strong>: la passphrase es el identificador público del usuario</li>
+    <li><strong>Hashtag</strong>: la passphrase es el texto del hashtag en minúsculas (sin #)</li>
+    <li><strong>Mención</strong>: la passphrase es el identificador público del usuario mencionado</li>
+    <li><strong>Respuesta</strong>: la passphrase es la firma de contenido de la publicación original</li>
+  </ul>
+  <p>
+    Un esquema personalizado de cifrado con varias passphrases, vagamente inspirado en
+    <code>age</code>, significa que una única publicación que abarque varios contextos —
+    una con hashtag que también menciona a un usuario — puede ser descifrada por
+    cualquiera que tenga cualquiera de las passphrases. Los servidores guardan bytes
+    cifrados que no pueden leer. No hay texto en claro en el disco del servidor.
+  </p>
+  <p>
+    <strong>Fuente:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post.rs`}><code>encoded_post.rs</code></a>
+    para el cifrado de publicaciones; <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a>
+    para las primitivas ChaCha20-Poly1305.
+  </p>
+
+  <h2>Firmas en todo</h2>
+  <p>
+    Cada publicación la firma su autor. Cada respuesta del servidor la firma el servidor
+    que la sirve. Cada bundle se firma. Las firmas no son metadatos opcionales — son el
+    mecanismo por el cual los clientes pueden confiar en contenido recibido de servidores
+    no fiables. Un cliente nunca necesita confiar en un servidor; confía en la firma
+    criptográfica del contenido que ese servidor entrega.
+  </p>
+
+  <h2>Dos capas de seguridad de transporte</h2>
+  <p>
+    Hashiverse separa el cifrado de transporte de la seguridad de protocolo y los trata
+    como preocupaciones independientes:
+  </p>
+  <p>
+    <strong>Capa de transporte (TLS):</strong> la comunicación servidor-a-servidor y
+    cliente-a-servidor va por HTTPS usando certificados TLS emitidos por <strong>Let's
+    Encrypt</strong>. Como los servidores de Hashiverse se identifican por dirección IP en
+    lugar de nombre de dominio, el servidor obtiene un certificado TLS solo de IP a
+    través del protocolo ACME. Esto cifra el tráfico en tránsito y evita la escucha
+    pasiva en la línea.
+  </p>
+  <p>
+    <strong>Capa de protocolo (criptografía Hashiverse):</strong> TLS por sí solo no
+    basta para una red descentralizada sin confianza — un servidor comprometido o
+    malicioso podría servir contenido manipulado por una conexión TLS válida. La
+    criptografía propia de Hashiverse aporta la garantía más profunda: cada pieza de
+    contenido la firman las claves de su autor, las publicaciones se cifran en reposo
+    con claves que el servidor nunca tiene, y las identidades de servidor están atadas a
+    compromisos de proof-of-work. Un cliente no necesita confiar en ningún servidor;
+    verifica el contenido directamente contra firmas criptográficas, sin importar cómo
+    haya llegado.
+  </p>
+  <p>
+    TLS se ocupa de la red; la criptografía de Hashiverse se ocupa de la verdad.
+  </p>
+</DevDoc>

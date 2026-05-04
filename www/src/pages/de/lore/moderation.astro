@@ -1,0 +1,140 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Verantwortungsvolle Dezentralisierung">
+    <p>
+        Dezentralisierung ist keine moralische Position. Sie ist eine architektonische. Und ein
+        dezentrales Netzwerk kann Inhalte hosten, die schädlich, illegal oder einfach für die
+        Communities, die es nutzen, korrosiv sind. „Keine zentrale Autorität" kann keine Ausrede
+        für „alles ist erlaubt" sein. Die Frage lautet nicht, ob moderiert werden soll, sondern
+        wie zu moderieren ist, ohne den einzelnen Kontrollpunkt wieder einzuführen, den
+        Dezentralisierung gerade beseitigen will.
+    </p>
+    <p>
+        Das ist eines der schwierigsten Probleme im Design von Hashiverse, und es ist eines, das
+        das Team ernst nimmt, statt es als Anliegen anderer abzutun.
+    </p>
+
+    <h2>Die Bedingung: kein Türsteher</h2>
+    <p>
+        Auf einer zentralisierten Plattform ist Moderation im Prinzip einfach: Ein Team prüft
+        Inhalte, wendet Richtlinien an, entfernt Verstöße. Das Ergebnis hängt vollständig von
+        der Qualität und Konsistenz dieses Teams und dieser Richtlinien ab — weshalb
+        zentralisierte Moderation eigene gravierende Schwächen hat. Aber der Mechanismus ist
+        klar.
+    </p>
+    <p>
+        In Hashiverse gibt es kein Moderationsteam. Es gibt kein Richtlinien-Gremium. Beiträge
+        werden von ihren Autoren signiert, auf unabhängigen Servern gespeichert und von
+        Clients abgerufen. Keine einzelne Entität hat die Autorität, einen Beitrag aus dem
+        Netzwerk zu löschen. Jeder Mechanismus, der diese Autorität einführt, führt das
+        Eigentumsproblem wieder ein.
+    </p>
+    <p>
+        Das Design muss also anders funktionieren: Es muss schädliche Inhalte teuer in der
+        Erstellung machen, schwer auffindbar und über die Zeit selbstbegrenzend — ohne dass
+        ein zentraler Akteur Einzelfall­entscheidungen trifft.
+    </p>
+
+    <h2>Wie die Schichten funktionieren</h2>
+    <p>
+        Hashiverse verfolgt einen geschichteten Ansatz, bei dem jede Schicht eine andere
+        Dimension des Problems adressiert und die Schichten sich gegenseitig verstärken:
+    </p>
+
+    <h3>Natürliches Verfallen</h3>
+    <p>
+        Inhalte in Hashiverse überleben, weil Menschen sie weiter lesen. Das Prinzip hinter
+        Heilung und Caching ist einfach: Daten, die es wert sind, repliziert zu werden — Daten,
+        die für jemanden, irgendwo, relevant sind — werden repliziert. Wenn ein Client einen
+        Beitrag abruft, prüft er, welchen Servern er fehlt, und schließt diese Lücken. Inhalte,
+        die Menschen weiter besuchen, werden weiter repliziert. Inhalte, die niemand besucht,
+        werden nicht mehr geheilt, und während die Server sich füllen und ihre
+        Verdrängungs­richtlinien anwenden, verschwinden vergessene Inhalte leise — ohne dass
+        jemand entscheiden muss, sie zu entfernen.
+    </p>
+    <p>
+        Das ist keine Zensur. Es ist derselbe Mechanismus, durch den ein Buch vergriffen geht,
+        eine Website verschwindet, wenn niemand die Domain verlängert, ein Gespräch vergessen
+        wird. Die meisten koordinierten Schäden sind akut — eine Belästigungs­kampagne, ein
+        Doxxing, eine falsche Anschuldigung. Sobald der unmittelbare Schaden seinen Lauf
+        genommen hat und die Menschen aufhören, sich damit zu beschäftigen, hört das Netzwerk
+        auf, ihn zu replizieren. Inhalte, die Bestand haben, haben das, weil sie weiter für
+        jemanden von Bedeutung sind.
+    </p>
+    <p>
+        Es gibt einen mexikanischen Spruch, der das perfekt einfängt:
+    </p>
+    <blockquote>
+        <p>
+            <em>Uno muere dos veces. La primera, cuando dejas de respirar. La segunda, cuando alguien pronuncia tu nombre por última vez.</em>
+            —
+            Man stirbt zweimal. Das erste Mal, wenn man aufhört zu atmen. Das zweite Mal, wenn jemand deinen Namen zum letzten Mal ausspricht.
+        </p>
+    </blockquote>
+
+    <h3>Proof-of-Work-Feedback</h3>
+    <p>
+        Nutzer können Inhalte signalisieren — Likes, Dislikes, Meldungen — und jedes Signal
+        erfordert eine kleine Proof-of-Work. Die Rechenanforderung macht Massen-Signal-Stuffing
+        teuer. Wichtiger noch: Die Qualität eines Signals wird an der dahinter­liegenden Arbeit
+        gemessen: Eine Meldung, die von mehr Berechnung gestützt wird, wiegt schwerer als eine
+        mit weniger. Das Ergebnis ist eine community-gewichtete Schadenskennzahl, die kein
+        einzelner Akteur leicht manipulieren kann.
+    </p>
+
+    <h3>Konfigurierbare Kategorien</h3>
+    <p>
+        Nutzer können konfigurieren, welche Schadens­kategorien sie gefiltert haben möchten:
+        Gewalt, Drohungen, Spam, Erwachsenen­inhalte, Selbstverletzung. CSAM wird am
+        aggressivsten gefiltert — ein nicht verhandelbarer Default. Andere Kategorien sind
+        standardmäßig gefiltert, können aber für Kontexte angepasst werden, in denen andere
+        Normen gelten (z. B. Plattformen für Erwachsenen­inhalte). Das respektiert, dass
+        verschiedene Communities unterschiedliche Standards haben, und behält gleichzeitig
+        eine harte Untergrenze gegen die schlimmsten Inhalte bei.
+    </p>
+
+    <h3>Friktion, keine Zensur</h3>
+    <p>
+        Statt markierte Inhalte vollständig zu verbergen, führt Hashiverse Friktion ein, die
+        proportional zur Schwere des Community-Feedbacks ist. Inhalte mit milden Downvote-
+        Signalen erfordern vielleicht ein paar Sekunden Verzögerung, bevor sie angezeigt
+        werden; Inhalte mit schweren Signalen erfordern vielleicht eine Minute Wartezeit. Das
+        bedeutet, dass die Inhalte nicht zensiert sind — wer sie wirklich sehen möchte, kann
+        es —, aber gelegentliches Browsen umgeht sie auf natürliche Weise. Die Friktion ist
+        temporär und sitzungsbasiert, sie summiert sich also nicht zu permanenten Sperren.
+    </p>
+
+    <h3>Bildbeschränkungen und Klassifizierer</h3>
+    <p>
+        Bilder in Hashtag- und Erwähnungs-Kontexten — wo Inhalte Personen erreichen, die
+        keinem konkreten Nutzer abonniert sind — werden standardmäßig automatisch
+        eingeschränkt.
+    </p>
+    <p>
+        Mit zunehmender Reife clientseitiger KI wird ein lokaler Nacktheits-Klassifizierer
+        (konkret <a href="https://github.com/infinitered/nsfwjs">NSFWJS</a>) eine weitere
+        Schicht bieten, ohne dass Inhalte zur Analyse an einen zentralen Dienst geschickt
+        werden müssen. Der Klassifizierer läuft lokal, die Entscheidung bleibt lokal.
+    </p>
+
+    <h2>Die ehrlichen Lücken</h2>
+    <p>
+        Diese Schichten beseitigen nicht jeden Schaden. Textbasierter Schaden — koordiniertes
+        Mobbing, gezielte Desinformation, raffinierte Betrügereien — ist ohne semantisches
+        Verständnis schwerer zu erkennen. Das Inhalts-Ablauf­fenster bedeutet, dass schwerer
+        Schaden Monate vor seinem Verfallen anhalten kann. Ohne zentralisierte
+        Inhaltsmoderation gibt es kein Pendant zu einer Abmahnung für dringende Situationen.
+    </p>
+    <p>
+        Hashiverse tut nicht so, als wäre das anders. Das sind echte Grenzen einer
+        Architektur, die sich weigert, eine zentrale Autorität einzuführen. Die Überzeugung
+        hinter dem Design lautet, dass die Schäden zentralisierter Inhaltskontrolle —
+        Unterdrückung, Verzerrung, abschreckende Effekte auf legitime Rede — mindestens so
+        schwer wiegen wie die Schäden, die zentrale Moderation verhindert, und dass ein
+        geschichteter, verteilter Ansatz auch dann verfolgenswert ist, wenn er unvollkommen
+        ist. Das Team arbeitet weiter daran, diese Mechanismen zu verbessern, ohne die
+        Kernarchitektur zu kompromittieren.
+    </p>
+</LoreDoc>

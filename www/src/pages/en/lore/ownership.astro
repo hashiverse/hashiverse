@@ -1,0 +1,85 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Resistance to Ownership">
+  <p>
+    In 2022, Twitter was acquired by a single individual and transformed, within weeks, into
+    something unrecognizable. The communities that had built their presence there had no vote,
+    no veto, no exit that didn't mean starting over from nothing. Everything they had built was
+    on land they didn't own.
+  </p>
+  <p>
+    This is the ownership problem. Any centralized platform, no matter how well-intentioned at
+    founding, is an acquisition target. Its values are contingent on its ownership. Its community
+    is hostage to whoever holds the keys.
+  </p>
+
+  <h2>Protocols versus platforms</h2>
+  <p>
+    The solution is architectural: build a protocol, not a platform. No one owns email. No
+    billionaire or government can acquire the web. These are open standards, implemented by many independent
+    actors, governed by no single entity. Anyone can implement them. Anyone can run a server.
+    No single failure point can take them down.
+  </p>
+  <p>
+    Hashiverse is designed on the same principle. It is an open protocol. The source code is
+    public. Anyone can run a server, and running a server gives you equal standing in the network
+    — there are no privileged nodes. Anyone can build a client. The network has no headquarters,
+    no parent company, no board of directors.
+  </p>
+
+  <h2>Making capture expensive</h2>
+  <p>
+    Open source alone is not enough. A well-funded actor could try to dominate the network by
+    running a large proportion of its nodes, shaping the peer topology in their favor. Hashiverse
+    makes this expensive in a specific way: server identity requires significant proof of work —
+    a few hours of computation per server. Spinning up millions of servers to dominate
+    the DHT ring is not just expensive in hardware; it is expensive in time, with the work
+    requirement scaling to be resistant to parallelization.
+  </p>
+  <p>
+    The Kademlia DHT ring distributes data across the nearest servers by hash distance. A
+    coordinated attacker would need to control a large fraction of the ring to meaningfully
+    censor or manipulate content — and every server in that position had to earn its place
+    through computation that cannot be faked.
+  </p>
+  <p>
+    There is a second layer of protection that compounds over time. Every time a client asks a
+    server to do something — fetch posts, store a post, answer a query — the client first does
+    a small proof of work on the server's behalf and submits it. The server accumulates these
+    contributions from all the clients that have ever used it. The better its accumulated proof
+    of work, the stronger its standing with its peers in the Kademlia ring. A server that has
+    been running for months and serving thousands of users has built up a reputation that a
+    newly minted fake server simply cannot replicate. Brand new servers, by contrast, have no
+    accumulated reputation and must do more work to be taken seriously by their peers. Time
+    itself becomes a defense: the longer the network has been running, the higher the bar a
+    would-be attacker has to clear to compete with established, trusted nodes.
+  </p>
+
+  <h2>Post-quantum resilience</h2>
+  <p>
+    Resistance to ownership includes resistance to future technological threats. The cryptographic
+    foundation of any identity system built on classical elliptic-curve signatures (like Ed25519)
+    will be breakable by sufficiently advanced quantum computers. If that happens on a centralized
+    platform, the operator patches the system and migrates users. In a decentralized protocol,
+    there is no operator to do that.
+  </p>
+  <p>
+    Hashiverse addresses this proactively. Every identity embeds commitments to two post-quantum
+    keys — ML-DSA (Dilithium) and FN-DSA (Falcon) — alongside the classical Ed25519 key. The
+    identity hash is computed from all three, so the identity itself is already bound to
+    post-quantum keys even before quantum computers are a realistic threat. When the time comes
+    to migrate, the upgrade path is already built in.
+  </p>
+
+  <h2>Governance that doesn't exist</h2>
+  <p>
+    The final layer of ownership resistance is the absence of a governance structure that could
+    be captured. There is no foundation to defund, no nonprofit to infiltrate, no company to
+    acquire. The protocol specification is in the open-source code. Running a server makes you
+    part of the network. The community decides collectively, through the clients they use and
+    the servers they run, what the network looks like. This is slower and messier than top-down
+    governance — and that is the point.
+  </p>
+</LoreDoc>

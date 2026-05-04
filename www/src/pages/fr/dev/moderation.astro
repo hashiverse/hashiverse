@@ -1,0 +1,160 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Modération du contenu">
+  <p>
+    La modération décentralisée est un problème non résolu. Hashiverse ne prétend pas l'avoir
+    pleinement résolu, mais il a une approche par couches, fondée sur des principes, qui traite
+    la plupart des modes de défaillance courants sans réintroduire d'autorité centrale. Chaque
+    couche est utile indépendamment ; ensemble, elles offrent une couverture significative.
+  </p>
+
+  <h2>Couche 1 : expiration organique par la réparation</h2>
+  <p>
+    Le contenu de Hashiverse survit aussi longtemps que les clients continuent de le récupérer.
+    Chaque fois qu'un client récupère un bucket de publications, il identifie les serveurs qui
+    en manquent et comble ces trous. Cela signifie que le contenu populaire et fréquemment
+    consulté est continuellement répliqué sur les serveurs les plus proches du réseau. Le
+    contenu que personne ne récupère cesse d'être réparé. À mesure que les serveurs se
+    remplissent et appliquent leurs politiques d'éviction LRU, le contenu non référencé est
+    silencieusement abandonné — sans décision centrale, sans avis de retrait, sans jugement
+    humain requis.
+  </p>
+  <p>
+    Le contenu qui perdure le fait parce qu'il reste intéressant pour quelqu'un. Le contenu qui
+    cause un préjudice aigu — campagne de harcèlement, désinformation ciblée — culmine
+    typiquement en engagement puis s'efface à mesure que l'épisode passe. Une fois que les
+    clients cessent de le récupérer, la réparation s'arrête, et le réseau l'oublie
+    naturellement. Un contenu nuisible véritablement persistant exigerait un intérêt humain
+    persistant, une barre bien plus difficile à tenir que le simple fait de publier quelque
+    chose une fois.
+  </p>
+
+  <h2>Couche 2 : retours pondérés par proof-of-work</h2>
+  <p>
+    Les utilisateurs peuvent signaler sur les publications via des retours typés : réactions
+    positives (j'aime, j'adore, etc.) et catégories de signalement incluant contenu sensible,
+    propos haineux, harcèlement, désinformation, spam et arnaque. Chaque signal porte un
+    niveau de proof-of-work. Le réseau maintient le signal de PoW maximum global pour chaque
+    paire (post_id, type_de_retour) et soigne ce maximum entre serveurs.
+  </p>
+  <p>
+    Les métriques de préjudice sont calculées à partir de l'agrégat des signaux de signalement,
+    pondérés par leur PoW. Les signaux à PoW élevée provenant de plusieurs utilisateurs
+    indépendants sont très difficiles à truquer : un adversaire devrait surpasser en calcul le
+    travail combiné d'une communauté qui s'intéresse à un morceau de contenu.
+  </p>
+
+  <h3>Signalement CSAM</h3>
+  <p>
+    Le matériel d'abus sexuel sur mineurs (CSAM) est une catégorie de retour distincte avec un
+    seuil de couverture côté client plus bas que les autres types de signalement — un montant
+    plus faible de signal PoW accumulé est requis avant que le client ne couvre le contenu.
+    Cependant, la mécanique sous-jacente de PoW est identique à tous les autres types de
+    retour : les signaleurs doivent toujours fournir un travail computationnel réel, qui est le
+    mécanisme principal de résistance Sybil.
+  </p>
+  <p>
+    Cette conception est un compromis délibéré. Tout mécanisme à seuil bas et action rapide
+    peut être instrumentalisé : un troll pourrait signaler à tort un contenu légitime comme
+    CSAM pour le censurer. L'exigence de PoW signifie que les campagnes massives de faux
+    signalements ont un coût réel et proportionnel, les rendant économiquement peu attrayantes
+    à grande échelle. La couverture n'est pas non plus irréversible — le spectateur conserve
+    la capacité de découvrir le contenu avec un avertissement fort — préservant l'autonomie de
+    l'utilisateur et empêchant qu'un seul faux signalement ne fasse taire une publication pour
+    tout le monde de manière permanente.
+  </p>
+  <p>
+    Quand un utilisateur soumet un signalement CSAM, le client affiche une boîte de dialogue de
+    confirmation avertissant que signaler faussement un CSAM est illégal dans de nombreuses
+    juridictions et détourne les ressources des forces de l'ordre des cas authentiques de
+    maltraitance d'enfants.
+  </p>
+  <p>
+    <strong>Source :</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>
+  </p>
+
+  <h2>Couche 3 : catégories configurables par l'utilisateur</h2>
+  <p>
+    Le CSAM est toujours filtré. C'est un défaut codé en dur, non remplaçable. Toutes les
+    autres catégories de préjudices ont des défauts configurables par l'utilisateur : violence,
+    menaces et spam sont filtrés par défaut ; le filtrage du contenu adulte est activé par
+    défaut mais peut être désactivé pour des contextes appropriés. La configuration vit dans
+    le client, pas sur un serveur, de sorte qu'aucun opérateur de serveur ne peut surcharger
+    les choix d'un utilisateur.
+  </p>
+
+  <h2>Couche 4 : révélation à friction proportionnelle</h2>
+  <p>
+    Plutôt que de masquer entièrement le contenu signalé — ce qui serait une forme de censure —
+    les clients introduisent un délai de révélation proportionnel à la sévérité du signal de
+    retour de la communauté :
+  </p>
+  <ul>
+    <li>Signal faible : délai de 0 à 5 secondes avant l'affichage du contenu</li>
+    <li>Signal modéré : 10 à 30 secondes</li>
+    <li>Signal fort : 30 à 60 secondes ou plus</li>
+  </ul>
+  <p>
+    Le délai est lié à la session : une fois que l'utilisateur a attendu le délai et vu un
+    morceau de contenu, on ne le lui redemande plus dans la même session. Cela respecte
+    l'autonomie de l'utilisateur — le contenu est accessible — tout en rendant l'exposition
+    occasionnelle à un contenu fortement signalé pratiquement difficile. La friction joue un
+    rôle similaire à la boîte de dialogue « êtes-vous sûr ? », mise à l'échelle de la
+    préoccupation de la communauté.
+  </p>
+
+  <h2>Couche 5 : restrictions d'images dans les contextes publics</h2>
+  <p>
+    Les images dans les buckets de hashtags et de mentions — contextes où le contenu remonte à
+    des utilisateurs qui ne se sont pas spécifiquement abonnés à l'auteur — sont restreintes
+    par défaut. Le fil personnel d'un utilisateur n'a pas une telle restriction. Cela limite le
+    rayon d'explosion d'un préjudice par image dans les contextes de découverte sans affecter
+    le contenu au sein des abonnements choisis.
+  </p>
+
+  <h2>Couche 6 : classifieurs embarqués (en attente)</h2>
+  <p>
+    Cette couche est planifiée mais pas encore implémentée, en attendant une maturité suffisante
+    des modèles d'IA côté client tournant dans le navigateur. L'intention est que le client
+    fasse tourner un classifieur de nudité localement — sans contenu envoyé à un service
+    central — et applique automatiquement un avertissement de contenu avant que le système de
+    retour communautaire par PoW n'ait eu le temps d'accumuler du signal. C'est
+    particulièrement précieux pour les contenus fraîchement publiés qui n'ont pas encore été
+    vus par assez d'utilisateurs pour déclencher les seuils de couverture.
+  </p>
+  <p>
+    Le candidat principal est <a href="https://github.com/infinitered/nsfwjs">NSFWJS</a>, qui
+    fait tourner une classification basée sur MobileNet entièrement dans le navigateur via
+    TensorFlow.js. À mesure que la qualité des modèles et les performances d'inférence du
+    navigateur s'améliorent, une approche par couches combinant NSFWJS pour un premier filtrage
+    rapide avec un modèle plus capable pour l'estimation d'âge est aussi à l'étude.
+  </p>
+
+  <h2>Interaction des couches</h2>
+  <p>
+    Les couches sont conçues pour interagir de manière constructive. Un morceau de contenu
+    nuisible qui entre dans le réseau rencontre immédiatement : un coût en PoW à la soumission
+    (cher à publier à grande échelle), des restrictions d'images dans les contextes de
+    découverte, une classification embarquée, et des retours communautaires qui accumulent un
+    poids en PoW au fil du temps et introduisent une friction croissante. Au bout de six mois,
+    le contenu expire entièrement. Aucune couche n'est suffisante à elle seule ; ensemble, elles
+    créent plusieurs barrières indépendantes qu'un adversaire doit franchir simultanément.
+  </p>
+
+  <h2>Angles morts connus</h2>
+  <p>
+    Le préjudice textuel qui ne déclenche pas les classifieurs d'images et n'accumule pas
+    rapidement de signalements communautaires — désinformation sophistiquée, grooming subtil,
+    menaces dépendantes du contexte — est le cas le plus difficile. La fenêtre de six mois
+    signifie qu'un préjudice sérieux peut persister pendant une durée inconfortable avant
+    expiration. Ce sont de vraies limites de l'architecture. Le travail continue pour
+    améliorer la détection dans les contraintes consistant à garder le système décentralisé et
+    le client comme arbitre de ce qui est affiché.
+  </p>
+  <p>
+    <strong>Source :</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>
+  </p>
+</DevDoc>

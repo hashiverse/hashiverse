@@ -1,0 +1,36 @@
+{
+  "site": {
+    "default_description": "Your decentralized P2P social network.",
+    "title_suffix": "Hashiverse",
+    "prerelease_label": "Prerelease"
+  },
+  "nav": {
+    "app": "App",
+    "lore": "Lore",
+    "dev": "Dev",
+    "github": "GitHub",
+    "language": "Language"
+  },
+  "lore_sidebar": {
+    "index": "Why Hashiverse?",
+    "sovereignty": "Data Sovereignty",
+    "advertising": "Freedom from Advertising",
+    "invisible_hand": "The Invisible Hand",
+    "ownership": "Resistance to Ownership",
+    "moderation": "Responsible Decentralization",
+    "competitors": "How Hashiverse Compares",
+    "contribute": "How to Contribute"
+  },
+  "dev_sidebar": {
+    "index": "Overview",
+    "cryptography": "Cryptographic Foundation",
+    "pow": "Proof of Work",
+    "network": "The DHT Network",
+    "posts": "Post Protocol",
+    "moderation": "Content Moderation",
+    "resilience": "Resilience & Self-Healing",
+    "future": "Future Directions",
+    "geeking_out": "Geeking Out",
+    "api_reference": "API Reference"
+  }
+}

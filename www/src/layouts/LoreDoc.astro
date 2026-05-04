@@ -1,5 +1,7 @@
 ---
-import Doc from './Doc.astro';
+import { getRelativeLocaleUrl } from "astro:i18n";
+import Doc from "./Doc.astro";
+import { strings_for } from "../i18n/strings";
 
 interface Props {
   title: string;
@@ -8,29 +10,34 @@ interface Props {
 
 const { title, description } = Astro.props;
 
+const locale = Astro.currentLocale ?? "en";
+const t = strings_for(locale);
+const url = (path: string) => getRelativeLocaleUrl(locale, path);
+
 const sidebar = [
-  { href: '/lore/', label: 'Why Hashiverse?' },
-  { href: '/lore/sovereignty', label: 'Data Sovereignty' },
-  { href: '/lore/advertising', label: 'Freedom from Advertising' },
-  { href: '/lore/invisible-hand', label: 'The Invisible Hand' },
-  { href: '/lore/ownership', label: 'Resistance to Ownership' },
-  { href: '/lore/moderation', label: 'Responsible Decentralization' },
-  { href: '/lore/competitors', label: 'How Hashiverse Compares' },
-  { href: '/lore/contribute', label: 'How to Contribute' },
+  { href: url("/lore/"), label: t.lore_sidebar.index },
+  { href: url("/lore/sovereignty"), label: t.lore_sidebar.sovereignty },
+  { href: url("/lore/advertising"), label: t.lore_sidebar.advertising },
+  { href: url("/lore/invisible-hand"), label: t.lore_sidebar.invisible_hand },
+  { href: url("/lore/ownership"), label: t.lore_sidebar.ownership },
+  { href: url("/lore/moderation"), label: t.lore_sidebar.moderation },
+  { href: url("/lore/competitors"), label: t.lore_sidebar.competitors },
+  { href: url("/lore/contribute"), label: t.lore_sidebar.contribute },
 ];
 
-const bannerMap: Record<string, string> = {
-  '/lore/': '/lore_banners/why-hashiverse.svg',
-  '/lore/sovereignty': '/lore_banners/data-sovereignty.svg',
-  '/lore/advertising': '/lore_banners/freedom-from-advertising.svg',
-  '/lore/invisible-hand': '/lore_banners/the-invisible-hand.svg',
-  '/lore/ownership': '/lore_banners/resistance-to-ownership.svg',
-  '/lore/moderation': '/lore_banners/responsible-decentralization.svg',
-  '/lore/competitors': '/lore_banners/how-hashiverse-compares.svg',
-  '/lore/contribute': '/lore_banners/how-to-contribute.svg',
+const banner_map: Record<string, string> = {
+  "/lore/": "/lore_banners/why-hashiverse.svg",
+  "/lore/sovereignty": "/lore_banners/data-sovereignty.svg",
+  "/lore/advertising": "/lore_banners/freedom-from-advertising.svg",
+  "/lore/invisible-hand": "/lore_banners/the-invisible-hand.svg",
+  "/lore/ownership": "/lore_banners/resistance-to-ownership.svg",
+  "/lore/moderation": "/lore_banners/responsible-decentralization.svg",
+  "/lore/competitors": "/lore_banners/how-hashiverse-compares.svg",
+  "/lore/contribute": "/lore_banners/how-to-contribute.svg",
 };
 
-const banner = bannerMap[Astro.url.pathname] ?? bannerMap[Astro.url.pathname.replace(/\/$/, '')] ?? undefined;
+const path_without_locale = Astro.url.pathname.replace(/^\/[a-z]{2}(\/|$)/, "/");
+const banner = banner_map[path_without_locale] ?? banner_map[path_without_locale.replace(/\/$/, "")] ?? undefined;
 ---
 
 <Doc title={title} description={description} sidebar={sidebar} banner={banner}>

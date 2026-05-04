@@ -1,0 +1,153 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Kryptografische Grundlage">
+  <p>
+    Jedes Versprechen, das Hashiverse zu Datensouveränität, Zensur­resistenz und
+    Eigentums­unabhängigkeit gibt, ist durch Kryptografie gedeckt. Das ist keine Fassade —
+    das ist der Grund, warum diese Versprechen halten. Die kryptografische Schicht zu
+    verstehen heißt, das Fundament zu verstehen, auf dem alles andere ruht.
+  </p>
+
+  <h2>Identität</h2>
+  <p>
+    Eine Hashiverse-Identität wird nicht von einem Server zugeteilt. Sie wird aus Schlüsseln
+    abgeleitet:
+  </p>
+  <pre><code>ID = Blake3(ed25519_pub || Blake3(Falcon_pub)[0..16] || Blake3(Dilithium_pub)[0..16])</code></pre>
+  <p>
+    Deine öffentliche ID ist ein 256-Bit-Hash aus drei öffentlichen Schlüsseln — einem
+    klassischen (Ed25519), zwei post-quantischen (FN-DSA/Falcon und ML-DSA/Dilithium). Die
+    16-Byte-Commitments zu den PQ-Schlüsseln binden sie schon jetzt in deine Identität,
+    bevor Quantencomputer eine praktische Bedrohung sind. Wenn die Quantenmigration
+    stattfindet, ist der Upgrade-Pfad bereits in jeder Identität im Netzwerk eingebettet.
+  </p>
+  <p>
+    Server-Identitäten funktionieren genauso, mit der zusätzlichen Anforderung, dass die ID
+    eine Proof-of-Work-Bedingung erfüllen muss (führender Null-Präfix im Hash). Das macht
+    die Erstellung einer Server-Identität rechen­intensiv und verhindert Sybil-Angriffe auf
+    den DHT-Ring.
+  </p>
+  <p>
+    Der private Ed25519-Signierschlüssel des Clients wird ausschließlich in der
+    <strong>sicheren Enklave der Web Crypto API</strong> des Browsers als nicht
+    extrahierbares <code>CryptoKey</code>-Objekt gehalten. Der Browser stellt nur eine
+    Signier­operation bereit — die Roh-Bytes des privaten Schlüssels sind weder für
+    JavaScript noch für das WASM-Modul oder anderen Code auf der Seite zugänglich. Es gibt
+    keinen Mechanismus, den privaten Schlüssel nach dem Import zu exportieren oder
+    abzurufen. Das Signieren geschieht innerhalb der kryptografischen Schicht des
+    Browsers; der Schlüssel verlässt sie nie.
+  </p>
+  <p>
+    Das ist eine bewusste Beschränkung, keine Einschränkung. Selbst wenn der WASM-Client
+    von Hashiverse vollständig kompromittiert wäre, könnte ein Angreifer höchstens die
+    Signier­operation im Namen des Opfers aufrufen — er könnte den Schlüssel nicht stehlen
+    und anderswo verwenden.
+  </p>
+  <p>
+    <strong>Quelle:</strong> <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a> —
+    Typen <code>Hash</code>, <code>Id</code>, <code>Signature</code>;
+    <a href={`${g.lib}/src/tools/server_id.rs`}><code>server_id.rs</code></a> für die
+    Proof-of-Work der Server-Identität.
+  </p>
+
+  <h2>Hybride Post-Quanten-Signaturen</h2>
+  <p>
+    Die Drei-Schlüssel-Identität ermöglicht einen progressiven Migrationspfad:
+  </p>
+  <ul>
+    <li>Heute: Beiträge werden mit Ed25519 signiert. Verifikation ist schnell und gut verstanden.</li>
+    <li>Wenn Ed25519 bedroht ist: primäres Signieren auf FN-DSA (Falcon) umstellen, das kleinere Signaturen als Dilithium hat.</li>
+    <li>Falls gitterbasierte Algorithmen später gebrochen werden: auf ML-DSA (Dilithium) als finale Schicht zurückgreifen.</li>
+  </ul>
+  <p>
+    SPHINCS+ wurde erwogen und verworfen: Seine Signaturen sind mehrere Kilobyte groß, was
+    für ein Beitrags­netzwerk mit hohem Durchsatz prohibitiv ist. Die Falcon+
+    Dilithium-Kombination liefert zwei unabhängige gitterbasierte Sicherheits­annahmen,
+    sodass beide gleichzeitig gebrochen werden müssten, damit die Identität kompromittiert
+    wird.
+  </p>
+  <p>
+    <strong>Quelle:</strong> <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a> kryptografische Primitiven;
+    <a href={`${g.lib}/src/protocol/posting/encoded_post.rs`}><code>encoded_post.rs</code></a> für die Auswahl des Signaturmechanismus pro Beitrag.
+  </p>
+
+  <h2>Hashing</h2>
+  <p>
+    Blake3 ist die primäre Hashfunktion — schnell, parallelisierbar und geeignet für
+    Prüfsummen, inhaltsadressierung und Schlüsselableitung. Für Proof-of-Work umfasst die
+    im Protokoll verfügbare Hash-Suite Blake2, Blake3, SHA2, SHA3, Whirlpool, Groestl und
+    Skein. Proof-of-Work verkettet mehrere Algorithmen in einer pseudozufälligen Sequenz,
+    was die ASIC-Resistenz erhöht, weil eine effiziente Co-Implementierung mehrerer
+    pfadabhängiger Algorithmen gleichzeitig erforderlich ist.
+  </p>
+  <p>
+    Alle Hash-Bibliotheken werden auch in Debug-Builds mit <code>opt-level=3</code>
+    kompiliert — das ist in den Profil-Überschreibungen der Workspace-<code>Cargo.toml</code>
+    konfiguriert, damit Test-Suiten nicht durch Hash-Berechnung gebremst werden.
+  </p>
+
+  <h2>Verschlüsselung im Ruhezustand</h2>
+  <p>
+    Auf Servern gespeicherte Beiträge werden mit ChaCha20-Poly1305 verschlüsselt. Der
+    Schlüssel wird aus einer Passphrase abgeleitet, die vom Bucket-Typ abhängt:
+  </p>
+  <ul>
+    <li><strong>Nutzer-Timeline</strong>: Passphrase ist die öffentliche ID des Nutzers</li>
+    <li><strong>Hashtag</strong>: Passphrase ist der Hashtag-Text in Kleinbuchstaben (ohne #)</li>
+    <li><strong>Erwähnung</strong>: Passphrase ist die öffentliche ID des erwähnten Nutzers</li>
+    <li><strong>Antwort</strong>: Passphrase ist die Inhalts-Signatur des ursprünglichen Beitrags</li>
+  </ul>
+  <p>
+    Ein eigenes Multi-Passphrase-Verschlüsselungs­schema, lose inspiriert von <code>age</code>,
+    bedeutet, dass ein einziger Beitrag, der mehrere Kontexte abdeckt — ein Hashtag-Beitrag,
+    der auch einen Nutzer erwähnt — mit einer beliebigen der Passphrasen entschlüsselt
+    werden kann. Server speichern verschlüsselte Bytes, die sie nicht lesen können. Es gibt
+    keinen Klartext auf der Server-Festplatte.
+  </p>
+  <p>
+    <strong>Quelle:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post.rs`}><code>encoded_post.rs</code></a>
+    für die Beitrags­verschlüsselung; <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a>
+    für die ChaCha20-Poly1305-Primitiven.
+  </p>
+
+  <h2>Signaturen auf allem</h2>
+  <p>
+    Jeder Beitrag wird von seinem Autor signiert. Jede Server­antwort wird vom liefernden
+    Server signiert. Jedes Bundle wird signiert. Signaturen sind keine optionalen
+    Metadaten — sie sind der Mechanismus, mit dem Clients Inhalten von nicht
+    vertrauens­würdigen Servern vertrauen können. Ein Client muss niemals einem Server
+    vertrauen; er vertraut der kryptografischen Signatur auf den Inhalten, die der Server
+    liefert.
+  </p>
+
+  <h2>Zwei Schichten Transport-Sicherheit</h2>
+  <p>
+    Hashiverse trennt Transport-Verschlüsselung von Protokoll-Sicherheit und behandelt sie
+    als unabhängige Anliegen:
+  </p>
+  <p>
+    <strong>Transportschicht (TLS):</strong> Server-zu-Server- und
+    Client-zu-Server-Kommunikation läuft über HTTPS mit TLS-Zertifikaten von <strong>Let's
+    Encrypt</strong>. Da Hashiverse-Server eher per IP-Adresse als per Domainname
+    identifiziert werden, bezieht der Server ein reines IP-TLS-Zertifikat über das
+    ACME-Protokoll. Das verschlüsselt den Datenverkehr im Transit und verhindert passives
+    Mithören auf der Leitung.
+  </p>
+  <p>
+    <strong>Protokollschicht (Hashiverse-Kryptografie):</strong> TLS allein reicht für ein
+    vertrauensloses, dezentrales Netzwerk nicht — ein kompromittierter oder bösartiger
+    Server könnte über eine gültige TLS-Verbindung dennoch manipulierte Inhalte ausliefern.
+    Hashiverses eigene Kryptografie liefert die tiefere Garantie: Jeder Inhalt wird mit den
+    Schlüsseln seines Autors signiert, Beiträge werden im Ruhezustand mit Schlüsseln
+    verschlüsselt, die der Server nie hält, und Server-Identitäten sind an
+    Proof-of-Work-Commitments gebunden. Ein Client muss keinem Server vertrauen; er prüft
+    Inhalte direkt gegen kryptografische Signaturen, unabhängig davon, wie sie ankamen.
+  </p>
+  <p>
+    TLS kümmert sich ums Netzwerk; die Hashiverse-Kryptografie kümmert sich um die
+    Wahrheit.
+  </p>
+</DevDoc>

@@ -1,0 +1,122 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Protocolo de publicaciones">
+  <p>
+    Una publicación en Hashiverse es HTML — escrita en el navegador con un editor de
+    texto enriquecido, saneada con DOMPurify antes de mostrarse. Entre la autoría y la
+    visualización hay un pipeline de compresión, cifrado, firma, envío en dos fases,
+    enrutamiento DHT y agregación en bundles. Esta página sigue una publicación a lo
+    largo de ese pipeline.
+  </p>
+
+  <h2>La publicación codificada</h2>
+  <p>
+    <code>EncodedPostV1</code> es el formato de cable de una publicación individual.
+    Contiene:
+  </p>
+  <ul>
+    <li><strong>header</strong>: bytes de la clave de verificación, bytes del compromiso post-cuántico, timestamp, longitud de la publicación y <code>linked_base_ids</code> — referencias a publicaciones anteriores a las que esta responde o sobre las que se apoya.</li>
+    <li><strong>signature</strong>: firma Ed25519 (o PQ) sobre los hashes del header y de la publicación.</li>
+    <li><strong>post</strong>: el contenido HTML, comprimido con Brotli y cifrado.</li>
+    <li><strong>post_id</strong>: hash Blake3 de la firma — una dirección de contenido estable y verificable.</li>
+  </ul>
+  <p>
+    El cifrado usa varias passphrases — una por cada contexto en el que aparece la
+    publicación — mediante un esquema personalizado de varias claves inspirado en el
+    formato de cifrado <code>age</code>. Una publicación que está a la vez en la
+    cronología de un usuario y bajo un hashtag se cifra con el identificador público del
+    usuario y la cadena del hashtag como passphrases. Cualquiera de las claves la
+    descifra. Los servidores que guardan los bytes cifrados no pueden leer ninguna de
+    ellas.
+  </p>
+
+  <h2>Envío: Claim y luego Commit</h2>
+  <p>
+    El envío de publicaciones es un protocolo en dos fases:
+  </p>
+  <ol>
+    <li>
+      <strong>SubmitClaim</strong>: el cliente envía una solicitud de claim con PoW. El
+      servidor valida la PoW y, si el ID de publicación no está ya presente, emite un
+      token que concede permiso para hacer commit.
+    </li>
+    <li>
+      <strong>SubmitCommit</strong>: el cliente envía los bytes reales de la publicación
+      con el token. El servidor almacena la publicación y devuelve una firma de
+      confirmación.
+    </li>
+  </ol>
+  <p>
+    Separar claim de commit evita ataques de inundación de payload: un servidor puede
+    rechazar claims maliciosos a bajo coste (basta verificar la PoW) antes de aceptar
+    cualquier payload grande. La firma de confirmación del servidor es la prueba para
+    el cliente de que la publicación fue aceptada.
+  </p>
+  <p>
+    <strong>Fuente:</strong> <a href={`${g.server}/src/server/handlers/`}><code>hashiverse-server/src/server/handlers/</code></a>
+  </p>
+
+  <h2>Bundles y buckets</h2>
+  <p>
+    Las publicaciones no se almacenan ni recuperan individualmente — se agrupan en
+    objetos <code>EncodedPostBundleV1</code>, un bundle por bucket por servidor. Un
+    bundle contiene unas 20 publicaciones de un ID de ubicación concreto (una ventana
+    temporal específica para un usuario, hashtag o contexto de respuesta determinado),
+    pero ese número puede ser mayor por la reparación y los retrasos de consistencia
+    eventual. Los bundles los firma el par que sirve.
+  </p>
+  <p>
+    Recuperar la cronología de un usuario significa recorrer la jerarquía de buckets de
+    forma recursiva: empezar por el bucket mensual, profundizar en el semanal, diario,
+    horario y buckets más finos donde existen publicaciones. El
+    <code>RecursiveBucketVisitor</code> gestiona esto con un callback que decide en cada
+    nivel si descender a granularidad más fina o saltar, permitiendo paginación
+    eficiente incluso en cronologías dispersas.
+  </p>
+  <p>
+    <strong>Fuente:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_bundle.rs`}><code>encoded_post_bundle.rs</code></a>,
+    <a href={`${g.lib}/src/client/timeline/`}><code>hashiverse-lib/src/client/timeline/</code></a>
+  </p>
+
+  <h2>Tipos de bucket</h2>
+  <p>
+    Cuatro (al momento de escribir) tipos de bucket determinan cómo se indexan y
+    descubren las publicaciones:
+  </p>
+  <ul>
+    <li><strong>User (0)</strong>: la cronología personal del autor</li>
+    <li><strong>Hashtag (1)</strong>: publicaciones que contienen un hashtag dado</li>
+    <li><strong>Mention (2)</strong>: publicaciones que mencionan a un usuario concreto</li>
+    <li><strong>ReplyToPost (3)</strong>: publicaciones que responden a una publicación concreta</li>
+  </ul>
+  <p>
+    Una misma publicación puede aparecer en varios buckets simultáneamente, cada uno
+    cifrado con la passphrase apropiada para ese bucket.
+  </p>
+  <p>
+    <strong>Fuente:</strong> <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a>
+  </p>
+
+  <h2>Almacenamiento</h2>
+  <p>
+    En el servidor, los bundles de publicaciones se persisten en disco, mientras que sus
+    metadatos se persisten en <strong>fjall</strong> — un almacén clave-valor embebido,
+    en Rust puro, con compactación automática y buen rendimiento de escritura. Se eligió
+    fjall frente a redb y sled por su trayectoria de mantenimiento y simplicidad
+    operativa. Las publicaciones se almacenan como bytes comprimidos con Brotli y
+    cifrados.
+  </p>
+  <p>
+    En el cliente del navegador, las publicaciones se cachean en <strong>IndexedDB</strong>
+    a través de <code>indexed_db_futures</code>, con un stub en memoria para pruebas.
+    Cada categoría de datos del lado del cliente se cifra en reposo con una clave
+    distinta, elegida para encajar con su modelo de acceso.
+  </p>
+  <p>
+    <strong>Fuente:</strong> <a href={`${g.server}/src/environment/`}><code>hashiverse-server/src/environment/</code></a>,
+    <a href={`${g.wasm}/src/wasm_client_storage.rs`}><code>wasm_client_storage.rs</code></a>
+  </p>
+</DevDoc>

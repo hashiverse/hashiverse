@@ -1,0 +1,91 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Vue d'ensemble pour développeurs">
+  <p>
+    Hashiverse est un réseau social P2P décentralisé et résistant à la cryptographie post-quantique.
+    Les ambitions décrites dans la section <a href="/fr/lore/">Vision</a> se traduisent
+    directement en décisions techniques qu'il vaut la peine de comprendre avant de plonger dans
+    le code. Cette section couvre ces décisions : pourquoi elles ont été prises, ce qu'elles
+    coûtent, et où elles vivent dans le code source.
+  </p>
+
+  <h2>Organisation du dépôt</h2>
+  <pre><code>hashiverse/
+├── hashiverse-rust/                   Workspace Rust (nightly)
+│   ├── hashiverse-lib/                Protocole de base — natif + WASM
+│   ├── hashiverse-server-lib/         Bibliothèque serveur (infra réutilisable)
+│   ├── hashiverse-server/             Binaire serveur (fin emballage)
+│   ├── hashiverse-client-wasm/        Wrapper WASM navigateur
+│   └── hashiverse-integration-tests/  Tests bout-en-bout
+├── hashiverse-client-web/             SPA TypeScript / React 19
+└── www/                               Ce site (Astro)</code></pre>
+
+  <h2>La conception en deux couches</h2>
+  <p>
+    <strong>hashiverse-lib</strong> est le protocole. Il compile en code natif (pour le serveur)
+    et en WebAssembly (pour le client navigateur). Toute la cryptographie, la logique DHT, le
+    codage des publications et l'API client vivent ici. Toute plateforme capable d'exécuter du
+    WASM ou du Rust natif peut être un participant à part entière du réseau.
+  </p>
+  <p>
+    <strong>hashiverse-client-web</strong> est le client navigateur de référence — une SPA
+    React 19 qui charge le client WASM dans un Web Worker, gardant le thread principal libre.
+    Elle parle au module WASM via une interface de passage de messages ; la logique de protocole
+    qu'elle appelle est identique à celle qui tourne nativement sur le serveur.
+  </p>
+
+  <h2>Quatre modules dans hashiverse-lib</h2>
+  <ul>
+    <li>
+      <strong>transport/</strong> — Traits abstraits (<code>TransportFactory</code>,
+      <code>TransportServer</code>, <code>TransportServerHandler</code>) avec deux
+      implémentations : en mémoire (pour les tests) et HTTP/TCP (pour la production). On peut
+      changer de transport sans modifier la logique du protocole.
+    </li>
+    <li>
+      <strong>protocol/</strong> — Encodage/décodage des paquets RPC avec proof-of-work et
+      compression, structures des pairs, types de requêtes/réponses, structures de données pour
+      les publications et les bundles.
+    </li>
+    <li>
+      <strong>client/</strong> — API <code>HashiverseClient</code>, suivi des pairs, gestion des
+      bundles de publications, fil avec parcours récursif des buckets, et traits enfichables
+      <code>ClientStorage</code> / <code>KeyLockerManager</code>.
+    </li>
+    <li>
+      <strong>tools/</strong> — Types de base (<code>Hash</code>, <code>Id</code>,
+      <code>Signature</code>), primitives cryptographiques, proof-of-work, abstraction
+      <code>TimeProvider</code>, et configuration du protocole.
+    </li>
+  </ul>
+
+  <h2>Par où commencer</h2>
+  <p>
+    Si vous découvrez la base de code, les meilleurs points d'entrée sont :
+  </p>
+  <ul>
+    <li>
+      <a href={`${g.lib}/src/lib.rs`}><code>hashiverse-lib/src/lib.rs</code></a> — la carte des
+      modules. Quatre modules de premier niveau, chacun à la portée clairement délimitée.
+    </li>
+    <li>
+      <a href={`${g.lib}/src/client/mod.rs`}><code>hashiverse-lib/src/client/mod.rs</code></a> —
+      l'API client publique. La surface d'interaction avec laquelle un développeur qui bâtit sur
+      le protocole travaille.
+    </li>
+    <li>
+      <a href={`${g.integrationTests}/tests/`}><code>hashiverse-integration-tests/tests/</code></a>
+      — tests bout-en-bout qui démarrent en mémoire des topologies de serveurs réelles et
+      exercent toute la pile du protocole. Les lire est la manière la plus rapide de comprendre
+      comment les pièces s'assemblent.
+    </li>
+  </ul>
+  <p>
+    Les sections de ce guide développeur couvrent chacune un domaine de conception spécifique.
+    Chacune renvoie aux fichiers source pertinents pour que vous puissiez suivre les idées
+    directement dans le code.
+  </p>
+</DevDoc>

@@ -1,0 +1,70 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Data Sovereignty">
+  <p>
+    When you post on a centralized platform, you are not publishing — you are depositing. The
+    content belongs to the platform. The platform decides whether it stays up. The platform decides
+    who can see it, when they can see it, and under what circumstances it disappears. You are a
+    tenant, not an owner, and the terms of your tenancy can change at any moment without notice
+    or appeal.
+  </p>
+  <p>
+    Data sovereignty means something more fundamental: your content, your identity, and your
+    relationships belong to you in a way that cannot be unilaterally revoked.
+  </p>
+
+  <h2>Identity you cannot lose</h2>
+  <p>
+    In Hashiverse, your identity is a cryptographic key pair generated on your own device. Your
+    public ID — the hash of your public keys — is mathematically derived from keys that only you
+    hold. No server issued it to you. No company can revoke it. No account suspension can take it
+    away.
+  </p>
+  <p>
+    When you post, you sign the content with your private key. Anyone, anywhere on the network,
+    can verify that signature without asking any central authority. The authenticity of your posts
+    is provable by mathematics, not by a company's database.
+  </p>
+
+  <h2>Content that cannot be erased</h2>
+  <p>
+    Your posts are stored redundantly across the nearest nodes in a Kademlia distributed hash
+    table. There is no single server that holds your data. There is no master database to delete
+    your record from. When you publish something, it propagates across independent servers run by
+    independent people. Taking it down would require coordinating a majority of those servers —
+    a coordination that is structurally difficult and economically irrational for any single actor.
+  </p>
+  <p>
+    This is not simply replication. The network actively heals itself. If a node goes offline
+    or loses data, the surrounding nodes detect the gap and replicate the missing content. A
+    client fetching posts from multiple servers will automatically identify which servers are
+    missing posts and arrange for those servers to receive what they lack — without any central
+    orchestration.
+  </p>
+
+  <h2>Encryption at rest</h2>
+  <p>
+    Posts stored on servers are encrypted. The encryption key is derived from the context of the
+    post: your own public ID for your personal timeline, the hashtag name for hashtag buckets,
+    the recipient's ID for mentions. A server stores content it cannot read. It cannot mine your
+    posts for targeting signals. It cannot sell insight into what you write or who you interact
+    with.
+  </p>
+  <p>
+    This is plausible deniability built into the architecture. A server operator cannot be
+    compelled to hand over readable content because they do not have it. The cleartext exists
+    only in clients — in your browser, on your device.
+  </p>
+
+  <h2>Keys you cannot be locked out of</h2>
+  <p>
+    The hardest problem in self-sovereign identity is key recovery. If your private key is lost,
+    you lose your identity. Hashiverse is working toward recovery mechanisms that preserve
+    sovereignty without sacrificing it: Shamir's secret sharing (split your key across multiple
+    trusted parties, require M-of-N to recover), hardware token support, and delegated signing
+    keys that let you operate from multiple devices without exposing your root key. These are
+    not afterthoughts — they are a prerequisite for sovereignty to be real rather than theoretical.
+  </p>
+</LoreDoc>

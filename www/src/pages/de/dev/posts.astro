@@ -1,0 +1,120 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Beitragsprotokoll">
+  <p>
+    Ein Beitrag in Hashiverse ist HTML — im Browser mit einem Rich-Text-Editor verfasst, mit
+    DOMPurify vor der Anzeige bereinigt. Zwischen Verfassen und Anzeige liegt eine Pipeline
+    aus Kompression, Verschlüsselung, Signatur, Zwei-Phasen-Einreichung, DHT-Routing und
+    Bundle-Aggregation. Diese Seite verfolgt einen Beitrag durch diese Pipeline.
+  </p>
+
+  <h2>Der kodierte Beitrag</h2>
+  <p>
+    <code>EncodedPostV1</code> ist das Drahtformat für einen einzelnen Beitrag. Er enthält:
+  </p>
+  <ul>
+    <li><strong>header</strong>: Bytes des Verifikationsschlüssels, Bytes des Post-Quanten-Commitments, Timestamp, Beitragslänge und <code>linked_base_ids</code> — Verweise auf vorherige Beiträge, auf die dieser Beitrag antwortet oder aufbaut.</li>
+    <li><strong>signature</strong>: Ed25519- (oder PQ-)Signatur über Header und Beitragshashes.</li>
+    <li><strong>post</strong>: der HTML-Inhalt, Brotli-komprimiert und verschlüsselt.</li>
+    <li><strong>post_id</strong>: Blake3-Hash der Signatur — eine stabile, verifizierbare Inhaltsadresse.</li>
+  </ul>
+  <p>
+    Die Verschlüsselung verwendet mehrere Passphrasen — eine pro Kontext, in dem der
+    Beitrag erscheint — über ein eigenes Mehrschlüssel-Schema, inspiriert vom
+    <code>age</code>-Verschlüsselungs­format. Ein Beitrag, der sowohl in der Timeline eines
+    Nutzers als auch unter einem Hashtag erscheint, wird mit der öffentlichen ID des
+    Nutzers und dem Hashtag-String als Passphrasen verschlüsselt. Jede der Schlüssel
+    entschlüsselt ihn. Server, die die verschlüsselten Bytes halten, können keine davon
+    lesen.
+  </p>
+
+  <h2>Einreichung: Claim, dann Commit</h2>
+  <p>
+    Die Beitragseinreichung ist ein Zwei-Phasen-Protokoll:
+  </p>
+  <ol>
+    <li>
+      <strong>SubmitClaim</strong>: Der Client sendet eine Claim-Anfrage mit PoW. Der
+      Server validiert die PoW und gibt, wenn die Beitrags-ID nicht bereits existiert, ein
+      Token aus, das die Erlaubnis zum Commit gewährt.
+    </li>
+    <li>
+      <strong>SubmitCommit</strong>: Der Client sendet die eigentlichen Beitrags-Bytes mit
+      dem Token. Der Server speichert den Beitrag und gibt eine Bestätigungs­signatur
+      zurück.
+    </li>
+  </ol>
+  <p>
+    Die Trennung von Claim und Commit verhindert Nutzlast-Flutangriffe: Ein Server kann
+    böswillige Claims günstig ablehnen (nur die PoW prüfen), bevor er eine große Nutzlast
+    annimmt. Die Bestätigungs­signatur des Servers ist der Beweis des Clients, dass der
+    Beitrag akzeptiert wurde.
+  </p>
+  <p>
+    <strong>Quelle:</strong> <a href={`${g.server}/src/server/handlers/`}><code>hashiverse-server/src/server/handlers/</code></a>
+  </p>
+
+  <h2>Bundles und Buckets</h2>
+  <p>
+    Beiträge werden weder einzeln gespeichert noch einzeln abgerufen — sie werden in
+    <code>EncodedPostBundleV1</code>-Objekte gruppiert, ein Bundle pro Bucket pro Server.
+    Ein Bundle enthält etwa 20 Beiträge aus einer bestimmten Standort-ID (ein konkretes
+    Zeitfenster für einen konkreten Nutzer, Hashtag oder Antwortkontext), aber diese Zahl
+    kann mit Heilung und eventuell konsistenten Verzögerungen größer werden. Bundles
+    werden vom liefernden Peer signiert.
+  </p>
+  <p>
+    Die Timeline eines Nutzers abzurufen bedeutet, die Bucket-Hierarchie rekursiv zu
+    durchlaufen: mit dem Monats-Bucket beginnen, in das wöchentliche, tägliche, stündliche
+    und feinere Buckets absteigen, wo Beiträge existieren. Der
+    <code>RecursiveBucketVisitor</code> handhabt das mit einem Callback, der auf jeder
+    Ebene entscheidet, ob in feinere Granularität abzusteigen ist oder ob übersprungen
+    wird, was effiziente Paginierung selbst über spärliche Timelines hinweg erlaubt.
+  </p>
+  <p>
+    <strong>Quelle:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_bundle.rs`}><code>encoded_post_bundle.rs</code></a>,
+    <a href={`${g.lib}/src/client/timeline/`}><code>hashiverse-lib/src/client/timeline/</code></a>
+  </p>
+
+  <h2>Bucket-Typen</h2>
+  <p>
+    Vier (zum Zeitpunkt des Schreibens) Bucket-Typen bestimmen, wie Beiträge indiziert und
+    entdeckt werden:
+  </p>
+  <ul>
+    <li><strong>User (0)</strong>: die persönliche Timeline des Autors</li>
+    <li><strong>Hashtag (1)</strong>: Beiträge, die einen bestimmten Hashtag enthalten</li>
+    <li><strong>Mention (2)</strong>: Beiträge, die einen bestimmten Nutzer erwähnen</li>
+    <li><strong>ReplyToPost (3)</strong>: Beiträge, die auf einen bestimmten Beitrag antworten</li>
+  </ul>
+  <p>
+    Ein einzelner Beitrag kann gleichzeitig in mehreren Buckets erscheinen, jeweils mit
+    der für diesen Bucket passenden Passphrase verschlüsselt.
+  </p>
+  <p>
+    <strong>Quelle:</strong> <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a>
+  </p>
+
+  <h2>Speicherung</h2>
+  <p>
+    Auf dem Server werden Beitrags-Bundles auf die Festplatte persistiert, während ihre
+    Metadaten in <strong>fjall</strong> persistiert werden — einem in reinem Rust
+    geschriebenen, eingebetteten Schlüssel-Wert-Speicher mit automatischer Verdichtung und
+    gutem Schreib­durchsatz. fjall wurde gegenüber redb und sled wegen seiner Wartungs­bilanz
+    und betrieblichen Einfachheit gewählt. Beiträge werden als Brotli-komprimierte,
+    verschlüsselte Bytes gespeichert.
+  </p>
+  <p>
+    Im Browser-Client werden Beiträge in <strong>IndexedDB</strong> über
+    <code>indexed_db_futures</code> zwischengespeichert, mit einem In-Memory-Stub für
+    Tests. Jede Kategorie clientseitiger Daten wird im Ruhezustand mit einem anderen
+    Schlüssel verschlüsselt, gewählt passend zu ihrem Zugriffsmodell.
+  </p>
+  <p>
+    <strong>Quelle:</strong> <a href={`${g.server}/src/environment/`}><code>hashiverse-server/src/environment/</code></a>,
+    <a href={`${g.wasm}/src/wasm_client_storage.rs`}><code>wasm_client_storage.rs</code></a>
+  </p>
+</DevDoc>

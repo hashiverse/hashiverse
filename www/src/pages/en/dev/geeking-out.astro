@@ -1,0 +1,341 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Geeking Out">
+    <p>
+        The most fun thing about building Hashiverse is that it couldn't be built like any traditional software.
+        It's absolute independence from any sovereign government or business meant that we could not depend on
+        centralised cloud providers or servers or databases. Hell - not even DNS and standard web certificates!
+    </p>
+    <p>
+        Anyone can modify the source code of the servers
+        or the clients and participate in the Hashiverse protocol,
+        so even the protocol itself has to be immune to bad actors.
+    </p>
+    <p>
+        Here are some of the implementation details that we particularly enjoy about Hashiverse. Each one
+        points to the source so you can follow the idea straight into the code.
+    </p>
+
+    <h2>Likes and dislikes count themselves &mdash; no central servers required</h2>
+    <p>
+        Counting in a distributed network is disgusting. We turn to statistics to do distributed
+        counting for our feedback mechanisms. Each feedback signal carries its own PoW, and every
+        additional PoW bit doubles the estimated number of feedback clicks. Clients merge
+        feedback from multiple servers by taking the strongest signal per post, then heal weaker
+        peers. The network converges without any coordinator. We don't care about exact counts
+        &mdash; at large enough numbers we're in the right statistical ballpark, and it's damned
+        tough to game.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>,
+        <a href={`${g.lib}/src/client/post_bundle/post_bundle_feedback_healing.rs`}><code>post_bundle_feedback_healing.rs</code></a>
+    </p>
+
+    <h2>A viral post recruits the entire network as its CDN</h2>
+    <p>
+        When a server sees enough fetch requests for the same content, it starts caching it.
+        The fetching client uploads the data to populate that cache. For a viral post, every
+        server along every client's lookup path becomes a cache node. The more popular the
+        content, the more servers cache it &mdash; the network self-scales.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.serverLib}/src/server/post_bundle_caching.rs`}><code>post_bundle_caching.rs</code></a>
+    </p>
+
+    <h2>Trending hashtags emerge from thin air</h2>
+    <p>
+        No central counters. Since "trending" means many users are posting, any random
+        server's local view already approximates the global truth. Each server tracks unique
+        authors per hashtag using a tiny probabilistic counter. Counts are homed to the poster's
+        server &mdash; so you can only inflate your own server's count, and even then, the same
+        author posting 1,000 times counts as one. This means that making a hashtag trend is
+        almost impossible to game.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.serverLib}/src/server/handlers/dispatch.rs`}><code>dispatch.rs</code></a>,
+        <a href={`${g.lib}/src/tools/hyper_log_log.rs`}><code>hyper_log_log.rs</code></a>
+    </p>
+
+    <h2>Forgotten content dies of neglect, not old age</h2>
+    <p>
+        No TTL. No expiry timer. When a server's storage fills up, it evicts the
+        least-recently-accessed content. Popular content gets touched constantly and survives
+        indefinitely. Content nobody reads quietly disappears through natural selection by
+        access pattern.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.serverLib}/src/environment/environment.rs`}><code>environment.rs</code></a>
+    </p>
+
+    <h2>Healing only happens when someone cares</h2>
+    <p>
+        When a client fetches content from multiple servers and finds one is missing posts
+        that another has, it heals the gap &mdash; but only because it was reading. Content
+        nobody reads never gets healed. Content under active consumption gets healed every time
+        a client fetches it. Readership is the replication factor.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/client/post_bundle/post_bundle_healing.rs`}><code>post_bundle_healing.rs</code></a>
+    </p>
+
+    <h2>Bootstrapping trusts nobody &mdash; not even DNS</h2>
+    <p>
+        Three bootstrap domains across three regions, each resolved through three independent
+        DNS-over-HTTPS providers with DNSSEC validation. Results are deduplicated and shuffled.
+        Even then, every peer received must pass full cryptographic verification before the
+        client trusts it. A compromised DNS provider can't inject fake peers because they can't
+        forge the billions of hashes each server identity requires.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/transport/bootstrap_provider/dnssec_bootstrap_provider.rs`}><code>dnssec_bootstrap_provider.rs</code></a>,
+        <a href={`${g.lib}/src/client/peer_tracker/peer_tracker.rs`}><code>peer_tracker.rs</code></a>
+    </p>
+
+    <h2>TLS certificates for raw IP addresses &mdash; no DNS required</h2>
+    <p>
+        Browsers refuse HTTPS to a bare IP unless the certificate covers that IP. Traditional
+        CAs only issued certs for domain names &mdash; which would make every server dependent
+        on DNS. In late 2025, Let's Encrypt began issuing IP certificates. We were holding our
+        breath for this. Each server auto-provisions and renews its own IP certificate in the
+        background. Browser clients can walk the DHT directly by IP over trusted HTTPS.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.serverLib}/src/network/transport/https_transport_cert_refresher.rs`}><code>https_transport_cert_refresher.rs</code></a>
+    </p>
+
+    <h2>Your spam filter runs on thermodynamics, not databases</h2>
+    <p>
+        Every RPC envelope carries a proof-of-work solution. Servers reject anything below
+        threshold before even parsing the payload. No CAPTCHA, no rate-limit database, no account
+        verification. The cost is invisible to a legitimate user but bankrupts a spammer. And
+        this PoW additionally serves to strengthen the reputation of the servers to help fend
+        off bad actors.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/protocol/rpc/rpc_request.rs`}><code>rpc_request.rs</code></a>
+    </p>
+
+    <h2>Sensitive endpoints cost exponentially more to call (and spam)</h2>
+    <p>
+        A routine RPC costs ~65K hashes. Talking to an unknown server costs 4&times; more.
+        Posting costs 16&times; baseline. Feedback costs 32&times;. Creating a server identity
+        costs billions hashes (hours of work). Each layer is scaled precisely to its abuse
+        potential.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a>
+    </p>
+
+    <h2>Cache radius expands like a shockwave</h2>
+    <p>
+        Clients track how far out from the origin servers cached data has propagated. Each
+        cache hit pushes the radius further. Future lookups start beyond the radius, hitting
+        fresh servers instead of hammering the origin. Popular content radiates outward, meaning
+        other clients hit cached data early in their walk. Obscure content stays local and
+        uncached. No configuration, no tuning &mdash; the protocol adapts by simple observation.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/client/caching/cache_radius_tracker.rs`}><code>cache_radius_tracker.rs</code></a>
+    </p>
+
+    <h2>Multiple levels of post bucket granularity tame the power law</h2>
+    <p>
+        Year &rarr; month &rarr; week &rarr; day &rarr; 6 hours &rarr; 1 hour &rarr; 15 min
+        &rarr; 5 min &rarr; 1 min. A user who posts once a month costs one coarse bucket
+        fetch. A user who posts 100 times a day drills into minute-level buckets fetched in
+        parallel. Same protocol, same code, wildly different load profiles handled gracefully.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a>
+    </p>
+
+    <h2>Full buckets split &mdash; they don't break</h2>
+    <p>
+        When a timeline bucket fills up, it seals. Clients see the flag and drill into
+        finer-grained children. A trending hashtag cascades from hourly to 15-minute to
+        1-minute buckets as volume spikes, automatically spreading load across different servers.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.serverLib}/src/server/handlers/dispatch.rs`}><code>dispatch.rs</code></a>,
+        <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a>
+    </p>
+
+    <h2>One codebase, every platform &mdash; for real</h2>
+    <p>
+        <code>hashiverse-lib</code> compiles to native Rust (server) and WebAssembly (browser).
+        The protocol logic, cryptography, and client API are the same code running in both
+        environments. The browser loads it in a Web Worker so the main thread never blocks.
+        When you test the server, you're testing the same code the browser runs.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={g.lib}><code>hashiverse-lib/</code></a>,
+        <a href={g.wasm}><code>hashiverse-client-wasm/</code></a>
+    </p>
+
+    <h2>100-server integration tests finish in seconds</h2>
+    <p>
+        In-memory transport replaces HTTP &mdash; zero network latency, no ports, no cleanup.
+        Time runs at 300&times; real speed, compressing 30 minutes of peer discovery into 6
+        wall-clock seconds. 100 servers, 3 clients, full bootstrap, post submission, healing,
+        and verification &mdash; one process, under 30 seconds.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.integrationTests}/tests/client_meets_servers.rs`}><code>client_meets_servers.rs</code></a>
+    </p>
+
+    <h2>ASICs begone! The PoW chain is self-referential</h2>
+    <p>
+        Five rounds of chained hashing across 17 state-of-the-art hashing algorithms. Each round's algorithm and
+        repetition count are derived from the previous round's output. The sequence is
+        data-dependent &mdash; an ASIC designed to be fast at one algorithm gains nothing if the chain routes
+        through five others.  We look forward to the day Hashiverse is so successful that custom ASICs
+        become economical enough to thwart it.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/tools/pow.rs`}><code>pow.rs</code></a>
+    </p>
+
+    <h2>Quantum-proof identity, committed today</h2>
+    <p>
+        Every identity embeds commitments to two post-quantum key algorithms (Falcon and
+        Dilithium) alongside the classical Ed25519 key. The upgrade path is baked into every
+        identity in the network &mdash; before quantum computers exist. Two independent lattice
+        assumptions; both must break simultaneously.  In a nutshell, your Hashiverse identity
+        won't break if quantum computers go mainstream.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/tools/keys_post_quantum.rs`}><code>keys_post_quantum.rs</code></a>
+    </p>
+
+    <h2>No passwords, no email, no problem</h2>
+    <p>
+        No central servers means no password database and no email to spam you with. You manage
+        your own keys &mdash; and we give you three ways. <strong>Guest mode</strong>: zero
+        setup, read-only, just start browsing. <strong>Keyphrase</strong>: enter a passphrase,
+        same phrase gives same identity on any device. <strong>Passkey</strong>: your
+        fingerprint or Face ID becomes your key via your device's secure enclave &mdash;
+        hardware-backed, synced across devices, zero passwords to remember.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/client/key_locker/key_locker.rs`}><code>key_locker.rs</code></a>,
+        <a href={`${g.web}/src/tabs/login/`}><code>login/</code></a>
+    </p>
+
+    <h2>One ciphertext, 32 keys</h2>
+    <p>
+        Posts are encrypted at rest and in transit. No snooping or post-processing by devious
+        servers. A single encrypted post can be decrypted by up to 32 different passphrases
+        &mdash; one per context it appears in. The header is self-describing, so any future
+        decrypt reconstructs the exact encryption config from the ciphertext alone.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/tools/encryption.rs`}><code>encryption.rs</code></a>
+    </p>
+
+    <h2>Five layers of DDoS defense before you reach application code</h2>
+    <p>
+        Layer 1: PoW on every RPC envelope. Layer 2: per-IP scoring with time decay. Layer 3:
+        per-IP connection cap. Layer 4: kernel-level IP blacklisting when score crosses
+        threshold. Layer 5: transport timeouts for TLS handshake, header read, and body read
+        (Slow Loris defense).
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.serverLib}/src/network/transport/ddos/ipset_ddos.rs`}><code>ipset_ddos.rs</code></a>,
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a>
+    </p>
+
+    <h2>Runs on a $5 VPS &mdash; by design, not by accident</h2>
+    <p>
+        Compressed LSM-tree storage on disk. Bounded in-memory caches. Lock-striped concurrent
+        writes. Probabilistic counters for trending (64 bytes per hashtag). And the DHT means
+        each server only stores data near its own ID &mdash; not the whole network.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.serverLib}/src/environment/`}><code>environment/</code></a>,
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a>
+    </p>
+
+    <h2>Every seam in the system is a swappable trait</h2>
+    <p>
+        Transport (mem channels vs HTTP vs WASM fetch). Time (real clock vs 300&times;
+        acceleration). Storage (IndexedDB vs in-memory). DDoS protection (kernel ipset vs
+        in-memory scoring). Key management (Web Crypto enclave vs test stubs). Swap any of them
+        without touching protocol logic. Tests use the cheap ones; production uses the real
+        ones; same code path.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/transport/`}><code>transport/</code></a>,
+        <a href={`${g.lib}/src/tools/time_provider/`}><code>time_provider/</code></a>,
+        <a href={`${g.serverLib}/src/environment/`}><code>environment/</code></a>
+    </p>
+
+    <h2>Browser PoW across isolated Web Workers</h2>
+    <p>
+        The WASM client takes advantage of all your cores by distributing proof-of-work across
+        Web Workers. Each concurrent PoW job is isolated so they can't interfere. Results bridge
+        back from JavaScript Promises to Rust Futures. The browser's main thread never touches a
+        hash and never slows down.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.wasm}/src/wasm_parallel_pow_generator.rs`}><code>wasm_parallel_pow_generator.rs</code></a>
+    </p>
+
+    <h2>Healing wastes zero bandwidth</h2>
+    <p>
+        The client sends a header describing what it has. The server responds with only the IDs
+        it's missing. The client sends exactly those bytes. If the server already has everything,
+        it's a single round-trip of headers.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.serverLib}/src/server/handlers/dispatch.rs`}><code>dispatch.rs</code></a>
+    </p>
+
+    <h2>Two compression algorithms, one version byte</h2>
+    <p>
+        LZ4 for RPC packets (speed). Brotli at maximum quality for stored posts (size). A
+        single leading version byte allows algorithm evolution without breaking any existing
+        data. Below a minimum size, compression is skipped entirely &mdash; the overhead would
+        exceed the savings.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/tools/compression.rs`}><code>compression.rs</code></a>
+    </p>
+
+    <h2>The recursive bucket visitor never recurses</h2>
+    <p>
+        The timeline walker uses explicit stack frames instead of function recursion. A callback
+        at each level decides whether to drill deeper, skip, or stop. Sparse timelines skip
+        nested levels entirely. Dense timelines drill down only where content exists.
+    </p>
+    <p>
+        <strong>Source:</strong>
+        <a href={`${g.lib}/src/client/timeline/recursive_bucket_visitor.rs`}><code>recursive_bucket_visitor.rs</code></a>
+    </p>
+</DevDoc>

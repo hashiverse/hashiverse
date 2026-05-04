@@ -1,0 +1,203 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+---
+
+<DevDoc title="Direcciones futuras">
+  <p>
+    Hashiverse es un protocolo en marcha, no un protocolo terminado. Varias áreas
+    importantes están parcialmente resueltas o se sabe que necesitan mejoras a medida
+    que la red escala. Esta página describe las direcciones planificadas más
+    significativas.
+  </p>
+
+  <h2>Recuperación y gestión de claves</h2>
+  <p>
+    La identidad autosoberana tiene una vulnerabilidad fundamental: si pierdes tu
+    clave privada, pierdes tu identidad. No hay «olvidé mi contraseña» en un par de
+    claves criptográficas. Es la mayor barrera de usabilidad para una adopción real
+    de Hashiverse.
+  </p>
+  <p>
+    El enfoque previsto es el <strong>reparto de secreto de Shamir</strong>: dividir
+    tu clave privada en N partes de modo que cualquier M de ellas (M ≤ N) puedan
+    reconstruir la clave, pero M-1 partes no revelen nada. Distribuyes las partes a
+    partes de confianza — amigos, familiares, depositarios institucionales — y puedes
+    recuperar tu clave si M de ellos cooperan. La hipótesis de seguridad es que
+    ningún subconjunto de M-1 depositarios conspirará contra ti.
+  </p>
+  <p>
+    Variaciones sobre el tema incluyen:
+  </p>
+  <ul>
+    <li>
+      <strong>Depositarios de claves de terceros</strong>: servicios especializados
+      que conservan una parte y la liberan tras una verificación de identidad
+      (biométrica, código de recuperación, etc.), proporcionando un mecanismo de
+      recuperación familiar sin guardar la clave entera.
+    </li>
+    <li>
+      <strong>Tokens de hardware</strong>: las Yubikeys y dispositivos similares
+      pueden conservar una parte o directamente la clave raíz, aportando el hardware
+      resistencia a manipulaciones y protección por PIN.
+    </li>
+    <li>
+      <strong>Claves delegadas</strong>: ya parcialmente implementadas — una clave
+      raíz puede autorizar claves delegadas para la firma diaria sin exponer la
+      raíz. Perder un dispositivo significa revocar su clave delegada, no perder tu
+      identidad.
+    </li>
+  </ul>
+
+  <h2>Interoperabilidad</h2>
+  <p>
+    Hashiverse no necesita reemplazar las redes sociales existentes para ser útil.
+    Puentes que importan grafos sociales existentes — historial de Twitter/X, feeds
+    de Mastodon/ActivityPub, datos de Bluesky AT Protocol — bajan el coste de
+    cambio para usuarios que ya tienen comunidades en otros sitios. Es una estrategia
+    de crecimiento deliberada: hacer de Hashiverse el lugar donde tu identidad es
+    soberana, y dejar que las redes existentes se vuelquen en él, en lugar de
+    exigir a los usuarios que empiecen de cero.
+  </p>
+
+  <h2>Esquemas de firma extendidos para la autoría de publicaciones</h2>
+  <p>
+    Actualmente, cada publicación debe firmarse directamente con la clave que
+    genera el <code>client_id</code> del autor. Dos patrones del mundo real
+    importantes requieren más flexibilidad.
+  </p>
+
+  <h3>Claves efímeras</h3>
+  <p>
+    Un cliente puede no querer desbloquear su clave maestra de firma cada vez que
+    publica — por ejemplo, en un dispositivo móvil donde la clave maestra está
+    almacenada en una enclave de hardware o detrás de una verificación biométrica
+    lenta. Las claves efímeras lo resuelven: el cliente genera un par de claves de
+    corta duración, firma una vez la clave pública efímera con la clave maestra y
+    luego usa la efímera para publicar a diario sin volver a tocar la maestra.
+  </p>
+  <p>
+    Los servidores aceptarían tales publicaciones realizando una comprobación en
+    tres pasos:
+  </p>
+  <ol>
+    <li>
+      Verificar que la firma del cuerpo de la publicación es válida bajo la
+      <code>ephemeral_signature_pub</code> suministrada.
+    </li>
+    <li>
+      Verificar que la propia <code>ephemeral_signature_pub</code> lleva una firma
+      válida bajo la <code>signature_pub</code> suministrada (la clave pública
+      maestra).
+    </li>
+    <li>
+      Verificar que <code>signature_pub</code> hashea al <code>client_id</code>
+      del autor, confirmando que la cadena de confianza vuelve a la identidad
+      declarada.
+    </li>
+  </ol>
+  <p>
+    Las claves efímeras pueden llevar un timestamp de expiración firmado junto a
+    la clave pública, de modo que una clave de dispositivo filtrada o robada quede
+    inválida tras una ventana acotada incluso si la revocación se retrasa.
+  </p>
+
+  <h3>Delegación organizativa</h3>
+  <p>
+    Una organización puede querer publicar bajo una identidad compartida única a
+    la vez que distribuye la capacidad de publicar entre varias cuentas
+    individuales — un medio de noticias cuyos periodistas tienen cada uno su
+    <code>client_id</code> separado pero todos escriben bajo la identidad del
+    medio, por ejemplo.
+  </p>
+  <p>
+    El modelo previsto: que la identidad raíz de la organización publique una
+    lista de delegación firmada — un conjunto de <code>client_id</code>s
+    autorizados a publicar en su nombre. Los servidores que acepten una
+    publicación de un autor delegado verificarían que la clave de firma pertenece
+    a un <code>client_id</code> delegado y que el registro de delegación lleva
+    una firma válida de la clave raíz de la organización. Cualquiera de los
+    clientes delegados puede publicar; ninguno necesita la clave maestra de la
+    organización.
+  </p>
+
+  <h2>Reputación de cliente y atestación del mundo real</h2>
+  <p>
+    La proof-of-work eleva el coste de crear grandes cantidades de identidades
+    falsas, pero no es la única herramienta disponible. Una dirección
+    complementaria es la <strong>reputación de cliente</strong>: mecanismos que
+    permiten a un cliente demostrar, junto a una publicación o a una pieza de
+    retroalimentación, que es un participante real, antiguo o verificado
+    externamente. Se exploran varios enfoques.
+  </p>
+
+  <h3>Atestación de identidad externa</h3>
+  <p>
+    Proveedores de identidad de terceros pueden avalar que una clave de Hashiverse
+    pertenece a un humano verificado sin revelar quién es ese humano. Se
+    consideran dos modelos amplios:
+  </p>
+  <ul>
+    <li>
+      <strong>Proveedores OIDC</strong>: un flujo OpenID Connect en el que el
+      cliente prueba la posesión de una cuenta en un proveedor reputado (Google,
+      Apple, un esquema nacional de identidad, etc.) y recibe una atestación
+      firmada que vincula esa cuenta a su <code>client_id</code> de Hashiverse.
+      La atestación viaja con las publicaciones como señal anti-Sybil opcional;
+      servidores y lectores pueden elegir cuánto peso darle.
+    </li>
+    <li>
+      <strong>Identidad emitida por el Estado</strong>: esquemas inspirados en
+      <a href="https://www.yivi.app/">Yivi</a> y
+      <a href="https://www.digidentity.eu/">Digidentity</a> (proveedores
+      neerlandeses de eID) permiten a un gobierno o a una institución regulada
+      atestar atributos específicos — edad, nacionalidad, número único de
+      ciudadano — frente a una clave criptográfica, sin revelar a la red los
+      datos personales subyacentes. Un cliente podría demostrar «humano único
+      verificado en la jurisdicción X» a un servidor sin revelar su nombre ni
+      su número de documento.
+    </li>
+  </ul>
+  <p>
+    Ambos enfoques son estrictamente opt-in: los clientes sin atestación siguen
+    participando con normalidad al nivel base de PoW. Las atestaciones son
+    señales, no guardianes.
+  </p>
+
+  <h3>PoW acumulada como reputación</h3>
+  <p>
+    Cada vez que un cliente realiza un RPC debe incluir una nueva proof-of-work.
+    Hoy se gasta y se descarta, pero representa una trayectoria observable: un
+    cliente activo durante meses ha realizado, necesariamente, mucha más PoW
+    acumulada que uno creado ayer.
+  </p>
+  <p>
+    Una extensión planificada almacena la mejor PoW vista de un cliente en un
+    <strong>modelo de decaimiento día y mes</strong> — el mismo esquema de vida
+    media usado hoy para la reputación de servidores. Un cliente que publica con
+    regularidad acumula una buena puntuación con decaimiento; un bot recién
+    creado que solo lleva horas tiene puntuación casi cero y debe compensar con
+    una PoW por petición más alta para ser aceptado. Esto desplaza la economía
+    en contra de las granjas Sybil: el atacante debe invertir tiempo real
+    significativo precalentando cada identidad o pagar un impuesto en PoW
+    continuamente más alto por petición por cada identidad que se salte el
+    período de calentamiento.
+  </p>
+  <p>
+    Como la puntuación acumulada decae con el tiempo en lugar de crecer sin
+    límite, una cuenta dormida que vuelve tras una larga ausencia tendría un
+    sobrecoste modesto en PoW hasta restablecer actividad reciente — una
+    molestia menor para usuarios legítimos y una barrera significativa para los
+    bots que se crean, se usan en ráfaga y se descartan.
+  </p>
+
+  <h2>Mejoras varias</h2>
+  <ul>
+    <li>
+      <strong>Traits async</strong>: los traits async se soportan nativamente en
+      las nightlies recientes de Rust, pero <code>async_trait</code> sigue siendo
+      necesario para límites <code>Send + Sync</code> correctos a través de
+      objetos de trait. Cuando la biblioteca estándar lo estabilice, la macro
+      podrá retirarse.
+    </li>
+  </ul>
+</DevDoc>

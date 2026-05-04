@@ -1,0 +1,92 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Entwickler-Überblick">
+  <p>
+    Hashiverse ist ein dezentrales, post-quanten-resistentes P2P-Social-Network. Die
+    Ambitionen, die im Abschnitt <a href="/de/lore/">Idee</a> beschrieben sind, übersetzen
+    sich direkt in technische Entscheidungen, die es lohnt zu verstehen, bevor man in den
+    Code eintaucht. Dieser Abschnitt behandelt diese Entscheidungen: warum sie getroffen
+    wurden, was sie kosten und wo sie im Quellcode leben.
+  </p>
+
+  <h2>Aufbau des Repositorys</h2>
+  <pre><code>hashiverse/
+├── hashiverse-rust/                   Rust-Workspace (nightly)
+│   ├── hashiverse-lib/                Kernprotokoll — nativ + WASM
+│   ├── hashiverse-server-lib/         Serverbibliothek (wiederverwendbare Infra)
+│   ├── hashiverse-server/             Serverbinary (dünner Wrapper)
+│   ├── hashiverse-client-wasm/        Browser-WASM-Wrapper
+│   └── hashiverse-integration-tests/  Ende-zu-Ende-Tests
+├── hashiverse-client-web/             TypeScript-/React-19-SPA
+└── www/                               Diese Seite (Astro)</code></pre>
+
+  <h2>Das Zwei-Schicht-Design</h2>
+  <p>
+    <strong>hashiverse-lib</strong> ist das Protokoll. Es kompiliert sowohl zu nativem Code
+    (für den Server) als auch zu WebAssembly (für den Browser-Client). Sämtliche
+    Kryptografie, DHT-Logik, Beitragskodierung und Client-API leben hier. Jede Plattform,
+    die WASM oder natives Rust ausführen kann, kann ein vollwertiger Teilnehmer im Netzwerk
+    sein.
+  </p>
+  <p>
+    <strong>hashiverse-client-web</strong> ist der Referenz-Browser-Client — eine
+    React-19-SPA, die den WASM-Client in einem Web Worker lädt und so den Hauptthread frei
+    hält. Sie spricht über eine Message-Passing-Schnittstelle mit dem WASM-Modul; die
+    Protokolllogik, die sie aufruft, ist identisch mit der, die nativ auf dem Server läuft.
+  </p>
+
+  <h2>Vier Module in hashiverse-lib</h2>
+  <ul>
+    <li>
+      <strong>transport/</strong> — Abstrakte Traits (<code>TransportFactory</code>,
+      <code>TransportServer</code>, <code>TransportServerHandler</code>) mit zwei
+      Implementierungen: in-memory (für Tests) und HTTP/TCP (für die Produktion).
+      Transports können getauscht werden, ohne die Protokolllogik zu berühren.
+    </li>
+    <li>
+      <strong>protocol/</strong> — RPC-Paket-Kodierung/-Dekodierung mit Proof-of-Work und
+      Kompression, Peer-Strukturen, Request-/Response-Typen, Beitrags- und
+      Bundle-Datenstrukturen.
+    </li>
+    <li>
+      <strong>client/</strong> — <code>HashiverseClient</code>-API, Peer-Tracker,
+      Verwaltung der Beitragsbundles, Timeline mit rekursivem Bucket-Durchlauf und
+      einsteckbare Traits <code>ClientStorage</code> / <code>KeyLockerManager</code>.
+    </li>
+    <li>
+      <strong>tools/</strong> — Kerntypen (<code>Hash</code>, <code>Id</code>,
+      <code>Signature</code>), kryptografische Primitiven, Proof-of-Work,
+      <code>TimeProvider</code>-Abstraktion und Protokollkonfiguration.
+    </li>
+  </ul>
+
+  <h2>Wo man anfängt</h2>
+  <p>
+    Wenn du neu in der Codebasis bist, sind die besten Einstiegspunkte:
+  </p>
+  <ul>
+    <li>
+      <a href={`${g.lib}/src/lib.rs`}><code>hashiverse-lib/src/lib.rs</code></a> — die
+      Modulkarte. Vier Module der obersten Ebene, jedes klar abgegrenzt.
+    </li>
+    <li>
+      <a href={`${g.lib}/src/client/mod.rs`}><code>hashiverse-lib/src/client/mod.rs</code></a>
+      — die öffentliche Client-API. Die Schnittstelle, mit der ein Entwickler interagiert,
+      der auf dem Protokoll aufbaut.
+    </li>
+    <li>
+      <a href={`${g.integrationTests}/tests/`}><code>hashiverse-integration-tests/tests/</code></a>
+      — Ende-zu-Ende-Tests, die im Speicher echte Servertopologien hochfahren und den
+      vollen Protokollstack durchlaufen. Sie zu lesen ist der schnellste Weg zu verstehen,
+      wie die Teile zusammenpassen.
+    </li>
+  </ul>
+  <p>
+    Die Abschnitte in diesem Entwicklerleitfaden behandeln jeweils einen bestimmten
+    Designbereich. Jeder verweist auf die relevanten Quelldateien, sodass du den Ideen
+    direkt in den Code folgen kannst.
+  </p>
+</DevDoc>

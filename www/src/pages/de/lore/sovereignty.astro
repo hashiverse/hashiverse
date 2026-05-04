@@ -1,0 +1,76 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Datensouveränität">
+  <p>
+    Wenn du auf einer zentralisierten Plattform postest, veröffentlichst du nicht — du
+    deponierst. Der Inhalt gehört der Plattform. Die Plattform entscheidet, ob er online
+    bleibt. Die Plattform entscheidet, wer ihn wann sehen darf und unter welchen Umständen er
+    verschwindet. Du bist Mieter, nicht Eigentümer, und die Bedingungen deines Mietverhältnisses
+    können sich jederzeit ändern, ohne Vorwarnung und ohne Einspruchsmöglichkeit.
+  </p>
+  <p>
+    Datensouveränität bedeutet etwas Grundlegenderes: deine Inhalte, deine Identität und deine
+    Beziehungen gehören dir auf eine Weise, die nicht einseitig widerrufen werden kann.
+  </p>
+
+  <h2>Identität, die du nicht verlieren kannst</h2>
+  <p>
+    In Hashiverse ist deine Identität ein kryptografisches Schlüsselpaar, erzeugt auf deinem
+    eigenen Gerät. Deine öffentliche ID — der Hash deiner öffentlichen Schlüssel — leitet sich
+    mathematisch aus Schlüsseln ab, die nur du hältst. Kein Server hat sie dir ausgestellt.
+    Kein Unternehmen kann sie widerrufen. Keine Kontosperrung kann sie dir wegnehmen.
+  </p>
+  <p>
+    Wenn du postest, signierst du den Inhalt mit deinem privaten Schlüssel. Jeder, irgendwo im
+    Netzwerk, kann diese Signatur prüfen, ohne eine zentrale Instanz fragen zu müssen. Die
+    Echtheit deiner Beiträge ist durch Mathematik beweisbar, nicht durch die Datenbank eines
+    Unternehmens.
+  </p>
+
+  <h2>Inhalte, die nicht gelöscht werden können</h2>
+  <p>
+    Deine Beiträge werden redundant über die nächstgelegenen Knoten in einer
+    Kademlia-Distributed-Hash-Table gespeichert. Es gibt keinen einzelnen Server, der deine
+    Daten hält. Es gibt keine Master-Datenbank, aus der dein Eintrag zu löschen wäre. Wenn du
+    etwas veröffentlichst, verbreitet es sich über unabhängige, von unabhängigen Personen
+    betriebene Server. Es zu entfernen würde eine Mehrheit dieser Server zu koordinieren
+    erfordern — eine Koordination, die strukturell schwierig und für jeden einzelnen Akteur
+    wirtschaftlich unsinnig ist.
+  </p>
+  <p>
+    Das ist nicht einfach Replikation. Das Netzwerk heilt sich aktiv. Wenn ein Knoten offline
+    geht oder Daten verliert, erkennen die umliegenden Knoten die Lücke und replizieren die
+    fehlenden Inhalte. Ein Client, der Beiträge von mehreren Servern abruft, identifiziert
+    automatisch, welche Server Beiträge fehlen, und sorgt dafür, dass diese Server bekommen,
+    was ihnen fehlt — ohne zentrale Orchestrierung.
+  </p>
+
+  <h2>Verschlüsselung im Ruhezustand</h2>
+  <p>
+    Auf Servern gespeicherte Beiträge sind verschlüsselt. Der Verschlüsselungsschlüssel wird
+    aus dem Kontext des Beitrags abgeleitet: deine eigene öffentliche ID für deine persönliche
+    Timeline, der Hashtag-Name für Hashtag-Buckets, die ID des Empfängers für Erwähnungen. Ein
+    Server speichert Inhalte, die er nicht lesen kann. Er kann deine Beiträge nicht nach
+    Targeting-Signalen durchwühlen. Er kann keine Einsichten darüber verkaufen, was du
+    schreibst oder mit wem du interagierst.
+  </p>
+  <p>
+    Das ist plausible Bestreitbarkeit, in die Architektur eingebaut. Ein Serverbetreiber kann
+    nicht gezwungen werden, lesbare Inhalte herauszugeben, weil er sie nicht hat. Der Klartext
+    existiert nur in den Clients — in deinem Browser, auf deinem Gerät.
+  </p>
+
+  <h2>Schlüssel, aus denen du nicht ausgesperrt werden kannst</h2>
+  <p>
+    Das schwierigste Problem selbst-souveräner Identität ist die Schlüsselwiederherstellung.
+    Wenn dein privater Schlüssel verloren geht, verlierst du deine Identität. Hashiverse
+    arbeitet auf Wiederherstellungsmechanismen hin, die Souveränität bewahren, ohne sie zu
+    opfern: Shamirs Secret Sharing (deinen Schlüssel auf mehrere vertrauenswürdige Parteien
+    aufteilen, M-aus-N zur Wiederherstellung erforderlich), Hardware-Token-Unterstützung und
+    delegierte Signierschlüssel, mit denen du von mehreren Geräten arbeiten kannst, ohne
+    deinen Wurzelschlüssel offenzulegen. Das sind keine Nachgedanken — sie sind die
+    Voraussetzung dafür, dass Souveränität real und nicht nur theoretisch ist.
+  </p>
+</LoreDoc>

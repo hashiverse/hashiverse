@@ -1,0 +1,101 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Wie man beiträgt">
+  <p>
+    Hashiverse hat kein Unternehmen dahinter und keine eigenen Server. Seine Resilienz,
+    Verfügbarkeit und Zensur­resistenz sind ausschließlich eine Funktion davon, wie viele
+    unabhängige Server im Netzwerk existieren. Jeder Knoten, den du hinzufügst, macht das
+    Netzwerk schwerer angreifbar, schwerer mundtot zu machen und nützlicher für alle, die es
+    benutzen. Wenn du an das glaubst, was Hashiverse zu sein versucht, ist einen Server zu
+    betreiben der direkteste Weg zu helfen.
+  </p>
+  <p>
+    Die gute Nachricht: Es kostet etwa so viel wie eine Tasse Kaffee im Monat. Und wenn du
+    mehr beitragen möchtest, ist der richtige Schritt, <em>mehr</em> Server zu betreiben,
+    nicht einen größeren — zehn 5-Dollar-Maschinen, verteilt auf verschiedene Anbieter und
+    Regionen, sind für das Netzwerk weit wertvoller als eine 50-Dollar-Maschine.
+  </p>
+
+  <h2>Was du brauchst</h2>
+  <p>
+    Jeder günstige VPS bei jedem Anbieter genügt — Hetzner, DigitalOcean, Vultr, Linode und
+    viele andere bieten passende Maschinen für rund 5 $/Monat. Die Mindest­anforderungen
+    sind bescheiden:
+  </p>
+  <ul>
+    <li><strong>Speicher:</strong> 20 GB Festplattenplatz</li>
+    <li><strong>Bandbreite:</strong> 1 TB pro Monat</li>
+    <li><strong>Betriebssystem:</strong> jedes moderne Linux mit installiertem Docker</li>
+  </ul>
+  <p>
+    CPU- und RAM-Anforderungen sind minimal — der Server ist in Rust geschrieben und
+    darauf ausgelegt, effizient auf den kleinsten verfügbaren Instanzgrößen zu laufen.
+  </p>
+
+    <h2>Den Server installieren und betreiben</h2>
+    <p>
+        Wichtig zu wissen: Wenn du einen Server hochfährst, muss er zunächst eine
+        beträchtliche Proof-of-Work leisten, bevor er einen vertrauenswürdigen Platz im
+        Hashiverse-Netzwerk zugewiesen bekommt. Wundere dich also nicht, wenn deine CPU in
+        den ersten Stunden auf Anschlag läuft und die Logs ständig von PoWs, Iterationen und
+        ETA reden.
+    </p>
+    <p>
+        Wir empfehlen jeden Standard-Linux-Server. Ubuntu funktioniert prima, ob 2024 oder
+        2026. Füge das Folgende in das Startup-Skript- / User-Data- / cloud-init-Feld ein,
+        wenn du deinen Server erstellst (der Name variiert je Anbieter). Es installiert
+        Docker, öffnet die Firewall, schreibt die Compose-Datei und bringt den Stack hoch.
+    </p>
+    <pre><code>#!/usr/bin/env bash
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y docker.io docker-compose-v2 ufw
+
+ufw allow 22/tcp
+ufw allow from 0.0.0.0/0 to any port 443 proto tcp
+ufw --force enable
+
+mkdir -p /opt/hashiverse && cd /opt/hashiverse
+
+cat &gt; docker-compose.yml &lt;&lt;"YAML"
+services:
+  hashiverse-server:
+    image: ghcr.io/hashiverse/hashiverse-server:latest
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:443:443"
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./data:/data
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  watchtower:
+    image: nickfedor/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 3600
+YAML
+
+docker compose pull
+docker compose up -d</code></pre>
+  <p>
+    Watchtower hält den Server automatisch aktuell, sobald neue Versionen erscheinen. Die
+    Capability <code>NET_ADMIN</code> ist für den eingebauten DDoS-Schutz des Servers
+    erforderlich, der mit <code>ipset</code> und <code>iptables</code> Datenverkehr
+    missbräuchlicher IPs auf Kernel-Ebene verwirft. Das Volume <code>./data</code> ist der
+    Ort, an dem der Server seine Identität und die gespeicherten verschlüsselten Beiträge
+    persistiert — bewahre es sicher auf, wenn dir Kontinuität wichtig ist, auch wenn
+    Hashiverse darauf ausgelegt ist, sich selbst zu heilen, falls du einen Server zerstörst
+    und einen neuen hochfährst.
+  </p>
+</LoreDoc>

@@ -1,0 +1,92 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Resistencia a la apropiación">
+  <p>
+    En 2022, Twitter fue adquirido por una sola persona y, en cuestión de semanas,
+    transformado en algo irreconocible. Las comunidades que habían construido allí su
+    presencia no tenían voto, ni veto, ni una salida que no implicara empezar de cero. Todo
+    lo que habían construido estaba sobre tierra que no era suya.
+  </p>
+  <p>
+    Es el problema de la propiedad. Toda plataforma centralizada, por bienintencionada que
+    fuera al fundarse, es un objetivo de adquisición. Sus valores dependen de su dueño. Su
+    comunidad es rehén de quien tenga las llaves.
+  </p>
+
+  <h2>Protocolos frente a plataformas</h2>
+  <p>
+    La solución es arquitectónica: construir un protocolo, no una plataforma. Nadie posee el
+    correo electrónico. Ningún multimillonario ni gobierno puede adquirir la web. Son
+    estándares abiertos, implementados por muchos actores independientes, gobernados por
+    ninguna entidad única. Cualquiera puede implementarlos. Cualquiera puede operar un
+    servidor. Ningún punto único de fallo puede tumbarlos.
+  </p>
+  <p>
+    Hashiverse está diseñado bajo el mismo principio. Es un protocolo abierto. El código
+    fuente es público. Cualquiera puede operar un servidor, y operarlo te da igualdad de
+    rango en la red — no hay nodos privilegiados. Cualquiera puede construir un cliente. La
+    red no tiene sede, ni matriz, ni consejo de administración.
+  </p>
+
+  <h2>Hacer cara la captura</h2>
+  <p>
+    El código abierto, por sí solo, no basta. Un actor con muchos recursos podría intentar
+    dominar la red operando una gran proporción de sus nodos, moldeando la topología de
+    pares a su favor. Hashiverse hace que eso resulte caro de un modo concreto: la
+    identidad de servidor exige una proof-of-work considerable — varias horas de cómputo
+    por servidor. Levantar millones de servidores para dominar el anillo DHT no solo es
+    caro en hardware; es caro en tiempo, ya que el requisito de cómputo está dimensionado
+    para resistir la paralelización.
+  </p>
+  <p>
+    El anillo DHT Kademlia distribuye los datos por los servidores más cercanos según
+    distancia de hash. Un atacante coordinado tendría que controlar una fracción grande del
+    anillo para censurar o manipular contenido de forma significativa — y cada servidor en
+    esa posición tuvo que ganarse su lugar mediante cómputo que no se puede falsificar.
+  </p>
+  <p>
+    Hay una segunda capa de protección que se compone con el tiempo. Cada vez que un
+    cliente pide a un servidor que haga algo — recuperar publicaciones, almacenar una,
+    responder una consulta — el cliente realiza primero una pequeña proof-of-work en
+    nombre del servidor y se la entrega. El servidor acumula estas contribuciones de todos
+    los clientes que lo han usado alguna vez. Cuanto mejor su proof-of-work acumulada, más
+    fuerte su posición ante sus pares en el anillo Kademlia. Un servidor que lleva meses
+    operando y atendiendo a miles de usuarios ha construido una reputación que un servidor
+    falso recién creado simplemente no puede replicar. Los servidores nuevos, en cambio, no
+    tienen reputación acumulada y deben hacer más trabajo para ser tomados en serio por sus
+    pares. El tiempo se vuelve una defensa: cuanto más lleva la red en marcha, más alta es
+    la barra que un atacante debe superar para competir con nodos establecidos y de
+    confianza.
+  </p>
+
+  <h2>Resiliencia post-cuántica</h2>
+  <p>
+    La resistencia a la apropiación incluye resistencia a futuras amenazas tecnológicas. La
+    base criptográfica de cualquier sistema de identidad construido sobre firmas clásicas
+    de curvas elípticas (como Ed25519) será rompible por ordenadores cuánticos
+    suficientemente avanzados. Si eso ocurre en una plataforma centralizada, el operador
+    parchea el sistema y migra a los usuarios. En un protocolo descentralizado no hay
+    operador para hacerlo.
+  </p>
+  <p>
+    Hashiverse aborda esto de forma proactiva. Cada identidad incrusta compromisos con dos
+    claves post-cuánticas — ML-DSA (Dilithium) y FN-DSA (Falcon) — junto a la clave
+    clásica Ed25519. El hash de identidad se calcula a partir de las tres, de modo que la
+    identidad misma ya está atada a claves post-cuánticas incluso antes de que los
+    ordenadores cuánticos sean una amenaza realista. Cuando llegue el momento de migrar,
+    el camino de actualización ya está incorporado.
+  </p>
+
+  <h2>Una gobernanza que no existe</h2>
+  <p>
+    La capa final de resistencia a la apropiación es la ausencia de una estructura de
+    gobernanza que pudiera ser capturada. No hay fundación a la que retirar los fondos, no
+    hay ONG que infiltrar, no hay empresa que adquirir. La especificación del protocolo
+    está en el código abierto. Operar un servidor te hace parte de la red. La comunidad
+    decide colectivamente, mediante los clientes que usa y los servidores que opera, qué
+    aspecto tiene la red. Es más lento y más desordenado que una gobernanza vertical — y
+    ese es justo el punto.
+  </p>
+</LoreDoc>
