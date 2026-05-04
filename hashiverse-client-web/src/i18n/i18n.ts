@@ -37,6 +37,7 @@ i18n
 		lng: detect_language(),
 		fallbackLng: "en",
 		partialBundledLanguages: true,
+		keySeparator: false,
 		resources: {
 			en: { translation: en },
 		},
