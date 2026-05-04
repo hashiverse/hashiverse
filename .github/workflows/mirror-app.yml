@@ -23,4 +23,6 @@ jobs:
       - name: Mirror to Codeberg
         run: |
           git clone --mirror https://github.com/hashiverse/app.git mirror
-          git -C mirror push --mirror git@codeberg.org:hashiverse/app.git
+          git -C mirror push --prune git@codeberg.org:hashiverse/app.git \
+            "+refs/heads/*:refs/heads/*" \
+            "+refs/tags/*:refs/tags/*"
