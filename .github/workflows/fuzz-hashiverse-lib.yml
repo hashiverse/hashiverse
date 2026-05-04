@@ -15,7 +15,7 @@ jobs:
       run:
         working-directory: hashiverse-rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: llvm-tools-preview
@@ -25,7 +25,7 @@ jobs:
           workspaces: hashiverse-rust -> target
       - name: Cache cargo-bolero
         id: cache-bolero
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-bolero
           key: cargo-bolero-${{ runner.os }}
