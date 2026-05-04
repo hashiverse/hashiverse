@@ -1,0 +1,24 @@
+name: check-translations-app
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "hashiverse-client-web/src/i18n/**"
+      - "hashiverse-client-web/public/locales/**"
+      - "hashiverse-client-web/translations/**"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Run staleness checker
+        run: node hashiverse-client-web/translations/check-translations.mjs

@@ -2,17 +2,21 @@ import i18n from "i18next";
 import HttpBackend from "i18next-http-backend";
 import { initReactI18next } from "react-i18next";
 import en from "./locales/en.json";
+import manifest from "./locales/manifest.json";
 
-export const SUPPORTED_LANGUAGES = [
-	{ value: "en", label: "English" },
-	{ value: "fr", label: "Français" },
-	{ value: "he", label: "עברית" },
-	{ value: "nl", label: "Nederlands" },
-	{ value: "ru", label: "Русский" },
-	{ value: "zh", label: "中文" },
-];
+function language_autonym(code: string): string {
+	try {
+		const display = new Intl.DisplayNames([code], { type: "language" }).of(code);
+		if (!display) return code;
+		return display.charAt(0).toLocaleUpperCase(code) + display.slice(1);
+	} catch {
+		return code;
+	}
+}
 
-const supported_values = new Set(SUPPORTED_LANGUAGES.map((l) => l.value));
+export const SUPPORTED_LANGUAGES = manifest.map((value: string) => ({ value, label: language_autonym(value) }));
+
+const supported_values = new Set<string>(manifest);
 
 function detect_language(): string {
 	// index.tsx reads the stored language from IndexedDB and calls i18n.changeLanguage() before first render
