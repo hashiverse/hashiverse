@@ -1,0 +1,21 @@
+{
+	"src/i18n/en.json": "f537",
+	"src/pages/en/dev/cryptography.astro": "8066",
+	"src/pages/en/dev/future.astro": "5fc9",
+	"src/pages/en/dev/geeking-out.astro": "beca",
+	"src/pages/en/dev/index.astro": "07fe",
+	"src/pages/en/dev/moderation.astro": "23eb",
+	"src/pages/en/dev/network.astro": "685d",
+	"src/pages/en/dev/posts.astro": "f0bb",
+	"src/pages/en/dev/pow.astro": "f407",
+	"src/pages/en/dev/resilience.astro": "9105",
+	"src/pages/en/index.astro": "c82c",
+	"src/pages/en/lore/advertising.astro": "2c6c",
+	"src/pages/en/lore/competitors.astro": "28d6",
+	"src/pages/en/lore/contribute.astro": "750d",
+	"src/pages/en/lore/index.astro": "9efa",
+	"src/pages/en/lore/invisible-hand.astro": "e346",
+	"src/pages/en/lore/moderation.astro": "15d4",
+	"src/pages/en/lore/ownership.astro": "7dba",
+	"src/pages/en/lore/sovereignty.astro": "23c1"
+}

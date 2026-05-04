@@ -20,6 +20,7 @@ Live it right now at https://www.hashiverse.com
 ## Translations
 
 - [![check-translations-www](https://github.com/hashiverse/hashiverse/actions/workflows/check-translations-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/check-translations-www.yml) — red means a developer should run the translation prompt: `node www/translations/check-translations.mjs` and feed the JSON output into a Claude Code session.
+- [![check-translations-app](https://github.com/hashiverse/hashiverse/actions/workflows/check-translations-app.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/check-translations-app.yml) — red means a developer should run the translation prompt: `node hashiverse-client-web/translations/check-translations.mjs` and feed the JSON output into a Claude Code session.
 
 ## Tests
 

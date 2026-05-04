@@ -3,8 +3,8 @@ import type React from "react";
 import { useTranslation } from "react-i18next";
 import type { HashiverseClientWasmProxy } from "../../Hashiverse.ts";
 import logo from "../../media/logo.webp";
-import { TabHeader } from "../TabHeader.tsx";
 import { TrendingHashtagsGrid } from "../hashtags/TrendingHashtagsGrid.tsx";
+import { TabHeader } from "../TabHeader.tsx";
 import { Banner } from "../timeline/Banner.tsx";
 
 interface Props {
