@@ -1,26 +1,31 @@
 ---
+import { strings_for } from "../i18n/strings";
+
 interface Props {
   title: string;
   description?: string;
   fullscreen?: boolean;
 }
 
-const { title, description = 'Your decentralized P2P social network.', fullscreen = false } = Astro.props;
+const locale = Astro.currentLocale ?? "en";
+const t = strings_for(locale);
+
+const { title, description = t.site.default_description, fullscreen = false } = Astro.props;
 const prerelease_tag = import.meta.env.PUBLIC_PRERELEASE_TAG;
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={locale}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
-    <title>{title === 'Hashiverse' ? 'Hashiverse' : `${title} — Hashiverse`}</title>
+    <title>{title === t.site.title_suffix ? t.site.title_suffix : `${title} — ${t.site.title_suffix}`}</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   </head>
   <body class:list={[{ fullscreen }]}>
     {prerelease_tag && (
-      <div class="prerelease-banner">Prerelease: {prerelease_tag}</div>
+      <div class="prerelease-banner">{t.site.prerelease_label}: {prerelease_tag}</div>
     )}
     <slot />
   </body>
@@ -74,7 +79,7 @@ const prerelease_tag = import.meta.env.PUBLIC_PRERELEASE_TAG;
     border-radius: 3px;
     padding: 0.1em 0.4em;
     font-size: 0.875em;
-    font-family: 'Courier New', monospace;
+    font-family: "Courier New", monospace;
   }
 
   pre {

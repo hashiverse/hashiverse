@@ -1,5 +1,7 @@
 ---
-import Doc from './Doc.astro';
+import { getRelativeLocaleUrl } from "astro:i18n";
+import Doc from "./Doc.astro";
+import { strings_for } from "../i18n/strings";
 
 interface Props {
   title: string;
@@ -8,25 +10,29 @@ interface Props {
 
 const { title, description } = Astro.props;
 
+const locale = Astro.currentLocale ?? "en";
+const t = strings_for(locale);
+const url = (path: string) => getRelativeLocaleUrl(locale, path);
+
 const sidebar = [
-  { href: '/dev/', label: 'Overview' },
-  { href: '/dev/cryptography', label: 'Cryptographic Foundation' },
-  { href: '/dev/pow', label: 'Proof of Work' },
-  { href: '/dev/network', label: 'The DHT Network' },
-  { href: '/dev/posts', label: 'Post Protocol' },
-  { href: '/dev/moderation', label: 'Content Moderation' },
-  { href: '/dev/resilience', label: 'Resilience & Self-Healing' },
-  { href: '/dev/future', label: 'Future Directions' },
-  { href: '/dev/geeking-out', label: 'Geeking Out' },
+  { href: url("/dev/"), label: t.dev_sidebar.index },
+  { href: url("/dev/cryptography"), label: t.dev_sidebar.cryptography },
+  { href: url("/dev/pow"), label: t.dev_sidebar.pow },
+  { href: url("/dev/network"), label: t.dev_sidebar.network },
+  { href: url("/dev/posts"), label: t.dev_sidebar.posts },
+  { href: url("/dev/moderation"), label: t.dev_sidebar.moderation },
+  { href: url("/dev/resilience"), label: t.dev_sidebar.resilience },
+  { href: url("/dev/future"), label: t.dev_sidebar.future },
+  { href: url("/dev/geeking-out"), label: t.dev_sidebar.geeking_out },
   {
-    href: 'https://github.com/hashiverse',
-    label: 'API Reference',
+    href: "https://github.com/hashiverse",
+    label: t.dev_sidebar.api_reference,
     children: [
-      { href: '/dev/hashiverse-rust/hashiverse_lib/', label: 'hashiverse_lib' },
-      { href: '/dev/hashiverse-rust/hashiverse_server_lib/', label: 'hashiverse_server_lib' },
-      { href: '/dev/hashiverse-rust/hashiverse_server/', label: 'hashiverse_server' },
-      { href: '/dev/hashiverse-rust/hashiverse_client_wasm/', label: 'hashiverse_client_wasm' },
-      { href: '/dev/hashiverse-client-web/', label: 'hashiverse-client-web' },
+      { href: "/dev/hashiverse-rust/hashiverse_lib/", label: "hashiverse_lib" },
+      { href: "/dev/hashiverse-rust/hashiverse_server_lib/", label: "hashiverse_server_lib" },
+      { href: "/dev/hashiverse-rust/hashiverse_server/", label: "hashiverse_server" },
+      { href: "/dev/hashiverse-rust/hashiverse_client_wasm/", label: "hashiverse_client_wasm" },
+      { href: "/dev/hashiverse-client-web/", label: "hashiverse-client-web" },
     ],
   },
 ];

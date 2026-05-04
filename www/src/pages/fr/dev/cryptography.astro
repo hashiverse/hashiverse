@@ -1,0 +1,145 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Fondations cryptographiques">
+  <p>
+    Chaque promesse que Hashiverse fait sur la souveraineté des données, la résistance à la
+    censure et l'indépendance de propriété est adossée à de la cryptographie. Ce n'est pas de
+    l'habillage — c'est la raison pour laquelle ces promesses tiennent. Comprendre la couche
+    cryptographique, c'est comprendre la fondation sur laquelle tout le reste est bâti.
+  </p>
+
+  <h2>Identité</h2>
+  <p>
+    Une identité Hashiverse n'est pas attribuée par un serveur. Elle est dérivée des clés :
+  </p>
+  <pre><code>ID = Blake3(ed25519_pub || Blake3(Falcon_pub)[0..16] || Blake3(Dilithium_pub)[0..16])</code></pre>
+  <p>
+    Votre identifiant public est un hachage 256 bits de trois clés publiques — une classique
+    (Ed25519), deux post-quantiques (FN-DSA/Falcon et ML-DSA/Dilithium). Les engagements de 16
+    octets envers les clés post-quantiques les lient à votre identité dès maintenant, avant que
+    les ordinateurs quantiques ne soient une menace pratique. Quand la migration quantique
+    arrivera, le chemin de mise à niveau est déjà inscrit dans chaque identité du réseau.
+  </p>
+  <p>
+    Les identités de serveur fonctionnent de la même manière, avec l'exigence supplémentaire que
+    l'identifiant doit satisfaire une condition de proof-of-work (un préfixe de zéros en tête
+    dans le hachage). Cela rend la création d'identité serveur coûteuse en calcul, prévenant
+    les attaques Sybil sur l'anneau DHT.
+  </p>
+  <p>
+    La clé de signature privée Ed25519 du client est stockée exclusivement dans
+    <strong>l'enclave sécurisée de l'API Web Crypto du navigateur</strong> en tant qu'objet
+    <code>CryptoKey</code> non extractible. Le navigateur expose seulement une opération de
+    signature — les octets bruts de la clé privée ne sont jamais accessibles à JavaScript, au
+    module WASM, ni à aucun autre code tournant sur la page. Il n'existe aucun mécanisme pour
+    exporter ou récupérer la clé privée une fois importée. La signature s'effectue à
+    l'intérieur de la couche cryptographique du navigateur ; la clé n'en sort jamais.
+  </p>
+  <p>
+    C'est une contrainte délibérée, pas une limitation. Même si le client WASM Hashiverse était
+    entièrement compromis, un attaquant pourrait au mieux invoquer l'opération de signature au
+    nom de la victime — il ne pourrait pas voler la clé pour s'en servir ailleurs.
+  </p>
+  <p>
+    <strong>Source :</strong> <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a> —
+    types <code>Hash</code>, <code>Id</code>, <code>Signature</code> ;
+    <a href={`${g.lib}/src/tools/server_id.rs`}><code>server_id.rs</code></a> pour la
+    proof-of-work d'identité serveur.
+  </p>
+
+  <h2>Signatures hybrides post-quantiques</h2>
+  <p>
+    L'identité à trois clés permet un chemin de migration progressif :
+  </p>
+  <ul>
+    <li>Aujourd'hui : les publications sont signées avec Ed25519. La vérification est rapide et bien comprise.</li>
+    <li>Quand Ed25519 sera menacé : faire migrer la signature primaire vers FN-DSA (Falcon), dont les signatures sont plus petites que Dilithium.</li>
+    <li>Si les algorithmes à base de réseaux euclidiens venaient à être cassés ensuite : retomber sur ML-DSA (Dilithium) comme dernière couche.</li>
+  </ul>
+  <p>
+    SPHINCS+ a été envisagé puis écarté : ses signatures pèsent plusieurs kilo-octets, ce qui est
+    prohibitif pour un réseau de publications à fort débit. La combinaison Falcon + Dilithium
+    fournit deux hypothèses de sécurité indépendantes basées sur les réseaux euclidiens, ce qui
+    signifie que les deux devraient être cassées simultanément pour compromettre l'identité.
+  </p>
+  <p>
+    <strong>Source :</strong> <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a> primitives cryptographiques ;
+    <a href={`${g.lib}/src/protocol/posting/encoded_post.rs`}><code>encoded_post.rs</code></a> pour la sélection du mécanisme de signature par publication.
+  </p>
+
+  <h2>Hachage</h2>
+  <p>
+    Blake3 est la fonction de hachage primaire — rapide, parallélisable, et adaptée aux sommes
+    de contrôle, à l'adressage par contenu et à la dérivation de clés. Pour la proof-of-work,
+    la suite complète de hachages disponible dans le protocole comprend Blake2, Blake3, SHA2,
+    SHA3, Whirlpool, Groestl et Skein. La proof-of-work enchaîne plusieurs algorithmes dans une
+    séquence pseudo-aléatoire, ce qui accroît la résistance aux ASIC en exigeant la
+    co-implémentation efficace de plusieurs algorithmes dépendant du chemin, simultanément.
+  </p>
+  <p>
+    Toutes les bibliothèques de hachage sont compilées avec <code>opt-level=3</code> même en
+    debug — c'est configuré dans les surcharges de profil du <code>Cargo.toml</code> du
+    workspace pour empêcher que les suites de tests ne soient bridées par le calcul de hachage.
+  </p>
+
+  <h2>Chiffrement au repos</h2>
+  <p>
+    Les publications stockées sur les serveurs sont chiffrées avec ChaCha20-Poly1305. La clé est
+    dérivée d'une phrase de passe qui dépend du type de bucket :
+  </p>
+  <ul>
+    <li><strong>Fil utilisateur</strong> : la phrase de passe est l'identifiant public de l'utilisateur</li>
+    <li><strong>Hashtag</strong> : la phrase de passe est le texte du hashtag en minuscules (sans #)</li>
+    <li><strong>Mention</strong> : la phrase de passe est l'identifiant public de l'utilisateur mentionné</li>
+    <li><strong>Réponse</strong> : la phrase de passe est la signature de contenu de la publication d'origine</li>
+  </ul>
+  <p>
+    Un schéma de chiffrement à phrases de passe multiples, vaguement inspiré de
+    <code>age</code>, signifie qu'une seule publication couvrant plusieurs contextes — un post
+    avec hashtag qui mentionne aussi un utilisateur — peut être déchiffrée par quiconque détient
+    l'une ou l'autre des phrases de passe. Les serveurs stockent des octets chiffrés qu'ils ne
+    peuvent pas lire. Il n'y a pas de texte en clair sur le disque du serveur.
+  </p>
+  <p>
+    <strong>Source :</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post.rs`}><code>encoded_post.rs</code></a>
+    pour le chiffrement des publications ; <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a> pour les primitives ChaCha20-Poly1305.
+  </p>
+
+  <h2>Des signatures sur tout</h2>
+  <p>
+    Chaque publication est signée par son auteur. Chaque réponse de serveur est signée par le
+    serveur qui sert. Chaque bundle est signé. Les signatures ne sont pas des métadonnées
+    optionnelles — c'est le mécanisme par lequel les clients peuvent faire confiance au contenu
+    reçu de serveurs non fiables. Un client n'a jamais besoin de faire confiance à un serveur ;
+    il fait confiance à la signature cryptographique sur le contenu que ce serveur livre.
+  </p>
+
+  <h2>Deux couches de sécurité de transport</h2>
+  <p>
+    Hashiverse sépare le chiffrement du transport de la sécurité du protocole, et les traite
+    comme des préoccupations indépendantes :
+  </p>
+  <p>
+    <strong>Couche transport (TLS) :</strong> la communication serveur-à-serveur et
+    client-à-serveur passe par HTTPS avec des certificats TLS émis par <strong>Let's
+    Encrypt</strong>. Comme les serveurs Hashiverse sont identifiés par adresse IP plutôt que
+    par nom de domaine, le serveur obtient un certificat TLS uniquement par IP via le protocole
+    ACME. Cela chiffre le trafic en transit et empêche l'écoute passive sur le câble.
+  </p>
+  <p>
+    <strong>Couche protocole (cryptographie Hashiverse) :</strong> TLS seul ne suffit pas pour
+    un réseau décentralisé sans confiance — un serveur compromis ou malveillant pourrait servir
+    du contenu altéré sur une connexion TLS valide. La cryptographie propre à Hashiverse
+    fournit la garantie plus profonde : chaque morceau de contenu est signé par les clés de son
+    auteur, les publications sont chiffrées au repos avec des clés que le serveur ne détient
+    jamais, et les identités des serveurs sont liées à des engagements de proof-of-work. Un
+    client n'a pas besoin de faire confiance à un serveur ; il vérifie le contenu directement
+    contre les signatures cryptographiques, peu importe par où il est arrivé.
+  </p>
+  <p>
+    TLS s'occupe du réseau ; la cryptographie Hashiverse s'occupe de la vérité.
+  </p>
+</DevDoc>

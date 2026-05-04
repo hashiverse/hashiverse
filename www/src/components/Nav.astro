@@ -1,19 +1,33 @@
 ---
+import { getRelativeLocaleUrl } from "astro:i18n";
+import { strings_for, supported_locales } from "../i18n/strings";
+
+const locale = Astro.currentLocale ?? "en";
+const t = strings_for(locale);
+
 const links = [
-  { href: '/lore/', label: 'Lore' },
-  { href: '/dev/', label: 'Dev' },
+  { href: getRelativeLocaleUrl(locale, "/lore/"), label: t.nav.lore },
+  { href: getRelativeLocaleUrl(locale, "/dev/"), label: t.nav.dev },
 ];
 
 const current = Astro.url.pathname;
+
+const locale_flags: Record<string, { src: string; label: string }> = {
+  en: { src: "/flags/us.svg", label: "English" },
+  fr: { src: "/flags/fr.svg", label: "Français" },
+};
+
+const path_without_locale = current.replace(/^\/[a-z]{2}(\/|$)/, "/");
+const current_flag = locale_flags[locale] ?? { src: `/flags/${locale}.svg`, label: locale };
 ---
 
 <nav>
-  <a href="/" class="nav-logo">
+  <a href={getRelativeLocaleUrl(locale, "/")} class="nav-logo">
     <img src="/logo.webp" alt="Hashiverse" height="28" />
   </a>
   <ul>
     <li>
-      <a id="nav-app-link" href="#">App</a>
+      <a id="nav-app-link" href="#">{t.nav.app}</a>
     </li>
     {links.map(({ href, label }) => (
       <li>
@@ -23,20 +37,84 @@ const current = Astro.url.pathname;
       </li>
     ))}
     <li>
-      <a href="https://github.com/hashiverse">GitHub</a>
+      <a href="https://github.com/hashiverse">{t.nav.github}</a>
     </li>
   </ul>
+  <div class="lang-switcher" data-lang-switcher>
+    <button
+      type="button"
+      class="lang-btn"
+      aria-haspopup="true"
+      aria-expanded="false"
+      aria-label={t.nav.language}
+      data-lang-btn
+    >
+      <img src={current_flag.src} alt={current_flag.label} class="lang-flag" />
+      <span class="lang-chevron" aria-hidden="true">▾</span>
+    </button>
+    <ul class="lang-menu" role="menu" hidden data-lang-menu>
+      {supported_locales.map((l) => {
+        const flag = locale_flags[l] ?? { src: `/flags/${l}.svg`, label: l };
+        return (
+          <li role="none">
+            <a
+              role="menuitem"
+              href={getRelativeLocaleUrl(l, path_without_locale)}
+              class:list={["lang-item", { active: l === locale }]}
+              hreflang={l}
+            >
+              <img src={flag.src} alt="" class="lang-flag" />
+              <span>{flag.label}</span>
+            </a>
+          </li>
+        );
+      })}
+    </ul>
+  </div>
 </nav>
 
 <script>
-  const a = document.getElementById('nav-app-link') as HTMLAnchorElement;
-  const host = window.location.hostname;
-  if (host === 'localhost' || host === '127.0.0.1') {
-    a.href = 'http://localhost:3000';
-  } else {
-    const bare = host.startsWith('www.') ? host.slice(4) : host;
-    a.href = `https://app.${bare}`;
+  const app_link = document.getElementById("nav-app-link") as HTMLAnchorElement | null;
+  if (app_link) {
+    const host = window.location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") {
+      app_link.href = "http://localhost:3000";
+    } else {
+      const bare = host.startsWith("www.") ? host.slice(4) : host;
+      app_link.href = `https://app.${bare}`;
+    }
   }
+
+  const switcher = document.querySelector<HTMLElement>("[data-lang-switcher]");
+  const btn = switcher?.querySelector<HTMLButtonElement>("[data-lang-btn]");
+  const menu = switcher?.querySelector<HTMLElement>("[data-lang-menu]");
+
+  function close_menu() {
+    if (!menu || !btn) return;
+    menu.setAttribute("hidden", "");
+    btn.setAttribute("aria-expanded", "false");
+  }
+
+  function open_menu() {
+    if (!menu || !btn) return;
+    menu.removeAttribute("hidden");
+    btn.setAttribute("aria-expanded", "true");
+  }
+
+  btn?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (menu?.hasAttribute("hidden")) open_menu();
+    else close_menu();
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!switcher || switcher.contains(event.target as Node)) return;
+    close_menu();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") close_menu();
+  });
 </script>
 
 <style>
@@ -61,7 +139,7 @@ const current = Astro.url.pathname;
     padding: 0;
   }
 
-  a {
+  nav a {
     color: var(--text-muted);
     text-decoration: none;
     font-size: 0.9rem;
@@ -70,8 +148,91 @@ const current = Astro.url.pathname;
     transition: color 0.15s;
   }
 
-  a:hover,
-  a.active {
+  nav a:hover,
+  nav a.active {
     color: var(--accent);
+  }
+
+  .lang-switcher {
+    margin-left: auto;
+    position: relative;
+  }
+
+  .lang-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.3rem 0.5rem;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .lang-btn:hover,
+  .lang-btn[aria-expanded="true"] {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .lang-chevron {
+    font-size: 0.7rem;
+    line-height: 1;
+  }
+
+  .lang-menu {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    right: 0;
+    min-width: 10rem;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.3rem;
+    margin: 0;
+    list-style: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .lang-menu[hidden] {
+    display: none;
+  }
+
+  .lang-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.875rem;
+    color: var(--text);
+  }
+
+  .lang-item:hover {
+    background: var(--bg-surface);
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .lang-item.active {
+    color: var(--accent);
+    background: var(--bg-surface);
+  }
+
+  .lang-flag {
+    width: 22px;
+    height: 16px;
+    object-fit: cover;
+    border-radius: 2px;
+    display: block;
+    flex-shrink: 0;
   }
 </style>

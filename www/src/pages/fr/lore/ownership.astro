@@ -1,0 +1,92 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Résistance à l'appropriation">
+  <p>
+    En 2022, Twitter a été racheté par un seul individu et transformé, en l'espace de quelques
+    semaines, en quelque chose de méconnaissable. Les communautés qui y avaient bâti leur
+    présence n'avaient ni vote, ni veto, ni porte de sortie qui ne signifie repartir de zéro.
+    Tout ce qu'elles avaient construit l'était sur un terrain qu'elles ne possédaient pas.
+  </p>
+  <p>
+    C'est le problème de la propriété. Toute plateforme centralisée, aussi bien intentionnée
+    soit-elle à sa fondation, est une cible de rachat. Ses valeurs sont contingentes à son
+    actionnariat. Sa communauté est l'otage de quiconque détient les clés.
+  </p>
+
+  <h2>Protocoles contre plateformes</h2>
+  <p>
+    La solution est architecturale : bâtir un protocole, pas une plateforme. Personne ne possède
+    l'e-mail. Aucun milliardaire ni aucun gouvernement ne peut racheter le web. Ce sont des
+    standards ouverts, mis en œuvre par de nombreux acteurs indépendants, gouvernés par aucune
+    entité unique. N'importe qui peut les implémenter. N'importe qui peut faire tourner un
+    serveur. Aucun point de défaillance unique ne peut les abattre.
+  </p>
+  <p>
+    Hashiverse est conçu sur le même principe. C'est un protocole ouvert. Le code source est
+    public. N'importe qui peut faire tourner un serveur, et faire tourner un serveur vous donne
+    une place égale dans le réseau — il n'y a pas de nœuds privilégiés. N'importe qui peut bâtir
+    un client. Le réseau n'a pas de siège, pas de société mère, pas de conseil d'administration.
+  </p>
+
+  <h2>Rendre la capture coûteuse</h2>
+  <p>
+    L'open source seul ne suffit pas. Un acteur bien financé pourrait essayer de dominer le
+    réseau en faisant tourner une grande proportion de ses nœuds, en façonnant la topologie des
+    pairs en sa faveur. Hashiverse rend cela coûteux d'une manière spécifique : l'identité d'un
+    serveur exige une proof-of-work conséquente — quelques heures de calcul par serveur. Faire
+    apparaître des millions de serveurs pour dominer l'anneau DHT n'est pas seulement coûteux
+    en matériel ; c'est coûteux en temps, l'exigence de calcul étant dimensionnée pour résister
+    à la parallélisation.
+  </p>
+  <p>
+    L'anneau DHT Kademlia répartit les données sur les serveurs les plus proches selon la
+    distance de hachage. Un attaquant coordonné devrait contrôler une grande fraction de
+    l'anneau pour censurer ou manipuler du contenu de manière significative — et chaque serveur
+    en position de le faire a dû gagner sa place par un calcul qu'on ne peut feindre.
+  </p>
+  <p>
+    Il existe une seconde couche de protection qui se renforce avec le temps. Chaque fois qu'un
+    client demande à un serveur d'effectuer une action — récupérer des publications, en stocker
+    une, répondre à une requête — le client effectue d'abord une petite proof-of-work pour le
+    compte du serveur et la lui soumet. Le serveur accumule ces contributions de tous les
+    clients qui l'ont jamais utilisé. Plus sa proof-of-work cumulée est solide, plus sa
+    légitimité auprès de ses pairs dans l'anneau Kademlia est forte. Un serveur en service depuis
+    des mois et qui dessert des milliers d'utilisateurs s'est forgé une réputation qu'un faux
+    serveur tout neuf ne peut tout simplement pas répliquer. Les tout nouveaux serveurs, à
+    l'inverse, n'ont aucune réputation accumulée et doivent fournir davantage de travail pour
+    être pris au sérieux par leurs pairs. Le temps lui-même devient une défense : plus le réseau
+    tourne longtemps, plus la barre qu'un attaquant doit franchir pour rivaliser avec des nœuds
+    établis et de confiance est haute.
+  </p>
+
+  <h2>Résilience post-quantique</h2>
+  <p>
+    La résistance à l'appropriation inclut la résistance aux menaces technologiques futures. La
+    fondation cryptographique de tout système d'identité bâti sur les signatures classiques à
+    courbes elliptiques (comme Ed25519) sera cassable par des ordinateurs quantiques
+    suffisamment avancés. Si cela arrive sur une plateforme centralisée, l'opérateur corrige le
+    système et migre les utilisateurs. Dans un protocole décentralisé, il n'y a pas d'opérateur
+    pour le faire.
+  </p>
+  <p>
+    Hashiverse traite cela de manière proactive. Chaque identité incorpore des engagements vers
+    deux clés post-quantiques — ML-DSA (Dilithium) et FN-DSA (Falcon) — aux côtés de la clé
+    classique Ed25519. Le hachage d'identité est calculé à partir des trois, de sorte que
+    l'identité elle-même est déjà liée à des clés post-quantiques avant même que les ordinateurs
+    quantiques ne soient une menace réaliste. Quand l'heure de la migration viendra, le chemin
+    de mise à niveau est déjà intégré.
+  </p>
+
+  <h2>Une gouvernance qui n'existe pas</h2>
+  <p>
+    La dernière couche de résistance à l'appropriation, c'est l'absence d'une structure de
+    gouvernance susceptible d'être capturée. Il n'y a pas de fondation à priver de financement,
+    pas d'association à infiltrer, pas d'entreprise à racheter. La spécification du protocole est
+    dans le code open source. Faire tourner un serveur fait de vous une partie du réseau. La
+    communauté décide collectivement, à travers les clients qu'elle utilise et les serveurs
+    qu'elle exploite, à quoi le réseau ressemble. C'est plus lent et plus brouillon qu'une
+    gouvernance descendante — et c'est précisément le but.
+  </p>
+</LoreDoc>

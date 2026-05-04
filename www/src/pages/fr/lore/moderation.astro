@@ -1,0 +1,138 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Décentralisation responsable">
+    <p>
+        La décentralisation n'est pas une position morale. C'est une position architecturale. Et un
+        réseau décentralisé peut héberger des contenus nuisibles, illégaux, ou simplement corrosifs
+        pour les communautés qui l'utilisent. « Pas d'autorité centrale » ne peut pas servir
+        d'excuse à « tout est permis ». La question n'est pas s'il faut modérer, mais comment
+        modérer sans réintroduire le point de contrôle unique que la décentralisation cherche
+        précisément à éliminer.
+    </p>
+    <p>
+        C'est l'un des problèmes les plus difficiles dans la conception de Hashiverse, et c'est un
+        problème que l'équipe prend au sérieux plutôt que de le balayer comme la préoccupation de
+        quelqu'un d'autre.
+    </p>
+
+    <h2>La contrainte : aucun gardien</h2>
+    <p>
+        Sur une plateforme centralisée, la modération est simple en principe : une équipe examine
+        le contenu, applique des règles, et retire les violations. Le résultat dépend entièrement
+        de la qualité et de la cohérence de cette équipe et de ces règles — c'est pourquoi la
+        modération centralisée a ses propres défaillances graves. Mais le mécanisme est clair.
+    </p>
+    <p>
+        Dans Hashiverse, il n'y a pas d'équipe de modération. Pas de comité de règles. Les
+        publications sont signées par leurs auteurs, stockées sur des serveurs indépendants, et
+        récupérées par les clients. Aucune entité unique n'a l'autorité de supprimer une
+        publication du réseau. Tout mécanisme qui introduit cette autorité réintroduit le problème
+        de la propriété.
+    </p>
+    <p>
+        La conception doit donc fonctionner différemment : elle doit rendre les contenus nuisibles
+        coûteux à produire, difficiles à faire émerger, et auto-limitatifs dans le temps — sans
+        exiger qu'un acteur central prenne des décisions au cas par cas.
+    </p>
+
+    <h2>Comment les couches fonctionnent</h2>
+    <p>
+        Hashiverse adopte une approche par couches, où chaque couche traite une dimension
+        différente du problème, et où les couches se renforcent mutuellement :
+    </p>
+
+    <h3>Expiration naturelle</h3>
+    <p>
+        Le contenu de Hashiverse survit parce que les gens continuent de le lire. Le principe
+        derrière la réparation et la mise en cache est simple : les données qui méritent d'être
+        répliquées — celles qui sont pertinentes pour quelqu'un, quelque part — se font répliquer.
+        Quand un client récupère une publication, il vérifie quels serveurs en manquent et comble
+        ces trous. Le contenu que les gens continuent de visiter continue d'être répliqué. Le
+        contenu que personne ne visite cesse d'être réparé, et au fur et à mesure que les serveurs
+        se remplissent et appliquent leurs politiques d'éviction, les contenus oubliés
+        disparaissent en silence — sans que personne n'ait eu à décider de les retirer.
+    </p>
+    <p>
+        Ce n'est pas de la censure. C'est le même mécanisme qui fait qu'un livre est épuisé, qu'un
+        site web s'éteint quand personne ne renouvelle le domaine, qu'une conversation est
+        oubliée. La majorité des préjudices coordonnés sont aigus — une campagne de harcèlement,
+        un doxxing, une fausse accusation. Une fois que le préjudice immédiat a suivi son cours et
+        que les gens cessent d'interagir avec lui, le réseau cesse de le répliquer. Le contenu qui
+        perdure le fait parce qu'il continue d'avoir de l'importance pour quelqu'un.
+    </p>
+    <p>
+        Il existe un dicton mexicain qui le capture parfaitement :
+    </p>
+    <blockquote>
+        <p>
+            <em>Uno muere dos veces. La primera, cuando dejas de respirar. La segunda, cuando alguien pronuncia tu nombre por última vez.</em>
+            —
+            On meurt deux fois. La première, quand on cesse de respirer. La seconde, quand votre nom est prononcé pour la dernière fois.
+        </p>
+    </blockquote>
+
+    <h3>Retours par proof-of-work</h3>
+    <p>
+        Les utilisateurs peuvent envoyer des signaux sur le contenu — j'aime, je n'aime pas,
+        signalements — et chaque signal exige une petite proof-of-work. L'exigence de calcul rend
+        le bourrage massif de signaux coûteux. Plus important encore, la qualité d'un signal se
+        mesure au calcul qui le sous-tend : un signalement appuyé par davantage de calcul a plus
+        de poids qu'un signalement appuyé par moins. Le résultat est une métrique de préjudice
+        pondérée par la communauté, qu'aucun acteur isolé ne peut facilement manipuler.
+    </p>
+
+    <h3>Catégories configurables</h3>
+    <p>
+        Les utilisateurs peuvent configurer les catégories de préjudices qu'ils veulent filtrer :
+        violence, menaces, spam, contenu adulte, automutilation. Le CSAM est filtré le plus
+        agressivement — c'est un défaut non négociable. Les autres catégories sont filtrées par
+        défaut mais peuvent être ajustées pour les contextes où s'appliquent des normes
+        différentes (les plateformes de contenu adulte, par exemple). Cela respecte le fait que
+        les communautés ont des standards différents tout en maintenant un plancher dur sur les
+        contenus les pires.
+    </p>
+
+    <h3>Friction, pas censure</h3>
+    <p>
+        Plutôt que de masquer entièrement le contenu signalé, Hashiverse introduit une friction
+        proportionnelle à la sévérité du retour de la communauté. Un contenu avec des signaux
+        négatifs modérés peut imposer quelques secondes de délai avant d'être affiché ; un
+        contenu avec des signaux sévères peut imposer une minute d'attente. Cela signifie que le
+        contenu n'est pas censuré — un utilisateur qui veut sincèrement le voir le peut — mais
+        que la navigation occasionnelle le contourne naturellement. La friction est temporaire et
+        liée à la session, donc elle ne s'accumule pas en blocages permanents.
+    </p>
+
+    <h3>Restrictions d'images et classifieurs</h3>
+    <p>
+        Les images dans les contextes de hashtags et de mentions — où le contenu remonte à des
+        personnes qui ne se sont pas spécifiquement abonnées à un utilisateur — sont
+        automatiquement restreintes par défaut.
+    </p>
+    <p>
+        À mesure que l'IA côté client s'améliore, un classifieur de nudité embarqué (en
+        l'occurrence <a href="https://github.com/infinitered/nsfwjs">NSFWJS</a>) ajoutera une
+        couche supplémentaire sans qu'aucun contenu n'ait besoin d'être envoyé à un service
+        central pour analyse. Le classifieur tourne localement, la décision reste locale.
+    </p>
+
+    <h2>Les angles morts assumés</h2>
+    <p>
+        Ces couches n'éliminent pas tout préjudice. Le préjudice textuel — harcèlement coordonné,
+        désinformation ciblée, arnaques sophistiquées — est plus difficile à détecter sans
+        compréhension sémantique. La fenêtre d'expiration du contenu signifie qu'un préjudice
+        sérieux peut persister des mois avant disparition. Sans modération de contenu
+        centralisée, il n'y a pas d'équivalent à un avis de retrait pour les situations urgentes.
+    </p>
+    <p>
+        Hashiverse ne prétend pas le contraire. Ce sont de vraies limites d'une architecture qui
+        refuse d'introduire une autorité centrale. La conviction qui sous-tend la conception est
+        que les préjudices du contrôle de contenu centralisé — répression, biais, effets
+        dissuasifs sur la parole légitime — sont au moins aussi graves que les préjudices que la
+        modération centrale prévient, et qu'une approche par couches, distribuée, mérite d'être
+        poursuivie même si elle est imparfaite. L'équipe continue de travailler à l'amélioration
+        de ces mécanismes sans compromettre l'architecture centrale.
+    </p>
+</LoreDoc>

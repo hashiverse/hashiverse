@@ -4,6 +4,12 @@
 
 - [![build-www](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml)
 
+## Translations
+
+- [![check-translations-www](https://github.com/hashiverse/hashiverse/actions/workflows/check-translations-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/check-translations-www.yml)
+
+When the badge above is red, run `node www/translations/check-translations.mjs` from the repo root and paste the JSON output into a Claude Code session — the `prompt` field in the output instructs Claude on how to update the translations and the state file.
+
 ## Get started
 
 - Install dependencies with `npm install`

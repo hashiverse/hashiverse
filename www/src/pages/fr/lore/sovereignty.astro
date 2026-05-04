@@ -1,0 +1,77 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Souveraineté des données">
+  <p>
+    Quand vous publiez sur une plateforme centralisée, vous ne publiez pas — vous déposez. Le
+    contenu appartient à la plateforme. C'est elle qui décide s'il reste en ligne. C'est elle qui
+    décide qui peut le voir, quand on peut le voir, et dans quelles circonstances il disparaît.
+    Vous êtes locataire, pas propriétaire, et les conditions de votre bail peuvent changer à tout
+    moment, sans préavis ni recours.
+  </p>
+  <p>
+    La souveraineté des données signifie quelque chose de plus fondamental : votre contenu, votre
+    identité et vos relations vous appartiennent d'une manière qui ne peut être révoquée
+    unilatéralement.
+  </p>
+
+  <h2>Une identité que l'on ne peut perdre</h2>
+  <p>
+    Dans Hashiverse, votre identité est une paire de clés cryptographiques générée sur votre
+    propre appareil. Votre identifiant public — le hachage de vos clés publiques — est dérivé
+    mathématiquement de clés que vous seul détenez. Aucun serveur ne vous l'a délivré. Aucune
+    entreprise ne peut le révoquer. Aucune suspension de compte ne peut vous le retirer.
+  </p>
+  <p>
+    Quand vous publiez, vous signez le contenu avec votre clé privée. N'importe qui, n'importe où
+    sur le réseau, peut vérifier cette signature sans demander à une autorité centrale.
+    L'authenticité de vos publications est prouvable par les mathématiques, pas par la base de
+    données d'une entreprise.
+  </p>
+
+  <h2>Un contenu qu'on ne peut effacer</h2>
+  <p>
+    Vos publications sont stockées de manière redondante sur les nœuds les plus proches dans une
+    table de hachage distribuée Kademlia. Il n'existe pas un serveur unique qui détient vos
+    données. Il n'y a pas de base de données maîtresse d'où supprimer votre fiche. Quand vous
+    publiez quelque chose, cela se propage à travers des serveurs indépendants opérés par des
+    personnes indépendantes. Le retirer demanderait de coordonner une majorité de ces serveurs —
+    une coordination structurellement difficile et économiquement irrationnelle pour un acteur
+    isolé.
+  </p>
+  <p>
+    Ce n'est pas simplement de la réplication. Le réseau se répare activement. Si un nœud passe
+    hors ligne ou perd des données, les nœuds environnants détectent le manque et répliquent le
+    contenu manquant. Un client qui récupère des publications depuis plusieurs serveurs identifie
+    automatiquement quels serveurs sont en manque et organise pour eux la réception de ce qu'ils
+    n'ont pas — sans aucune orchestration centrale.
+  </p>
+
+  <h2>Chiffrement au repos</h2>
+  <p>
+    Les publications stockées sur les serveurs sont chiffrées. La clé de chiffrement est dérivée
+    du contexte de la publication : votre propre identifiant public pour votre fil personnel, le
+    nom du hashtag pour les buckets de hashtags, l'identifiant du destinataire pour les mentions.
+    Un serveur stocke un contenu qu'il ne peut pas lire. Il ne peut pas miner vos publications
+    pour en extraire des signaux de ciblage. Il ne peut pas vendre des analyses de ce que vous
+    écrivez ou des personnes avec qui vous interagissez.
+  </p>
+  <p>
+    C'est une déniabilité plausible inscrite dans l'architecture. Un opérateur de serveur ne peut
+    pas être contraint de remettre du contenu lisible parce qu'il ne le détient pas. Le texte en
+    clair n'existe que dans les clients — dans votre navigateur, sur votre appareil.
+  </p>
+
+  <h2>Des clés qui ne peuvent vous être verrouillées</h2>
+  <p>
+    Le problème le plus difficile de l'identité auto-souveraine est la récupération de clé. Si
+    votre clé privée est perdue, vous perdez votre identité. Hashiverse travaille à des
+    mécanismes de récupération qui préservent la souveraineté sans la sacrifier : le partage de
+    secret de Shamir (votre clé répartie entre plusieurs parties de confiance, M-parmi-N requis
+    pour la récupérer), la prise en charge des jetons matériels, et des clés de signature
+    déléguées qui vous permettent d'opérer depuis plusieurs appareils sans exposer votre clé
+    racine. Ce ne sont pas des ajouts tardifs — c'est une condition pour que la souveraineté soit
+    réelle plutôt que théorique.
+  </p>
+</LoreDoc>

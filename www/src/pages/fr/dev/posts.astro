@@ -1,0 +1,118 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Protocole des publications">
+  <p>
+    Une publication dans Hashiverse est du HTML — rédigé dans le navigateur avec un éditeur de
+    texte enrichi, assaini par DOMPurify avant affichage. Entre la rédaction et l'affichage se
+    trouve un pipeline de compression, chiffrement, signature, soumission en deux phases,
+    routage DHT et agrégation en bundles. Cette page suit une publication à travers ce
+    pipeline.
+  </p>
+
+  <h2>La publication encodée</h2>
+  <p>
+    <code>EncodedPostV1</code> est le format réseau d'une publication unique. Il contient :
+  </p>
+  <ul>
+    <li><strong>header</strong> : octets de la clé de vérification, octets d'engagement post-quantique, timestamp, longueur de la publication, et <code>linked_base_ids</code> — références à des publications antérieures auxquelles celle-ci répond ou sur lesquelles elle s'appuie.</li>
+    <li><strong>signature</strong> : signature Ed25519 (ou post-quantique) sur les hachages d'en-tête et de publication.</li>
+    <li><strong>post</strong> : le contenu HTML, compressé en Brotli et chiffré.</li>
+    <li><strong>post_id</strong> : hachage Blake3 de la signature — une adresse de contenu stable et vérifiable.</li>
+  </ul>
+  <p>
+    Le chiffrement utilise plusieurs phrases de passe — une par contexte dans lequel apparaît la
+    publication — via un schéma multi-clés personnalisé inspiré du format de chiffrement
+    <code>age</code>. Une publication à la fois dans le fil d'un utilisateur et sous un hashtag
+    est chiffrée avec, comme phrases de passe, l'identifiant public de l'utilisateur et la
+    chaîne du hashtag. L'une ou l'autre clé permet de la déchiffrer. Les serveurs qui détiennent
+    les octets chiffrés ne peuvent lire ni l'une ni l'autre.
+  </p>
+
+  <h2>Soumission : Claim puis Commit</h2>
+  <p>
+    La soumission d'une publication suit un protocole en deux phases :
+  </p>
+  <ol>
+    <li>
+      <strong>SubmitClaim</strong> : le client envoie une requête de claim avec une PoW. Le
+      serveur valide la PoW et, si l'identifiant de publication n'est pas déjà présent, émet un
+      jeton autorisant le commit.
+    </li>
+    <li>
+      <strong>SubmitCommit</strong> : le client envoie les octets effectifs de la publication
+      avec le jeton. Le serveur stocke la publication et renvoie une signature de confirmation.
+    </li>
+  </ol>
+  <p>
+    Séparer le claim du commit prévient les attaques par inondation de charge utile : un
+    serveur peut rejeter à peu de frais des claims de mauvaise foi (il suffit de vérifier la
+    PoW) avant d'accepter une charge utile importante. La signature de confirmation du serveur
+    est la preuve, pour le client, que la publication a été acceptée.
+  </p>
+  <p>
+    <strong>Source :</strong> <a href={`${g.server}/src/server/handlers/`}><code>hashiverse-server/src/server/handlers/</code></a>
+  </p>
+
+  <h2>Bundles et buckets</h2>
+  <p>
+    Les publications ne sont ni stockées ni récupérées individuellement — elles sont regroupées
+    en objets <code>EncodedPostBundleV1</code>, un bundle par bucket par serveur. Un bundle
+    contient environ 20 publications d'un identifiant d'emplacement particulier (une fenêtre
+    temporelle spécifique pour un utilisateur, un hashtag ou un contexte de réponse précis),
+    mais ce nombre peut être plus élevé en raison de la réparation et des délais de cohérence
+    éventuelle. Les bundles sont signés par le pair qui sert.
+  </p>
+  <p>
+    Récupérer le fil d'un utilisateur signifie parcourir la hiérarchie de buckets de manière
+    récursive : commencer par le bucket mensuel, descendre dans le hebdomadaire, le quotidien,
+    l'horaire et les buckets plus fins là où des publications existent. Le
+    <code>RecursiveBucketVisitor</code> gère cela avec un callback qui décide à chaque niveau
+    s'il faut descendre vers une granularité plus fine ou sauter, permettant une pagination
+    efficace même à travers des fils éparses.
+  </p>
+  <p>
+    <strong>Source :</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_bundle.rs`}><code>encoded_post_bundle.rs</code></a>,
+    <a href={`${g.lib}/src/client/timeline/`}><code>hashiverse-lib/src/client/timeline/</code></a>
+  </p>
+
+  <h2>Types de buckets</h2>
+  <p>
+    Quatre (au moment de l'écriture) types de buckets déterminent comment les publications sont
+    indexées et découvertes :
+  </p>
+  <ul>
+    <li><strong>User (0)</strong> : le fil personnel de l'auteur</li>
+    <li><strong>Hashtag (1)</strong> : les publications contenant un hashtag donné</li>
+    <li><strong>Mention (2)</strong> : les publications mentionnant un utilisateur précis</li>
+    <li><strong>ReplyToPost (3)</strong> : les publications répondant à une publication précise</li>
+  </ul>
+  <p>
+    Une même publication peut apparaître simultanément dans plusieurs buckets, chacune chiffrée
+    avec la phrase de passe appropriée à ce bucket.
+  </p>
+  <p>
+    <strong>Source :</strong> <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a>
+  </p>
+
+  <h2>Stockage</h2>
+  <p>
+    Côté serveur, les bundles de publications sont persistés sur disque, tandis que leurs
+    métadonnées sont persistées dans <strong>fjall</strong> — un magasin clé-valeur embarqué
+    pur Rust avec compactage automatique et bon débit en écriture. fjall a été choisi plutôt
+    que redb et sled pour son historique de maintenance et sa simplicité opérationnelle. Les
+    publications sont stockées sous forme d'octets compressés Brotli et chiffrés.
+  </p>
+  <p>
+    Côté client navigateur, les publications sont mises en cache dans <strong>IndexedDB</strong>
+    via <code>indexed_db_futures</code>, avec un stub en mémoire pour les tests. Chaque
+    catégorie de données côté client est chiffrée au repos avec une clé différente, choisie
+    pour correspondre à son modèle d'accès.
+  </p>
+  <p>
+    <strong>Source :</strong> <a href={`${g.server}/src/environment/`}><code>hashiverse-server/src/environment/</code></a>,
+    <a href={`${g.wasm}/src/wasm_client_storage.rs`}><code>wasm_client_storage.rs</code></a>
+  </p>
+</DevDoc>

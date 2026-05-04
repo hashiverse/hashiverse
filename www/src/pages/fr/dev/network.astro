@@ -1,0 +1,115 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Le réseau DHT">
+  <p>
+    Comment des centaines de serveurs indépendants, sans annuaire central, se trouvent-ils,
+    s'accordent-ils sur l'emplacement des données et acheminent-ils efficacement les requêtes ?
+    Hashiverse utilise une table de hachage distribuée Kademlia — la même famille d'algorithmes
+    qu'utilisent BitTorrent, IPFS et la couche de découverte de pairs d'Ethereum — adaptée aux
+    schémas d'accès d'un réseau social.
+  </p>
+
+  <h2>L'anneau</h2>
+  <p>
+    Chaque entité dans Hashiverse — serveurs, utilisateurs, publications, hashtags — a un
+    identifiant 256 bits dérivé de son hachage Blake3. Ces identifiants vivent sur un anneau :
+    l'espace d'adressage se referme à 2<sup>256</sup>. La « distance » entre deux identifiants
+    est le XOR de leurs motifs binaires, une métrique qui donne à l'anneau d'utiles propriétés
+    de routage.
+  </p>
+  <p>
+    Chaque serveur maintient des connexions vers d'autres serveurs dont les identifiants sont
+    proches du sien en distance XOR, plus des connexions à des distances exponentiellement
+    croissantes (les k-buckets de Kademlia). Cette structure signifie que tout serveur peut
+    router une requête vers le serveur le plus proche d'un identifiant cible en O(log n) sauts,
+    où n est le nombre de serveurs du réseau.
+  </p>
+  <p>
+    <strong>Source :</strong> <a href={`${g.server}/src/server/kademlia/kademlia.rs`}><code>kademlia.rs</code></a>
+  </p>
+
+  <h2>Où vivent les données</h2>
+  <p>
+    Un bucket de publications est stocké sur les serveurs dont les identifiants sont les plus
+    proches du <code>location_id</code> du bucket — un hachage dérivé du type de bucket, de
+    l'identifiant de base (utilisateur, hashtag ou publication) et de la fenêtre temporelle.
+    Cela signifie :
+  </p>
+  <ul>
+    <li>Les publications d'un utilisateur sont stockées sur les serveurs les plus proches de l'identifiant de cet utilisateur sur l'anneau.</li>
+    <li>Les publications d'un hashtag sont stockées près de l'identifiant de hachage du hashtag.</li>
+    <li>À mesure que de nouveaux serveurs rejoignent ou quittent, l'ensemble des plus proches voisins se déplace, et la réparation propage les données vers les nouveaux serveurs les plus proches.</li>
+  </ul>
+  <p>
+    Il n'y a pas d'index maître. Aucun serveur ne sait où tout se trouve. Chaque serveur sait où
+    se trouvent les choses près de lui, et comment router vers ce qui est loin.
+  </p>
+
+  <h2>Répartition de la charge</h2>
+  <p>
+    Les hashtags populaires seraient un goulot d'étranglement si toutes les publications pour un
+    hashtag tombaient indéfiniment sur la même poignée de serveurs. Hashiverse répartit cette
+    charge en utilisant une rotation des clés basée sur les époques temporelles : l'identifiant
+    d'emplacement d'un bucket de hashtag se déplace dans le temps, de sorte que différentes
+    époques tombent sur différentes parties de l'anneau — différents serveurs. Tous les
+    identifiants d'emplacement de fil tournent à cadence mensuelle ; mais les fils plus chargés
+    débordent automatiquement vers des buckets de granularité croissante.
+  </p>
+  <p>
+    Le système de buckets est hiérarchique : les buckets d'un mois se subdivisent en buckets
+    hebdomadaires, puis quotidiens, puis de 6 heures, horaires, de 15 minutes, de 5 minutes et
+    d'une minute. Le chargement du fil parcourt cette hiérarchie de manière récursive — en
+    commençant grossier et en descendant dans des buckets plus fins seulement là où du contenu
+    existe. Un fil avec une activité éparse se charge à peu de frais ; un fil dense se charge
+    efficacement parce que chaque bucket peut être récupéré en parallèle.
+  </p>
+  <p>
+    <strong>Source :</strong> <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a>,
+    <a href={`${g.lib}/src/client/timeline/recursive_bucket_visitor.rs`}><code>recursive_bucket_visitor.rs</code></a>
+  </p>
+
+  <h2>Abstraction du transport</h2>
+  <p>
+    Le protocole est agnostique au transport. Les traits <code>TransportFactory</code>,
+    <code>TransportServer</code> et <code>TransportServerHandler</code> dans
+    <a href={`${g.lib}/src/transport/`}><code>hashiverse-lib/src/transport/</code></a>
+    définissent l'interface ; les implémentations s'échangent sans toucher à la logique du
+    protocole :
+  </p>
+  <ul>
+    <li>
+      <strong>mem_transport</strong> : canaux en mémoire, utilisés en tests. Permet de démarrer
+      des topologies multi-serveurs complètes dans un seul processus, sans surcharge réseau.
+    </li>
+    <li>
+      <strong>HttpsTransport / TcpTransport</strong> : implémentations de production dans
+      <a href={`${g.server}/src/network/transport/`}><code>hashiverse-server/src/network/transport/</code></a>,
+      avec HTTPS utilisant des certificats auto-provisionnés via rcgen et instant-acme (Let's
+      Encrypt).
+    </li>
+    <li>
+      <strong>WasmTransport</strong> : transport HTTP navigateur via gloo-net, dans
+      <a href={`${g.wasm}/src/wasm_transport.rs`}><code>wasm_transport.rs</code></a>.
+    </li>
+  </ul>
+  <p>
+    Les tests d'intégration en tirent largement parti : un test qui vérifie le comportement de
+    réparation, le routage DHT ou la propagation des publications peut tourner entièrement en
+    mémoire avec un timing déterministe, sans ports et sans nettoyage.
+  </p>
+
+  <h2>Orchestration du test-harness</h2>
+  <p>
+    Le binaire test-harness démarre un serveur primaire (pour le bootstrap) plus un nombre
+    configurable de serveurs secondaires dans un seul processus en utilisant le
+    <code>JoinSet</code> de Tokio, tous partageant le même jeton d'annulation pour un arrêt
+    gracieux. L'orchestrateur <code>HashiverseServer</code> initialise Kademlia, démarre les
+    gestionnaires de transport et gère la découverte des pairs.
+  </p>
+  <p>
+    <strong>Source :</strong> <a href={`${g.integrationTests}/src/bin/test_harness.rs`}><code>hashiverse-integration-tests/src/bin/test_harness.rs</code></a>
+  </p>
+</DevDoc>
