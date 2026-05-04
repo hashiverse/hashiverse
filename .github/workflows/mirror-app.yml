@@ -10,6 +10,12 @@ jobs:
   mirror:
     runs-on: ubuntu-latest
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { repo: app-eu, domain: app.hashiverse.eu }
+          - { repo: app-ch, domain: app.hashiverse.ch }
     steps:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -20,11 +26,25 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan codeberg.org >> ~/.ssh/known_hosts
 
-      - name: Mirror to Codeberg
+      - name: Mirror branches and tags
+        env:
+          REPO: git@codeberg.org:hashiverse/${{ matrix.target.repo }}.git
         run: |
           git clone --mirror https://github.com/hashiverse/app.git mirror
-          git -C mirror push --prune git@codeberg.org:hashiverse/app.git \
+          git -C mirror push --prune "$REPO" \
             "+refs/heads/*:refs/heads/*" \
             "+refs/tags/*:refs/tags/*"
-          git -C mirror push git@codeberg.org:hashiverse/app.git \
-            "+refs/heads/main:refs/heads/pages"
+
+      - name: Build pages branch with .domains and push
+        env:
+          REPO: git@codeberg.org:hashiverse/${{ matrix.target.repo }}.git
+          DOMAIN: ${{ matrix.target.domain }}
+        run: |
+          git clone --branch main --depth 1 https://github.com/hashiverse/app.git work
+          cd work
+          git config user.name "hashiverse-mirror"
+          git config user.email "mirror@hashiverse.com"
+          echo "$DOMAIN" > .domains
+          git add .domains
+          git commit -m "Add .domains for Codeberg Pages ($DOMAIN)"
+          git push --force "$REPO" HEAD:refs/heads/pages
