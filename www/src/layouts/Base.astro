@@ -1,5 +1,5 @@
 ---
-import { strings_for } from "../i18n/strings";
+import { strings_for, supported_locales } from "../i18n/strings";
 
 interface Props {
   title: string;
@@ -12,6 +12,11 @@ const t = strings_for(locale);
 
 const { title, description = t.site.default_description, fullscreen = false } = Astro.props;
 const prerelease_tag = import.meta.env.PUBLIC_PRERELEASE_TAG;
+
+const path_without_locale = Astro.url.pathname.replace(/^\/[a-z]{2}(\/|$)/, "/");
+const canonical_href = Astro.site ? new URL(`/${locale}${path_without_locale}`, Astro.site).href : `/${locale}${path_without_locale}`;
+const alternate_href = (l: string) => Astro.site ? new URL(`/${l}${path_without_locale}`, Astro.site).href : `/${l}${path_without_locale}`;
+const x_default_href = Astro.site ? new URL("/", Astro.site).href : "/";
 ---
 
 <!doctype html>
@@ -22,6 +27,11 @@ const prerelease_tag = import.meta.env.PUBLIC_PRERELEASE_TAG;
     <meta name="description" content={description} />
     <title>{title === t.site.title_suffix ? t.site.title_suffix : `${title} — ${t.site.title_suffix}`}</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="canonical" href={canonical_href} />
+    {supported_locales.map((l) => (
+      <link rel="alternate" hreflang={l} href={alternate_href(l)} />
+    ))}
+    <link rel="alternate" hreflang="x-default" href={x_default_href} />
   </head>
   <body class:list={[{ fullscreen }]}>
     {prerelease_tag && (
