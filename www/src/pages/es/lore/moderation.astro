@@ -1,0 +1,135 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Descentralización responsable">
+    <p>
+        La descentralización no es una postura moral. Es una postura arquitectónica. Y una red
+        descentralizada puede albergar contenido dañino, ilegal o simplemente corrosivo para
+        las comunidades que la usan. «Sin autoridad central» no puede ser una excusa para
+        «todo vale». La pregunta no es si moderar, sino cómo moderar sin reintroducir el
+        punto único de control que la descentralización busca eliminar.
+    </p>
+    <p>
+        Es uno de los problemas más difíciles en el diseño de Hashiverse, y es uno que el
+        equipo se toma en serio en lugar de descartar como preocupación de otros.
+    </p>
+
+    <h2>La restricción: ningún guardián</h2>
+    <p>
+        En una plataforma centralizada, la moderación es sencilla en principio: un equipo
+        revisa contenido, aplica políticas y elimina infracciones. El resultado depende
+        completamente de la calidad y la consistencia de ese equipo y esas políticas — por
+        eso la moderación centralizada tiene sus propios fallos graves. Pero el mecanismo es
+        claro.
+    </p>
+    <p>
+        En Hashiverse no hay equipo de moderación. No hay junta de políticas. Las
+        publicaciones las firman sus autores, se almacenan en servidores independientes y las
+        recuperan los clientes. Ninguna entidad única tiene autoridad para borrar una
+        publicación de la red. Cualquier mecanismo que introduzca esa autoridad reintroduce
+        el problema de la propiedad.
+    </p>
+    <p>
+        El diseño tiene, por tanto, que funcionar de otra manera: tiene que hacer que el
+        contenido dañino sea costoso de producir, difícil de hacer aflorar y autolimitado en
+        el tiempo — sin requerir que un actor central tome decisiones por contenido.
+    </p>
+
+    <h2>Cómo funcionan las capas</h2>
+    <p>
+        Hashiverse adopta un enfoque por capas, donde cada capa aborda una dimensión
+        diferente del problema y las capas se refuerzan mutuamente:
+    </p>
+
+    <h3>Caducidad natural</h3>
+    <p>
+        El contenido de Hashiverse sobrevive porque la gente sigue leyéndolo. El principio
+        detrás de la reparación y el caché es simple: los datos que merecen replicarse —
+        relevantes para alguien, en algún sitio — se replican. Cuando un cliente recupera una
+        publicación, comprueba a qué servidores les falta y rellena esas brechas. El
+        contenido que la gente sigue visitando se sigue replicando. El que nadie visita deja
+        de repararse, y a medida que los servidores se llenan y aplican sus políticas de
+        desalojo, el contenido olvidado desaparece silenciosamente — sin que nadie tenga que
+        decidir retirarlo.
+    </p>
+    <p>
+        No es censura. Es el mismo mecanismo por el que un libro se descataloga, un sitio
+        web se apaga cuando nadie renueva el dominio, una conversación se olvida. La
+        mayoría del daño coordinado es agudo — una campaña de acoso, un doxeo, una falsa
+        acusación. Una vez que el daño inmediato sigue su curso y la gente deja de
+        interactuar con él, la red deja de replicarlo. El contenido que perdura lo hace
+        porque sigue importándole a alguien.
+    </p>
+    <p>
+        Hay un dicho mexicano que lo captura perfectamente:
+    </p>
+    <blockquote>
+        <p>
+            <em>Uno muere dos veces. La primera, cuando dejas de respirar. La segunda, cuando alguien pronuncia tu nombre por última vez.</em>
+        </p>
+    </blockquote>
+
+    <h3>Retroalimentación con proof-of-work</h3>
+    <p>
+        Los usuarios pueden señalar el contenido — me gusta, no me gusta, denuncias — y cada
+        señal exige una pequeña proof-of-work. El requisito de cómputo encarece el bombardeo
+        masivo de señales. Más importante: la calidad de una señal se mide por el cómputo
+        que la respalda: una denuncia con más cómputo pesa más que otra con menos. El
+        resultado es una métrica de daño ponderada por la comunidad, que ningún actor aislado
+        puede manipular fácilmente.
+    </p>
+
+    <h3>Categorías configurables</h3>
+    <p>
+        Los usuarios pueden configurar qué categorías de daño quieren filtrar: violencia,
+        amenazas, spam, contenido para adultos, autolesiones. El CSAM se filtra de la forma
+        más agresiva — un valor por defecto innegociable. Otras categorías se filtran por
+        defecto pero pueden ajustarse en contextos donde se aplican normas distintas
+        (plataformas de contenido para adultos, por ejemplo). Esto respeta que comunidades
+        distintas tengan estándares distintos y mantiene a la vez un suelo duro frente al
+        peor contenido.
+    </p>
+
+    <h3>Fricción, no censura</h3>
+    <p>
+        En lugar de ocultar por completo el contenido marcado, Hashiverse introduce fricción
+        proporcional a la severidad de la retroalimentación de la comunidad. El contenido
+        con señales negativas leves puede requerir unos segundos de retraso antes de
+        mostrarse; el contenido con señales severas puede requerir un minuto de espera. Esto
+        significa que el contenido no está censurado — un usuario que de verdad quiere verlo
+        puede — pero la navegación casual lo evita de forma natural. La fricción es temporal
+        y por sesión, así que no se acumula en bloqueos permanentes.
+    </p>
+
+    <h3>Restricciones de imágenes y clasificadores</h3>
+    <p>
+        Las imágenes en contextos de hashtag y mención — donde el contenido aflora a
+        personas que no se suscribieron específicamente a un usuario — están restringidas
+        por defecto.
+    </p>
+    <p>
+        A medida que la IA del lado del cliente madura, un clasificador local de desnudez
+        (concretamente <a href="https://github.com/infinitered/nsfwjs">NSFWJS</a>) añadirá
+        una capa adicional sin necesidad de enviar contenido a un servicio central para
+        analizarlo. El clasificador se ejecuta localmente, la decisión se queda local.
+    </p>
+
+    <h2>Los puntos ciegos asumidos</h2>
+    <p>
+        Estas capas no eliminan todo daño. El daño basado en texto — acoso coordinado,
+        desinformación dirigida, estafas sofisticadas — es más difícil de detectar sin
+        comprensión semántica. La ventana de expiración del contenido implica que un daño
+        serio puede persistir durante meses antes de caducar. Sin moderación de contenido
+        centralizada no hay equivalente a un aviso de retirada para situaciones urgentes.
+    </p>
+    <p>
+        Hashiverse no finge lo contrario. Son límites reales de una arquitectura que se
+        niega a introducir una autoridad central. La convicción detrás del diseño es que
+        los daños del control centralizado del contenido — supresión, sesgo, efectos
+        disuasorios sobre el discurso legítimo — son al menos tan serios como los daños que
+        la moderación central previene, y que un enfoque por capas y distribuido merece la
+        pena perseguirse aun siendo imperfecto. El equipo sigue trabajando en mejorar estos
+        mecanismos sin comprometer la arquitectura central.
+    </p>
+</LoreDoc>

@@ -1,0 +1,462 @@
+---
+import Base from '../../layouts/Base.astro';
+import Nav from '../../components/Nav.astro';
+---
+
+<Base title="Hashiverse">
+    <Nav/>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="hero-content">
+            <h1 class="hero-headline">Hashiverse es <em>tu</em> Twitter/X de código abierto.</h1>
+            <p class="hero-punch">
+                <span style="white-space: nowrap">Tus claves.</span>
+                <span style="white-space: nowrap">Tus publicaciones.</span>
+                <span style="white-space: nowrap">Tu red.</span>
+            </p>
+            <p class="hero-sub">
+                <span style="white-space: nowrap">Sin anuncios (gratis).</span>
+                <span style="white-space: nowrap">Sin dueños (libre).</span>
+                <span style="white-space: nowrap">Sin algoritmos (franco).</span>
+            </p>
+            <div class="hero-cta">
+                <a id="hero-app-link" href="#" class="btn btn-primary">Probar Hashiverse</a>
+                <a href="https://github.com/hashiverse" class="btn btn-secondary">Ver el código</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Cards -->
+    <section class="cards-section">
+        <div class="cards">
+            <a href="/es/lore/contribute" class="card">
+                <h2>Tu red</h2>
+                <p>
+                    Hashiverse funciona sobre cientos de servidores independientes, cada uno con un coste
+                    de operación de unos 5 $ al mes. Sin centros de datos, sin infraestructura
+                    corporativa — solo voluntarios convencidos de que merece la pena tener una web social
+                    abierta.
+                </p>
+            </a>
+            <a href="/es/lore/invisible-hand" class="card">
+                <h2>Sin dueño, sin mano invisible</h2>
+                <p>
+                    Hashiverse es un protocolo, no un producto. Ninguna empresa puede adquirirlo, ningún
+                    multimillonario puede remodelarlo, ningún consejo puede venderlo. Nadie decide qué se
+                    vuelve tendencia, qué se promociona, ni qué desaparece en silencio.
+                </p>
+            </a>
+            <a href="/es/lore/advertising" class="card">
+                <h2>Sin algoritmo, sin anuncios, sin influencia</h2>
+                <p>
+                    Tu cronología son las publicaciones de las personas a las que sigues, en el orden en
+                    que se publicaron. Sin optimización del engagement, sin scroll compulsivo, sin
+                    publicidad, sin un perfil construido a partir de tu comportamiento en línea.
+                </p>
+            </a>
+            <a href="/es/dev/cryptography" class="card">
+                <h2>Criptográficamente seguro</h2>
+                <p>
+                    Tus publicaciones están firmadas y cifradas. Nadie puede manipular ni suprimir
+                    discretamente tu contenido. La proof-of-work en cada petición hace que el spam y los
+                    ataques sean económicamente inviables. La criptografía post-cuántica está prevista
+                    desde el primer día, así que tu red es a prueba de futuro.
+                </p>
+            </a>
+        </div>
+    </section>
+
+    <!-- Mastodon -->
+    <section class="mastodon-section">
+        <h2>¿No hace ya todo esto Mastodon?</h2>
+        <p class="mastodon-intro">
+            Mastodon demostró que las redes sociales federadas podían funcionar a escala, y la comunidad
+            del fediverso merece todo el reconocimiento por ello. Pero federación y descentralización
+            verdadera no son lo mismo.
+        </p>
+        <div class="cards">
+            <div class="card">
+                <h2>Identidad</h2>
+                <p>
+                    Tu identidad en Mastodon está atada a tu servidor de origen. Si tu administrador
+                    cierra el servidor, pierdes tu nombre de usuario y tu historial. En Hashiverse, tu
+                    identidad es un par de claves criptográficas en tu dispositivo — nadie te la
+                    entregó, nadie puede revocarla.
+                </p>
+            </div>
+            <div class="card">
+                <h2>Cifrado</h2>
+                <p>
+                    Las publicaciones de Mastodon se almacenan en texto claro. Los administradores de
+                    instancia pueden leer todo lo que publicas y actuar sobre ello a gran escala. Las
+                    publicaciones de Hashiverse están cifradas en reposo — los servidores almacenan
+                    contenido que no pueden leer fácilmente.
+                </p>
+            </div>
+            <div class="card">
+                <h2>Durabilidad</h2>
+                <p>
+                    Si tu instancia de Mastodon cae o tu cuenta se congela, tus publicaciones y
+                    seguidores se van con ella. Hashiverse distribuye tus datos entre múltiples nodos
+                    independientes y se autoreparara cuando los servidores desaparecen.
+                </p>
+            </div>
+            <div class="card">
+                <h2>Curaduría silenciosa</h2>
+                <p>
+                    Los administradores de Mastodon pueden filtrar contenido en silencio, bloquear
+                    usuarios, o desfederar comunidades enteras. Los servidores de Hashiverse no pueden
+                    curar lo que no pueden leer. Nadie decide en silencio qué voces se oyen y cuáles no.
+                </p>
+            </div>
+        </div>
+        <p class="mastodon-more"><a href="/es/lore/competitors">Comparación completa con X, Bluesky, Mastodon y Nostr &rarr;</a></p>
+    </section>
+
+    <!-- Try it -->
+    <section class="try-section">
+        <h2>Prueba Hashiverse</h2>
+        <div class="try-grid">
+            <div class="try-card">
+                <h3>Como usuario</h3>
+                <p>Elige una pasarela y empieza a publicar:</p>
+                <ul class="gateway-list">
+                    <li><div class="flag-wrap"><img src="/flags/us.svg" alt="US" class="flag" /></div><a href="https://app.hashiverse.com">app.hashiverse.com</a></li>
+                    <li><div class="flag-wrap"><img src="/flags/eu.svg" alt="EU" class="flag" /></div><a href="https://app.hashiverse.eu">app.hashiverse.eu</a></li>
+                    <li><div class="flag-wrap"><img src="/flags/ch.svg" alt="CH" class="flag" /></div><a href="https://app.hashiverse.ch">app.hashiverse.ch</a></li>
+                </ul>
+                <p class="try-showcase">
+                    <!-- Showcase bot accounts — coming soon -->
+                    Cuentas de muestra cuidadas para distintas comunidades están en camino. Síguelas
+                    para ver Hashiverse en acción con contenido adaptado a tus intereses.
+                </p>
+            </div>
+            <div class="try-card">
+                <h3>Como contribuidor</h3>
+                <p>
+                    Pon en marcha un servidor por unos 5 $ al mes — un único comando
+                    <code>docker-compose up</code> en cualquier VPS barato. Cada nodo que añades hace la
+                    red más fuerte, más difícil de censurar y más útil para todos.
+                </p>
+                <a href="/es/lore/contribute" class="btn btn-primary">Empezar</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Early adopter CTA -->
+    <section class="early-section">
+        <div class="early-inner">
+            <h2>Dar forma al futuro</h2>
+            <p>
+                Hashiverse aún es un bebé. El protocolo está activo, la red crece y la arquitectura
+                base está fijada — pero todo lo demás se está moldeando justo ahora. Forma parte de la
+                comunidad temprana que define cómo evoluciona la primera red social verdaderamente
+                descentralizada del mundo.
+            </p>
+            <p>Código abierto. Protocolo abierto. Mentes abiertas.</p>
+            <div class="early-links">
+                <a href="/es/lore/" class="btn btn-secondary">Visión</a>
+                <a href="/es/dev/" class="btn btn-secondary">Documentación Dev</a>
+                <a href="https://github.com/hashiverse" class="btn btn-secondary">GitHub</a>
+            </div>
+        </div>
+    </section>
+
+    <script>
+      function setAppLink(id: string) {
+        const a = document.getElementById(id) as HTMLAnchorElement | null;
+        if (!a) return;
+        const host = window.location.hostname;
+        if (host === 'localhost' || host === '127.0.0.1') {
+          a.href = 'http://localhost:3000';
+        }
+        else {
+          const bare = host.startsWith('www.') ? host.slice(4) : host;
+          a.href = `https://app.${bare}`;
+        }
+      }
+
+      setAppLink('hero-app-link');
+    </script>
+</Base>
+
+<style>
+    /* ── Hero ── */
+    .hero {
+        position: relative;
+        width: 100%;
+        min-height: 50vh;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        text-align: center;
+        background: url('/banner.webp') center center / cover no-repeat;
+    }
+
+    .hero-content {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        padding: 2.5rem 2rem;
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+    }
+
+    .hero-headline {
+        font-size: clamp(1.6rem, 4vw, 2.4rem);
+        line-height: 1.2;
+        margin: 0 0 0.75rem;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    }
+
+    .hero-punch {
+        color: var(--accent);
+        font-size: 1.5rem;
+        letter-spacing: 0.02em;
+        margin: 0 0 0.5rem;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+    }
+
+    .hero-sub {
+        color: var(--text-muted);
+        font-size: 1.4rem;
+        letter-spacing: 0.06em;
+        margin: 0 0 2rem;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+    }
+
+
+    .hero-cta {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+        display: inline-block;
+        padding: 0.7rem 1.6rem;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        text-decoration: none;
+        transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+
+    .btn-primary {
+        background: var(--accent);
+        color: var(--bg);
+    }
+
+    .btn-primary:hover {
+        background: var(--accent-bright);
+        text-decoration: none;
+    }
+
+    .btn-secondary {
+        background: transparent;
+        color: var(--accent);
+        border: 1px solid var(--accent);
+    }
+
+    .btn-secondary:hover {
+        background: var(--bg-raised);
+        border-color: var(--accent-bright);
+        color: var(--accent-bright);
+        text-decoration: none;
+    }
+
+    /* ── Cards ── */
+    .cards-section {
+        padding: 3rem 2rem;
+        max-width: 960px;
+        margin: 0 auto;
+    }
+
+    .cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+    }
+
+    .card {
+        background: var(--bg-raised);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.75rem;
+        text-decoration: none;
+        transition: border-color 0.15s, background 0.15s;
+    }
+
+    .card:hover {
+        border-color: var(--accent);
+        background: var(--bg-surface);
+        text-decoration: none;
+    }
+
+    .card h2 {
+        font-size: 1.15rem;
+        margin: 0 0 0.75rem;
+        color: var(--accent);
+    }
+
+    .card p {
+        margin: 0;
+        font-size: 0.925rem;
+        line-height: 1.6;
+        color: var(--text);
+    }
+
+    /* ── Mastodon ── */
+    .mastodon-section {
+        padding: 3rem 2rem;
+        max-width: 960px;
+        margin: 0 auto;
+    }
+
+    .mastodon-section > h2 {
+        font-size: 1.5rem;
+        margin: 0 0 0.75rem;
+    }
+
+    .mastodon-intro {
+        color: var(--text-muted);
+        margin: 0 0 1.5rem;
+    }
+
+    .mastodon-more {
+        font-size: 0.9rem;
+        margin: 1.5rem 0 0;
+    }
+
+    /* ── Try it ── */
+    .try-section {
+        padding: 3rem 2rem;
+        max-width: 960px;
+        margin: 0 auto;
+    }
+
+    .try-section > h2 {
+        font-size: 1.5rem;
+        margin: 0 0 1.5rem;
+    }
+
+    .try-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+    }
+
+    .try-card {
+        background: var(--bg-raised);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.75rem;
+    }
+
+    .try-card h3 {
+        color: var(--accent);
+        font-size: 1.1rem;
+        margin: 0 0 0.75rem;
+    }
+
+    .try-card p {
+        margin: 0 0 1rem;
+        font-size: 0.925rem;
+        line-height: 1.6;
+    }
+
+    .gateway-list {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+
+    .gateway-list li {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    .gateway-list a {
+        font-size: 0.925rem;
+        font-family: 'Courier New', monospace;
+    }
+
+    .flag-wrap {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.6em;
+        vertical-align: middle;
+    }
+
+    .flag {
+        height: 1em;
+        border-radius: 2px;
+    }
+
+    .try-showcase {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        font-style: italic;
+        margin: 0;
+    }
+
+    /* ── Early adopter ── */
+    .early-section {
+        padding: 3rem 2rem;
+        background: var(--bg-raised);
+        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+        text-align: center;
+    }
+
+    .early-inner {
+        max-width: 640px;
+        margin: 0 auto;
+    }
+
+    .early-inner h2 {
+        font-size: 1.5rem;
+        margin: 0 0 1rem;
+    }
+
+    .early-inner p {
+        margin: 0 0 1rem;
+        font-size: 0.95rem;
+        line-height: 1.6;
+        color: var(--text);
+    }
+
+    .early-links {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 1.5rem;
+    }
+
+    /* ── Mobile ── */
+    @media (max-width: 720px) {
+        .hero {
+            padding: 3rem 1.5rem 2.5rem;
+        }
+
+        .cards {
+            grid-template-columns: 1fr;
+        }
+
+        .try-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>

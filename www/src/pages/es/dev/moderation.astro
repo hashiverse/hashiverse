@@ -1,0 +1,166 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Moderación de contenido">
+  <p>
+    La moderación descentralizada es un problema sin resolver. Hashiverse no pretende
+    haberlo resuelto del todo, pero sí cuenta con un enfoque por capas y basado en
+    principios que aborda la mayoría de los modos de fallo comunes sin reintroducir una
+    autoridad central. Cada capa es útil de forma independiente; juntas ofrecen una
+    cobertura significativa.
+  </p>
+
+  <h2>Capa 1: caducidad orgánica mediante reparación</h2>
+  <p>
+    El contenido en Hashiverse sobrevive mientras los clientes lo sigan recuperando.
+    Cada vez que un cliente recupera un bucket de publicaciones, identifica los
+    servidores a los que les faltan publicaciones y rellena esas brechas. Esto significa
+    que el contenido popular y visitado con frecuencia se replica continuamente entre
+    los servidores más cercanos de la red. El contenido que nadie recupera deja de
+    repararse. A medida que los servidores se llenan y aplican sus políticas LRU de
+    desalojo, el contenido sin referencias se descarta silenciosamente — sin decisión
+    central, sin aviso de retirada, sin juicio humano requerido.
+  </p>
+  <p>
+    El contenido que perdura lo hace porque sigue siendo de interés para alguien. El
+    contenido que causa daño agudo — campaña de acoso, desinformación dirigida —
+    típicamente pica en engagement y luego se desvanece al pasar el episodio. Cuando los
+    clientes dejan de recuperarlo, la reparación se detiene y la red lo olvida de forma
+    natural. El contenido dañino verdaderamente persistente exigiría un interés humano
+    persistente, un listón mucho más difícil de mantener que simplemente publicar algo
+    una vez.
+  </p>
+
+  <h2>Capa 2: retroalimentación ponderada por PoW</h2>
+  <p>
+    Los usuarios pueden señalar publicaciones mediante retroalimentación tipada:
+    reacciones positivas (me gusta, me encanta, etc.) y categorías de denuncia que
+    incluyen contenido sensible, discurso de odio, acoso, desinformación, spam y
+    estafas. Cada señal lleva un nivel de proof-of-work. La red mantiene la señal de
+    PoW global máxima por cada par (post_id, tipo_de_retroalimentación) y sana ese
+    máximo entre servidores.
+  </p>
+  <p>
+    Las métricas de daño se calculan a partir del agregado de señales de denuncia,
+    ponderadas por su PoW. Las señales de PoW alta provenientes de varios usuarios
+    independientes son muy difíciles de manipular: un adversario tendría que superar en
+    cómputo el trabajo combinado de una comunidad a la que le importe un contenido.
+  </p>
+
+  <h3>Denuncia de CSAM</h3>
+  <p>
+    El material de abuso sexual infantil (CSAM) es una categoría de retroalimentación
+    distinta con un umbral de cobertura del lado del cliente más bajo que otros tipos
+    de denuncia — se requiere una cantidad menor de señal PoW acumulada antes de que el
+    cliente cubra el contenido. Sin embargo, la mecánica subyacente de PoW es idéntica
+    a la de los demás tipos de retroalimentación: los denunciantes deben hacer trabajo
+    de cómputo real, que es el principal mecanismo de resistencia Sybil.
+  </p>
+  <p>
+    Este diseño es un compromiso deliberado. Cualquier mecanismo de umbral bajo y
+    acción rápida puede ser instrumentalizado: un troll podría marcar falsamente
+    contenido legítimo como CSAM para censurarlo. El requisito de PoW implica que las
+    campañas masivas de denuncias falsas tienen un coste real y proporcional, lo que
+    las hace económicamente poco atractivas a escala. La cobertura tampoco es
+    irreversible — el espectador conserva la capacidad de descubrir el contenido con
+    una advertencia fuerte — preservando la autonomía del usuario y evitando que una
+    sola denuncia falsa silencie permanentemente una publicación para todos.
+  </p>
+  <p>
+    Cuando un usuario envía una denuncia de CSAM, el cliente muestra un cuadro de
+    diálogo de confirmación advirtiendo que denunciar falsamente CSAM es ilegal en
+    muchas jurisdicciones y desvía recursos policiales de casos auténticos de abuso
+    infantil.
+  </p>
+  <p>
+    <strong>Fuente:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>
+  </p>
+
+  <h2>Capa 3: categorías configurables por el usuario</h2>
+  <p>
+    El CSAM siempre se filtra. Es un valor por defecto codificado y no anulable. Todas
+    las demás categorías de daño tienen valores por defecto configurables por el
+    usuario: violencia, amenazas y spam se filtran por defecto; el filtrado de
+    contenido para adultos está activado por defecto pero puede desactivarse en
+    contextos apropiados. La configuración vive en el cliente, no en ningún servidor,
+    así que ningún operador de servidor puede sobrescribir las elecciones del usuario.
+  </p>
+
+  <h2>Capa 4: revelación con fricción proporcional</h2>
+  <p>
+    En lugar de ocultar por completo el contenido marcado — lo que sería una forma de
+    censura — los clientes introducen un retraso de revelación proporcional a la
+    severidad de la señal de retroalimentación de la comunidad:
+  </p>
+  <ul>
+    <li>Señal baja: 0–5 segundos de retraso antes de mostrar el contenido</li>
+    <li>Señal moderada: 10–30 segundos</li>
+    <li>Señal alta: 30–60+ segundos</li>
+  </ul>
+  <p>
+    El retraso es por sesión: una vez que un usuario ha esperado el retraso y ha visto
+    una pieza de contenido, no se le vuelve a preguntar en la misma sesión. Esto
+    respeta la autonomía del usuario — el contenido es accesible — y a la vez hace que
+    la exposición casual a contenido fuertemente marcado sea prácticamente difícil. La
+    fricción cumple una función similar al diálogo «¿estás seguro?», escalada a la
+    preocupación de la comunidad.
+  </p>
+
+  <h2>Capa 5: restricciones de imágenes en contextos públicos</h2>
+  <p>
+    Las imágenes en buckets de hashtag y mención — contextos donde el contenido
+    aflora a usuarios que no se suscribieron específicamente al autor — están
+    restringidas por defecto. La cronología personal de un usuario no tiene tal
+    restricción. Esto limita el radio de afectación del daño basado en imágenes en
+    contextos de descubrimiento sin afectar al contenido dentro de las suscripciones
+    elegidas.
+  </p>
+
+  <h2>Capa 6: clasificadores en dispositivo (pendientes)</h2>
+  <p>
+    Esta capa está planificada pero aún no implementada, a la espera de suficiente
+    madurez en los modelos de IA del lado del cliente que se ejecutan en el navegador.
+    La intención es que el cliente ejecute un clasificador de desnudez localmente —
+    sin enviar contenido a un servicio central — y aplique automáticamente una
+    advertencia de contenido antes de que el sistema de retroalimentación PoW
+    comunitario haya tenido tiempo de acumular señal. Es especialmente valioso para
+    contenido recién publicado que aún no ha sido visto por suficientes usuarios para
+    activar los umbrales de cobertura.
+  </p>
+  <p>
+    El candidato principal es <a href="https://github.com/infinitered/nsfwjs">NSFWJS</a>,
+    que ejecuta una clasificación basada en MobileNet enteramente en el navegador
+    mediante TensorFlow.js. A medida que mejoren la calidad de los modelos y el
+    rendimiento de inferencia del navegador, también se está considerando un enfoque
+    por capas que combine NSFWJS para un primer cribado rápido con un modelo más
+    capaz para estimar edad.
+  </p>
+
+  <h2>Interacción de capas</h2>
+  <p>
+    Las capas están diseñadas para interactuar de forma constructiva. Una pieza de
+    contenido dañino que entre en la red se encuentra inmediatamente con: coste en PoW
+    al enviarse (caro de publicar a escala), restricciones de imágenes en contextos de
+    descubrimiento, clasificación en dispositivo y retroalimentación comunitaria que
+    acumula peso PoW con el tiempo e introduce fricción creciente. A los seis meses,
+    el contenido caduca por completo. Ninguna capa por sí sola es suficiente; juntas
+    crean varias barreras independientes que un adversario debe superar
+    simultáneamente.
+  </p>
+
+  <h2>Carencias conocidas</h2>
+  <p>
+    El daño basado en texto que no dispara los clasificadores de imágenes y no acumula
+    denuncias comunitarias rápidamente — desinformación sofisticada, grooming sutil,
+    amenazas dependientes del contexto — es el caso más difícil. La ventana de seis
+    meses implica que un daño serio puede persistir durante un periodo incómodo antes
+    de caducar. Son límites reales de la arquitectura. El trabajo continúa para
+    mejorar la detección dentro de las restricciones de mantener el sistema
+    descentralizado y al cliente como árbitro de lo que se muestra.
+  </p>
+  <p>
+    <strong>Fuente:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>
+  </p>
+</DevDoc>

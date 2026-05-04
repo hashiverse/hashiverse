@@ -1,0 +1,160 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Inhaltsmoderation">
+  <p>
+    Dezentrale Moderation ist ein ungelöstes Problem. Hashiverse gibt nicht vor, es
+    vollständig gelöst zu haben, hat aber einen geschichteten, prinzipien­geleiteten
+    Ansatz, der die meisten gängigen Fehlermodi adressiert, ohne eine zentrale Autorität
+    wieder einzuführen. Jede Schicht ist für sich nützlich; zusammen bieten sie eine
+    aussagekräftige Abdeckung.
+  </p>
+
+  <h2>Schicht 1: Organisches Verfallen durch Heilung</h2>
+  <p>
+    Inhalte in Hashiverse überleben, solange Clients sie weiter abrufen. Jedes Mal, wenn
+    ein Client einen Bucket von Beiträgen abruft, identifiziert er Server, denen Beiträge
+    fehlen, und schließt diese Lücken. Das bedeutet, dass beliebte, häufig besuchte
+    Inhalte kontinuierlich auf den nächstgelegenen Servern des Netzwerks repliziert werden.
+    Inhalte, die niemand abruft, hören auf, geheilt zu werden. Während Server sich füllen
+    und ihre LRU-Verdrängungs­richtlinien anwenden, wird unverlinkter Inhalt leise
+    verworfen — ohne zentrale Entscheidung, ohne Abmahnung, ohne menschliches Urteil.
+  </p>
+  <p>
+    Inhalte, die Bestand haben, haben das, weil sie für jemanden interessant bleiben.
+    Inhalte, die akuten Schaden verursachen — eine Belästigungs­kampagne, gezielte
+    Desinformation — schießen typischerweise im Engagement nach oben und verblassen, wenn
+    die Episode vorüber ist. Sobald Clients sie nicht mehr abrufen, hört die Heilung auf,
+    und das Netzwerk vergisst sie auf natürliche Weise. Wirklich persistenter schädlicher
+    Inhalt würde persistentes menschliches Interesse erfordern, eine viel höhere Hürde,
+    als einmal etwas zu posten.
+  </p>
+
+  <h2>Schicht 2: PoW-gewichtete Rückmeldung</h2>
+  <p>
+    Nutzer können auf Beiträge mit getypter Rückmeldung reagieren: positive Reaktionen
+    (Like, Liebe usw.) und Meldekategorien wie sensible Inhalte, Hassrede, Belästigung,
+    Falschinformationen, Spam und Betrug. Jedes Signal trägt einen Proof-of-Work-Pegel.
+    Das Netzwerk hält das global maximale PoW-Signal pro Paar (post_id, feedback_type) und
+    heilt dieses Maximum zwischen Servern.
+  </p>
+  <p>
+    Schadensmetriken werden aus dem Aggregat der Meldesignale berechnet, gewichtet nach
+    ihrer PoW. Hoch-PoW-Signale von mehreren unabhängigen Nutzern sind sehr schwer zu
+    manipulieren: Ein Gegner müsste die kombinierte Arbeit einer Community überrechnen,
+    die sich für ein Stück Inhalt einsetzt.
+  </p>
+
+  <h3>CSAM-Meldungen</h3>
+  <p>
+    Material über sexuellen Kindesmissbrauch (CSAM) ist eine eigene Feedback-Kategorie mit
+    einer niedrigeren clientseitigen Abdeckungs­schwelle als andere Meldetypen — eine
+    geringere Menge akkumulierten PoW-Signals reicht, bevor der Client den Inhalt abdeckt.
+    Die zugrunde liegende PoW-Mechanik ist allerdings identisch zu allen anderen
+    Feedback-Typen: Melder müssen weiterhin echte Rechen­arbeit leisten, was der primäre
+    Sybil-Resistenz­mechanismus ist.
+  </p>
+  <p>
+    Dieses Design ist ein bewusster Kompromiss. Jeder Mechanismus mit niedriger Schwelle
+    und schneller Wirkung kann instrumentalisiert werden: Ein Troll könnte legitime
+    Inhalte fälschlich als CSAM markieren, um sie zu zensieren. Die PoW-Anforderung
+    bedeutet, dass massenhafte Falschmelde­kampagnen einen echten und proportionalen Preis
+    haben, der sie in großem Maßstab wirtschaftlich unattraktiv macht. Abdeckung ist auch
+    nicht unumkehrbar — der Betrachter behält die Fähigkeit, den Inhalt mit einer starken
+    Warnung freizulegen — was die Nutzer­autonomie wahrt und verhindert, dass eine einzige
+    falsche Meldung einen Beitrag dauerhaft für alle zum Schweigen bringt.
+  </p>
+  <p>
+    Wenn ein Nutzer eine CSAM-Meldung einreicht, zeigt der Client einen
+    Bestätigungsdialog mit dem Hinweis, dass das fälschliche Melden von CSAM in vielen
+    Ländern illegal ist und Strafverfolgungs­ressourcen von echten Fällen von
+    Kindesmissbrauch abzieht.
+  </p>
+  <p>
+    <strong>Quelle:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>
+  </p>
+
+  <h2>Schicht 3: Vom Nutzer konfigurierbare Kategorien</h2>
+  <p>
+    CSAM wird immer gefiltert. Das ist ein hart kodierter, nicht überschreibbarer
+    Standard. Alle anderen Schadens­kategorien haben vom Nutzer konfigurierbare
+    Standardwerte: Gewalt, Drohungen und Spam werden standardmäßig gefiltert; das Filtern
+    von Erwachseneninhalten ist standardmäßig aktiv, kann aber für passende Kontexte
+    abgeschaltet werden. Die Konfiguration lebt im Client, nicht auf einem Server, sodass
+    kein Serverbetreiber die Wahl eines Nutzers überschreiben kann.
+  </p>
+
+  <h2>Schicht 4: Friktions-proportionale Enthüllung</h2>
+  <p>
+    Statt markierte Inhalte vollständig zu verbergen — was eine Form von Zensur wäre —
+    führen Clients eine Enthüllungs­verzögerung ein, proportional zur Schwere des
+    Community-Feedback-Signals:
+  </p>
+  <ul>
+    <li>Niedriges Signal: 0–5 Sekunden Verzögerung, bevor der Inhalt gezeigt wird</li>
+    <li>Mittleres Signal: 10–30 Sekunden</li>
+    <li>Hohes Signal: 30–60+ Sekunden</li>
+  </ul>
+  <p>
+    Die Verzögerung ist sitzungsbasiert: Hat ein Nutzer einmal die Verzögerung abgewartet
+    und einen Inhalt angesehen, wird er in derselben Sitzung nicht erneut gefragt. Das
+    respektiert die Nutzer­autonomie — der Inhalt ist zugänglich — und macht eine zufällige
+    Konfrontation mit stark markierten Inhalten praktisch schwierig. Die Friktion erfüllt
+    eine ähnliche Funktion wie der „Bist du sicher?"-Dialog, skaliert auf das
+    Community-Anliegen.
+  </p>
+
+  <h2>Schicht 5: Bildbeschränkungen in öffentlichen Kontexten</h2>
+  <p>
+    Bilder in Hashtag- und Erwähnungs-Buckets — Kontexte, in denen Inhalte Nutzern
+    gezeigt werden, die den Autor nicht spezifisch abonniert haben — sind standardmäßig
+    eingeschränkt. Die persönliche Timeline eines Nutzers hat keine solche Einschränkung.
+    Das begrenzt den Wirkungs­kreis bildbasierten Schadens in
+    Entdeckungs-Kontexten, ohne Inhalte innerhalb gewählter Abonnements zu beeinflussen.
+  </p>
+
+  <h2>Schicht 6: Klassifizierer auf dem Gerät (ausstehend)</h2>
+  <p>
+    Diese Schicht ist geplant, aber noch nicht umgesetzt, in Erwartung ausreichender
+    Reife clientseitiger KI-Modelle, die im Browser laufen. Die Absicht ist, dass der
+    Client einen Nacktheits-Klassifizierer lokal ausführt — kein an einen zentralen
+    Dienst gesendeter Inhalt — und automatisch eine Inhaltswarnung anwendet, bevor das
+    Community-PoW-Feedback-System Zeit hatte, Signal zu sammeln. Das ist besonders
+    wertvoll für frisch gepostete Inhalte, die noch nicht von genug Nutzern gesehen
+    wurden, um Abdeckungsschwellen auszulösen.
+  </p>
+  <p>
+    Der führende Kandidat ist <a href="https://github.com/infinitered/nsfwjs">NSFWJS</a>,
+    der MobileNet-basierte Klassifikation komplett im Browser über TensorFlow.js
+    ausführt. Mit zunehmender Modell­qualität und Browser-Inferenzleistung wird auch ein
+    geschichteter Ansatz erwogen, der NSFWJS für schnelles erstes Screening mit einem
+    leistungs­fähigeren Modell für Altersschätzung kombiniert.
+  </p>
+
+  <h2>Wechselwirkung der Schichten</h2>
+  <p>
+    Die Schichten sind so gestaltet, dass sie konstruktiv zusammenwirken. Ein
+    schädlicher Inhalt, der ins Netzwerk gelangt, trifft sofort auf: PoW-Kosten beim
+    Einreichen (teuer im Maßstab), Bildbeschränkungen in Entdeckungs­kontexten,
+    On-Device-Klassifikation und Community-Feedback, das mit der Zeit PoW-Gewicht
+    sammelt und zunehmende Friktion einführt. Nach sechs Monaten verfällt der Inhalt
+    vollständig. Keine einzelne Schicht reicht; zusammen schaffen sie mehrere
+    unabhängige Barrieren, die ein Gegner gleichzeitig überwinden muss.
+  </p>
+
+  <h2>Bekannte Lücken</h2>
+  <p>
+    Textbasierter Schaden, der keine Bildklassifizierer auslöst und nicht schnell
+    Community-Meldungen ansammelt — raffinierte Desinformation, subtiles Grooming,
+    kontextabhängige Drohungen — ist der schwierigste Fall. Das Sechs-Monats-Fenster
+    bedeutet, dass schwerer Schaden eine unangenehm lange Zeit vor seinem Verfallen
+    persistieren kann. Das sind echte Grenzen der Architektur. Die Arbeit an
+    verbesserter Erkennung läuft weiter, innerhalb der Beschränkungen, das System
+    dezentral und den Client zum Schiedsrichter dessen, was angezeigt wird, zu halten.
+  </p>
+  <p>
+    <strong>Quelle:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>
+  </p>
+</DevDoc>

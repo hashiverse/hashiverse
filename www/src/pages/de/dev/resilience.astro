@@ -1,0 +1,325 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Resilienz und Selbstheilung">
+    <p>
+        Ein dezentrales Netzwerk ist nur so robust wie seine Fähigkeit, sich von Teilausfällen
+        zu erholen. Server gehen offline. Neue Server treten bei und müssen ihre Daten
+        bootstrappen. Netzwerk-Partitionen verursachen Divergenz. Hashiverse adressiert das
+        durch Selbstheilungs­protokolle, die ohne zentralen Koordinator arbeiten — getrieben
+        von Clients und Servern, die Inkonsistenz erkennen und beheben.
+    </p>
+
+    <h2>Sharding und Lastverteilung</h2>
+    <p>
+        Soziale Medien folgen Potenzgesetzen. Eine kleine Anzahl Nutzer und Hashtags zieht den
+        weitaus größten Teil der Follower an und erzeugt die Mehrheit der Beiträge. In einer
+        naiven DHT würde das bedeuten, dass eine kleine Anzahl Knoten die Mehrheit der Last
+        trägt — und damit zu Performance-Engpässen und hochwertigen DDoS-Zielen aufgrund der
+        Inhalte wird, die sie hosten. Hashiverse adressiert das auf Datenmodell­ebene über
+        zeit- und frequenzbasiertes Sharding.
+    </p>
+
+    <h3>Bucket-Schlüssel auf Epoch-Basis</h3>
+    <p>
+        Der Inhalt eines Nutzers oder Hashtags wird nicht unter einem festen DHT-Schlüssel
+        gespeichert. Der Schlüssel ist eine Funktion der öffentlichen ID des Nutzers (oder
+        des Hashtag-Texts) <em>und</em> einer Zeit-Epoche. Das bedeutet, dass sich der
+        DHT-Standort der Beiträge eines Nutzers über die Zeit verschiebt und die
+        Verantwortung für deren Hosting in verschiedenen Epochen auf verschiedene Knoten
+        verteilt.
+    </p>
+    <p>
+        Für Nutzer und Hashtags mit hohem Volumen wird der Schlüsselraum weiter unterteilt:
+        Je geschäftiger eine Identität in Beitragsvolumen ist, desto granularer wird die
+        Bucket-Unterteilung. Der Inhalt eines vielschreibenden Nutzers wird auf mehr,
+        kleinere Buckets aufgeteilt — jedes von einer anderen Region des DHT-Rings gehostet.
+        Erfasst wird das im Typ <code>BucketLocation</code>, der Identität, Epoche und
+        Bucket-Granularität gemeinsam codiert.
+    </p>
+    <p>
+        Das Ergebnis: Kein einzelner Knoten wird dauerhaft für den Verkehr eines stark
+        genutzten Accounts verantwortlich, und kein Knoten wird zu einem stabilen Ziel für
+        einen DDoS-Angriff, der einen bestimmten Account oder Hashtag stumm machen will.
+    </p>
+    <p>
+        <strong>Quelle:</strong> <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a> —
+        <code>BucketLocation</code>
+    </p>
+
+    <h2>Bedarfs­getriebenes Caching</h2>
+    <p>
+        Über die Heilung hinaus (die fehlende Daten nachträglich repariert) implementiert
+        Hashiverse bedarfs­getriebenes Caching, um die Last auf den der DHT am nächsten
+        liegenden Servern für beliebte Buckets zu senken. Vermittelnde Server cachen
+        Beitrags-Bundles und Feedback-Bundles im Auftrag der dem Inhalt nächst­gelegenen
+        Knoten, bedienen Clients direkt und beenden den Kademlia-Walk frühzeitig. Der Cache
+        weitet sich unter anhaltender Nachfrage nach außen aus und zieht sich automatisch
+        zusammen, wenn das Interesse nachlässt — vollständig selbstregulierend, keine
+        Koordination erforderlich.
+    </p>
+
+    <h3>Hit-Schwellen-Token-Mechanismus</h3>
+    <p>
+        Jeder Server hält einen <strong>Bundle-Cache</strong> und einen
+        <strong>Feedback-Cache</strong> (jeweils ein gewichteter Moka-Cache pro Typ). Bei
+        jeder eingehenden Anfrage <code>GetPostBundleV1</code> oder
+        <code>GetPostBundleFeedbackV1</code> erhöht der Server einen Hit-Zähler für diesen
+        Bucket-Standort. Sobald der Zähler den Schwellwert erreicht (derzeit 10 Hits
+        innerhalb des Idle-Fensters), gibt der Server einen
+        <code>CacheRequestTokenV1</code> aus — ein kurzlebiges, vom Server signiertes Token,
+        beschränkt auf diesen Bucket-Standort.
+    </p>
+    <p>
+        Der Client sammelt alle während seines Kademlia-Walks ausgegebenen Tokens. Nach
+        erfolgreichem Abruf und Verifikation des Bundles von einem verantwortlichen Server
+        lädt er das Bundle asynchron via <code>CachePostBundleV1</code> /
+        <code>CachePostBundleFeedbackV1</code> zu jedem token-ausgebenden Server hoch. Der
+        Server validiert das Token (Signatur, Ablauf, Standort), parst das Bundle und legt
+        es im In-Memory-Cache ab. Nachfolgende Clients, die durch diesen Server laufen,
+        bekommen das gecachte Bundle direkt, ohne den Walk weiter nach innen fortzusetzen.
+    </p>
+    <p>
+        Ein In-Flight-Deduplizierungs­cache (mit Schlüssel auf Standort-ID, TTL passend zur
+        Token-Lebenszeit) verhindert, dass der Server doppelte Tokens an mehrere
+        gleichzeitige Walker für denselben Bucket ausgibt.
+    </p>
+    <p>
+        <strong>Quelle:</strong> <a href={`${g.serverLib}/src/server/post_bundle_caching.rs`}><code>post_bundle_caching.rs</code></a>,
+        <a href={`${g.serverLib}/src/server/post_bundle_feedback_caching.rs`}><code>post_bundle_feedback_caching.rs</code></a>
+    </p>
+
+    <h3>Live- vs. versiegelte Buckets</h3>
+    <p>
+        Der Cache unterscheidet zwischen Live- und versiegelten Daten:
+    </p>
+    <ul>
+        <li>
+            <strong>Live-Buckets</strong> (laufende Epoche, akzeptiert noch Beiträge) —
+            jedes gecachte Bundle hat einen absoluten Ablauf von <em>Server-Zeit + 5
+            Minuten</em>. Bundles werden nur ausgeliefert, solange sie frisch sind;
+            veraltete Einträge werden beim Lesen übersprungen, ohne sie zu räumen, wodurch
+            die Hit-Count-Historie des Standorts erhalten bleibt, sodass die Schwelle bei
+            neuen Inhalten schnell wieder erreicht werden kann.
+        </li>
+        <li>
+            <strong>Versiegelte Buckets</strong> (Epoche geschlossen, keine neuen Beiträge)
+            — gecachte Bundles haben kein individuelles Ablaufdatum. Sie werden nur durch
+            das Time-to-Idle auf Standort-Ebene (60 Sekunden ohne Anfragen) oder durch das
+            Byte-Kapazitätslimit von Moka geräumt. Solange ein versiegelter Bucket heiß
+            bleibt, bleibt seine gecachte Kopie unbegrenzt erhalten.
+        </li>
+    </ul>
+
+    <h3>Discovery-Radius auf Client-Seite</h3>
+    <p>
+        Um den expandierenden Cache zu nutzen, hält jeder Client einen
+        <strong>Discovery-Radius</strong> pro Bucket: die XOR-Distanz zum entferntesten
+        Server, der beim vorherigen Walk erfolgreich ein Bundle zurückgegeben hat. Beim
+        nächsten Walk überspringt der <code>PeerIterator</code> Server, die näher als
+        dieser Radius sind, und beginnt mit der Abfrage von der Frontier nach außen — geht
+        also direkt dahin, wo der Cache zuletzt gefunden wurde, und umgeht die
+        verantwortlichen (innersten) Server vollständig.
+    </p>
+    <p>
+        Der Radius wird nach jedem Walk auf die XOR-Distanz des entferntesten positiven
+        Antworters aktualisiert. Wenn äußere Cache-Schichten inzwischen abgelaufen sind und
+        kein Server an der Frontier antwortet, fällt der Walk auf den nächst-näheren Peer
+        zurück und der Radius zieht sich natürlich auf die aktuelle Cache-Tiefe zusammen.
+        Der Radius wird in einem Time-to-Idle-Cache gehalten, sodass Buckets, die eine
+        Weile nicht besucht wurden, beim nächsten Zugriff wieder bei den verantwortlichen
+        Servern starten.
+    </p>
+
+    <h3>Cache-Eviction und Kapazität</h3>
+    <p>
+        Beide Caches sind nach tatsächlicher Bundle-Größe in Bytes gewichtet, gestützt auf
+        Mokas W-TinyLFU-Aufnahmerichtlinie. Platzhalter-Einträge (Standorte, die abgefragt,
+        aber noch nicht mit einem Bundle befüllt wurden) verwenden ein kleines festes
+        Gewicht, sodass sie an der Häufigkeitsskizze teilnehmen, ohne echte Kapazität zu
+        verbrauchen. Wenn die Byte-High-Water-Mark erreicht ist, werden zuerst die
+        am seltensten genutzten Standorte geräumt. Jeder Standort hat zudem ein
+        Time-to-Idle von 60 Sekunden: Ein Standort, der keine Anfragen mehr empfängt, wird
+        leise geräumt, sein Hit-Zähler zurückgesetzt und der effektive Cache-Radius zieht
+        sich zusammen.
+    </p>
+    <p>
+        Der Bundle-Cache speichert pro Standort bis zu einer konfigurierbaren Anzahl von
+        Originatoren (derzeit 5). Erscheint ein neuer Originator, wenn die
+        Pro-Standort-Obergrenze voll ist, wird das Bundle ersetzt, das am ehesten abläuft.
+        Versiegelte Bundles (kein Ablauf) werden so behandelt, als liefen sie zuletzt ab,
+        und werden nur von anderen versiegelten Bundles verdrängt.
+    </p>
+    <p>
+        <strong>Quelle:</strong> <a href={`${g.serverLib}/src/server/post_bundle_caching_shared.rs`}><code>post_bundle_caching_shared.rs</code></a>,
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a> — <code>SERVER_POST_BUNDLE_CACHE_MAX_BYTES</code> u. a.
+    </p>
+
+    <h2>Heilung von Beitrags-Bundles</h2>
+    <p>
+        Wenn ein Client Beiträge für einen Bucket abruft, fragt er mehrere Server ab und
+        sammelt deren Antworten. Dann vergleicht er: Welcher Server hat Beiträge, die
+        einem anderen fehlen? Für jedes Geber-Empfänger-Paar, in dem der Geber Beiträge
+        hat, die dem Empfänger fehlen, organisiert der Client eine zweistufige Heilung:
+    </p>
+    <ol>
+        <li>
+            <strong>Claim-Phase</strong>: Der Client fragt den Empfangs-Server, welche der
+            Beiträge des Gebers er braucht, mittels einer
+            <code>HealPostBundleClaimV1</code>-Anfrage. Der Server gibt an, welche
+            Beitrags-IDs ihm fehlen.
+        </li>
+        <li>
+            <strong>Commit-Phase</strong>: Der Client (oder der Geber als Proxy) sendet
+            diese spezifischen Beitrags-Bytes per <code>HealPostBundleCommitV1</code> an
+            den Empfänger.
+        </li>
+    </ol>
+    <p>
+        Das läuft in Hintergrund-Tasks, die nach Abschluss des primären Abrufs des Clients
+        gestartet werden. Der Nutzer sieht seinen Inhalt, ohne auf die Heilung zu warten;
+        das Netzwerk repariert sich parallel.
+    </p>
+    <p>
+        <strong>Quelle:</strong> <a href={`${g.lib}/src/client/post_bundle/post_bundle_healing.rs`}><code>post_bundle_healing.rs</code></a>,
+        <a href={`${g.integrationTests}/tests/test_healing_post_bundles.rs`}><code>test_healing_post_bundles.rs</code></a>
+    </p>
+
+    <h2>Feedback-Heilung</h2>
+    <p>
+        Feedback-Signale — Likes, Meldungen, Dislikes — divergieren ebenfalls zwischen
+        Servern, während sie sich durch das Netzwerk verbreiten. Eine Meldung kann Server A
+        erreichen, aber Server B nicht. Die Feedback-Heilung adressiert das getrennt von
+        der Beitrags-Heilung, weil Feedback eine andere Datenform hat (der 50-Byte
+        <code>EncodedPostFeedbackV1</code>-Datensatz) und eine andere Merge-Regel.
+    </p>
+    <p>
+        Die Merge-Regel für Feedback lautet: Für jedes Paar (post_id, feedback_type) wird
+        das Signal mit der höchsten PoW über alle Server hinweg behalten. Der Client
+        berechnet, nachdem er Feedback von mehreren Servern gesammelt hat, das globale
+        Maximum und identifiziert Server, die schwächere Signale als das globale Maximum
+        haben. Er sendet dann die stärkeren Signale per
+        <code>HealPostBundleFeedbackV1</code> an diese Server.
+    </p>
+    <p>
+        Das ist eine einphasige Heilung (kein Claim-Schritt): Der Feedback-Datensatz ist
+        klein genug, dass das unbedingte Senden günstiger ist als der Roundtrip, vorher zu
+        fragen.
+    </p>
+    <p>
+        <strong>Quelle:</strong> <a href={`${g.lib}/src/client/post_bundle/post_bundle_feedback_healing.rs`}><code>post_bundle_feedback_healing.rs</code></a>,
+        <a href={`${g.integrationTests}/tests/test_healing_post_bundle_feedbacks.rs`}><code>test_healing_post_bundle_feedbacks.rs</code></a>
+    </p>
+
+    <h2>DDoS-Resistenz</h2>
+    <p>
+        Hashiverse hat vier Schichten DDoS-Schutz, die Angriffe an immer früheren Punkten
+        des Verbindungs­lebenszyklus abfangen, vom Kernel-Paketfilter bis zur
+        Anwendungs­level-Ratenbegrenzung.
+    </p>
+
+    <h3>Kernel-Schicht: ipset-Blacklist</h3>
+    <p>
+        Bei anhaltenden oder schweren Angriffen eskaliert der Server zum Paket-Drop auf
+        Kernel-Ebene über das Linux-<code>ipset</code>. Auf die Blacklist gesetzte IPs
+        werden mit einem Fünf-Minuten-Timeout in einen Hash-Set aufgenommen; iptables (oder
+        nftables) verwirft passende Pakete, bevor sie die Anwendungsschicht erreichen, und
+        eliminiert so sogar die Kosten, die TCP-Verbindung anzunehmen und abzulehnen.
+    </p>
+    <pre><code>ipset create hashiverse_ddos_blacklist hash:ip timeout 300</code></pre>
+    <p>
+        Der Rust-Server fügt IPs über nicht-blockierende
+        <code>Command::new("ipset")</code>-Aufrufe in dieses Set ein — die Kernel-Operation
+        blockiert die Anfrage­verarbeitung nicht. In der Produktion erfordert das
+        <code>CAP_NET_ADMIN</code> oder root, verwaltet über Linux Ambient Capabilities.
+    </p>
+
+    <h3>Pre-TLS: Verbindungs­obergrenze und Pro-IP-Slot-Limit</h3>
+    <p>
+        Jede neue TCP-Verbindung wird <em>vor</em> Beginn des TLS-Handshakes geprüft. An
+        diesem Punkt laufen zwei Wächter:
+    </p>
+    <ul>
+        <li>
+            <strong>Globale Verbindungs­obergrenze</strong> — eine Semaphore begrenzt die
+            Gesamtzahl der gleichzeitig laufenden TCP-Verbindungen. Ist die Obergrenze
+            erreicht, wird der Socket sofort geschlossen; es werden keine
+            Handshake-Ressourcen verbraucht.
+        </li>
+        <li>
+            <strong>Pro-IP-Verbindungs­obergrenze</strong> — ein separater In-Memory-Zähler
+            begrenzt, wie viele gleichzeitige Verbindungen eine einzelne IP halten darf.
+            Das verhindert, dass eine Adresse alle verfügbaren Slots belegt. IPs, die
+            bereits auf der Anwendungs­level-Bann-Liste stehen, werden hier ebenfalls
+            abgelehnt.
+        </li>
+    </ul>
+    <p>
+        Beide Prüfungen werden vor dem Aufruf von <code>TlsAcceptor::accept</code>
+        ausgelöst, sodass eine Flut neuer Verbindungen von einer einzelnen IP keine CPU
+        für die TLS-Verhandlung verbraucht. Der Server ist derzeit bewusst nur IPv4; die
+        Unterstützung für IPv6 erfordert Tracking auf Präfix­ebene (/64), um wirksam zu
+        sein, was noch nicht implementiert ist.
+    </p>
+
+    <h3>TLS-Handshake-Timeout</h3>
+    <p>
+        Hat eine Verbindung die Pre-TLS-Wächter passiert, wird der TLS-Handshake in einen
+        harten Timeout eingehüllt. Ein Client, der ein ClientHello sendet, aber den
+        Handshake nie abschließt — eine klassische langsame Verbindung auf TLS-Ebene —
+        wird nach einer festen Anzahl Sekunden gekappt, und sein Bad-Request-Score wird
+        erhöht, was ihn dem Anwendungs­level-Bann näherbringt.
+    </p>
+
+    <h3>Slow-Loris-Verteidigung: Header- und Body-Lese-Timeouts</h3>
+    <p>
+        Nach erfolgreichem TLS-Handshake schützen zwei weitere Timeouts gegen
+        Verbindungs­halt-Angriffe auf der HTTP-Schicht:
+    </p>
+    <ul>
+        <li>
+            <strong>Header-Lese-Timeout</strong> — wenn ein HTTP/1.1-Client innerhalb des
+            zulässigen Fensters die Anfrage-Header nicht fertig gesendet hat, wird die
+            Verbindung gekappt. Das ist die primäre Verteidigung gegen klassische
+            Slow-Loris-Angriffe, bei denen ein Angreifer viele Verbindungen öffnet und
+            Header byteweise tröpfelt, um Slots unbegrenzt offen zu halten.
+        </li>
+        <li>
+            <strong>Body-Lese-Timeout</strong> — ein separater Timeout deckt den
+            Anfrage-Body ab. Das verteidigt gegen Body-Level-Varianten, in denen Header
+            schnell ankommen, aber der Body im Schneckentempo gestreamt wird. Kombiniert
+            mit einer expliziten maximalen Body-Größe begrenzt das sowohl Zeit als auch
+            Speicherverbrauch pro Anfrage.
+        </li>
+    </ul>
+
+    <h3>Anwendungsschicht: IP-Reputations-Cache</h3>
+    <p>
+        Anfragen, die alle obigen Schichten passieren, werden pro IP-Adresse mit einem
+        In-Memory-<strong>Moka</strong>-Cache verfolgt. IPs, die den Anfrage-Raten-Schwellwert
+        innerhalb eines gleitenden Fensters überschreiten, erhalten eine Hashiverse-RPC-
+        Fehlerantwort und sammeln einen Bad-Request-Score an. Sobald der Score eine
+        Schwelle überschreitet, wird die IP auf die ipset-Blacklist befördert und für
+        zukünftige Verbindungen auf die Kernel-Schicht heruntergedrückt.
+    </p>
+    <p>
+        <strong>Quelle:</strong> <a href={`${g.serverLib}/src/network/transport/`}><code>hashiverse-server-lib/src/network/transport/</code></a>,
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a>
+    </p>
+
+    <h2>TimeProvider-Abstraktion</h2>
+    <p>
+        Der Trait <code>TimeProvider</code> abstrahiert Echtzeit und ermöglicht
+        <code>ScaledTimeProvider</code> — eine zeitbeschleunigte Simulationsuhr, die in
+        Tests verwendet wird. Integrationstests, die Heilungsverhalten über Zeitfenster
+        prüfen, die normalerweise Stunden dauern würden, können in Sekunden laufen, indem
+        die Zeit skaliert wird. So kann die Integrationstest-Suite den vollen
+        Heilungslebenszyklus prüfen — einschließlich des Verfallens alter Inhalte — ohne
+        Wanduhr-Verzögerungen.
+    </p>
+    <p>
+        <strong>Quelle:</strong> <a href={`${g.lib}/src/tools/time_provider/`}><code>hashiverse-lib/src/tools/time_provider/</code></a>
+    </p>
+</DevDoc>

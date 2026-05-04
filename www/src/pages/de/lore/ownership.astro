@@ -1,0 +1,95 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Widerstand gegen Eigentum">
+  <p>
+    2022 wurde Twitter von einer einzigen Person übernommen und innerhalb weniger Wochen in
+    etwas Unkenntliches verwandelt. Die Communities, die dort ihre Präsenz aufgebaut hatten,
+    hatten kein Stimmrecht, kein Veto, keinen Ausweg, der nicht bedeutete, von Null zu
+    beginnen. Alles, was sie aufgebaut hatten, stand auf Land, das ihnen nicht gehörte.
+  </p>
+  <p>
+    Das ist das Eigentumsproblem. Jede zentralisierte Plattform, egal wie wohlmeinend bei
+    der Gründung, ist ein Übernahmeziel. Ihre Werte hängen vom Eigentümer ab. Ihre Community
+    ist Geisel desjenigen, der die Schlüssel hält.
+  </p>
+
+  <h2>Protokolle statt Plattformen</h2>
+  <p>
+    Die Lösung ist architektonisch: ein Protokoll bauen, keine Plattform. E-Mail gehört
+    niemandem. Kein Milliardär oder Staat kann das Web übernehmen. Das sind offene
+    Standards, von vielen unabhängigen Akteuren implementiert, von keiner einzelnen Instanz
+    regiert. Jeder kann sie umsetzen. Jeder kann einen Server betreiben. Kein einzelner
+    Ausfall­punkt kann sie abschalten.
+  </p>
+  <p>
+    Hashiverse ist nach demselben Prinzip entworfen. Es ist ein offenes Protokoll. Der
+    Quellcode ist öffentlich. Jeder kann einen Server betreiben, und einen Server zu
+    betreiben gibt dir gleichberechtigten Stand im Netzwerk — es gibt keine privilegierten
+    Knoten. Jeder kann einen Client bauen. Das Netzwerk hat keine Zentrale, keine
+    Muttergesellschaft, keinen Vorstand.
+  </p>
+
+  <h2>Übernahme teuer machen</h2>
+  <p>
+    Open Source allein reicht nicht. Ein gut finanzierter Akteur könnte versuchen, das
+    Netzwerk zu dominieren, indem er einen großen Anteil seiner Knoten betreibt und die
+    Peer-Topologie zu seinen Gunsten formt. Hashiverse macht das auf eine bestimmte Art
+    teuer: Die Server-Identität erfordert eine erhebliche Proof-of-Work — ein paar Stunden
+    Rechenzeit pro Server. Millionen von Servern hochzufahren, um den DHT-Ring zu
+    dominieren, ist nicht nur in Hardware teuer; es ist in Zeit teuer, da die
+    Rechenanforderung so skaliert ist, dass sie Parallelisierung widersteht.
+  </p>
+  <p>
+    Der Kademlia-DHT-Ring verteilt Daten anhand der Hash-Distanz auf die nächstgelegenen
+    Server. Ein koordinierter Angreifer müsste einen großen Anteil des Rings kontrollieren,
+    um Inhalte sinnvoll zu zensieren oder zu manipulieren — und jeder Server in dieser
+    Position musste seinen Platz durch Berechnung verdienen, die nicht gefälscht werden
+    kann.
+  </p>
+  <p>
+    Es gibt eine zweite Schutzschicht, die sich mit der Zeit verstärkt. Jedes Mal, wenn ein
+    Client einen Server bittet, etwas zu tun — Beiträge abrufen, einen Beitrag speichern,
+    eine Anfrage beantworten — leistet der Client zuerst eine kleine Proof-of-Work für den
+    Server und reicht sie ein. Der Server sammelt diese Beiträge aller Clients, die ihn je
+    benutzt haben. Je besser seine kumulierte Proof-of-Work, desto stärker sein Stand bei
+    seinen Peers im Kademlia-Ring. Ein Server, der seit Monaten läuft und Tausenden von
+    Nutzern dient, hat einen Ruf aufgebaut, den ein frisch gebackener Fake-Server schlicht
+    nicht replizieren kann. Brandneue Server haben dagegen keinen kumulierten Ruf und
+    müssen mehr Arbeit leisten, um von ihren Peers ernst genommen zu werden. Die Zeit
+    selbst wird zur Verteidigung: Je länger das Netzwerk läuft, desto höher die Latte, die
+    ein Möchtegern-Angreifer überspringen muss, um mit etablierten, vertrauten Knoten zu
+    konkurrieren.
+  </p>
+
+  <h2>Post-Quanten-Resilienz</h2>
+  <p>
+    Widerstand gegen Eigentum schließt Widerstand gegen künftige technologische Bedrohungen
+    ein. Die kryptografische Grundlage jedes Identitätssystems, das auf klassischen
+    Elliptische-Kurven-Signaturen (wie Ed25519) basiert, wird von hinreichend
+    fortgeschrittenen Quantencomputern gebrochen werden können. Passiert das auf einer
+    zentralisierten Plattform, patcht der Betreiber das System und migriert die Nutzer. In
+    einem dezentralen Protokoll gibt es keinen Betreiber, der das tun könnte.
+  </p>
+  <p>
+    Hashiverse adressiert das proaktiv. Jede Identität bettet Commitments zu zwei
+    Post-Quanten-Schlüsseln ein — ML-DSA (Dilithium) und FN-DSA (Falcon) — neben dem
+    klassischen Ed25519-Schlüssel. Der Identitäts-Hash wird aus allen drei berechnet,
+    sodass die Identität selbst bereits an Post-Quanten-Schlüssel gebunden ist, bevor
+    Quantencomputer eine realistische Bedrohung sind. Wenn die Migrationszeit gekommen ist,
+    ist der Upgrade-Pfad bereits eingebaut.
+  </p>
+
+  <h2>Eine Governance, die nicht existiert</h2>
+  <p>
+    Die letzte Schicht des Eigentums-Widerstands ist die Abwesenheit einer
+    Governance-Struktur, die übernommen werden könnte. Es gibt keine Stiftung, der man die
+    Mittel entziehen könnte, keine Non-Profit-Organisation, die man unterwandern könnte,
+    kein Unternehmen zum Übernehmen. Die Protokoll­spezifikation steht im Open-Source-Code.
+    Einen Server zu betreiben macht dich zum Teil des Netzwerks. Die Community entscheidet
+    kollektiv, durch die Clients, die sie nutzt, und die Server, die sie betreibt, wie das
+    Netzwerk aussieht. Das ist langsamer und chaotischer als Top-down-Governance — und das
+    ist genau der Punkt.
+  </p>
+</LoreDoc>

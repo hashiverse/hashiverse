@@ -1,0 +1,74 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Soberanía de los datos">
+  <p>
+    Cuando publicas en una plataforma centralizada, no estás publicando — estás depositando.
+    El contenido pertenece a la plataforma. La plataforma decide si permanece visible. La
+    plataforma decide quién puede verlo, cuándo puede verlo y bajo qué circunstancias
+    desaparece. Eres un inquilino, no un propietario, y los términos de tu alquiler pueden
+    cambiar en cualquier momento, sin aviso ni recurso.
+  </p>
+  <p>
+    La soberanía de los datos significa algo más fundamental: tu contenido, tu identidad y tus
+    relaciones te pertenecen de un modo que no puede ser revocado unilateralmente.
+  </p>
+
+  <h2>Una identidad que no puedes perder</h2>
+  <p>
+    En Hashiverse, tu identidad es un par de claves criptográficas generado en tu propio
+    dispositivo. Tu identificador público — el hash de tus claves públicas — se deriva
+    matemáticamente de claves que solo tú posees. Ningún servidor te lo emitió. Ninguna
+    empresa puede revocarlo. Ninguna suspensión de cuenta puede arrebatártelo.
+  </p>
+  <p>
+    Cuando publicas, firmas el contenido con tu clave privada. Cualquiera, en cualquier punto
+    de la red, puede verificar esa firma sin pedir permiso a una autoridad central. La
+    autenticidad de tus publicaciones es demostrable mediante matemáticas, no por la base de
+    datos de una empresa.
+  </p>
+
+  <h2>Contenido que no se puede borrar</h2>
+  <p>
+    Tus publicaciones se almacenan de forma redundante en los nodos más cercanos dentro de una
+    tabla de hash distribuida Kademlia. No existe un único servidor que albergue tus datos.
+    No hay una base de datos maestra de la que eliminar tu registro. Cuando publicas algo, se
+    propaga por servidores independientes operados por personas independientes. Retirarlo
+    requeriría coordinar a una mayoría de esos servidores — una coordinación estructuralmente
+    difícil y económicamente irracional para cualquier actor aislado.
+  </p>
+  <p>
+    No es simple replicación. La red se autorepara activamente. Si un nodo se desconecta o
+    pierde datos, los nodos vecinos detectan la brecha y replican el contenido faltante. Un
+    cliente que recupera publicaciones desde varios servidores identifica automáticamente
+    cuáles tienen carencias y organiza que esos servidores reciban lo que les falta — sin
+    orquestación central alguna.
+  </p>
+
+  <h2>Cifrado en reposo</h2>
+  <p>
+    Las publicaciones almacenadas en los servidores están cifradas. La clave de cifrado se
+    deriva del contexto de la publicación: tu propio identificador público para tu cronología
+    personal, el nombre del hashtag para los buckets de hashtag, el identificador del
+    destinatario para las menciones. Un servidor guarda contenido que no puede leer. No puede
+    minar tus publicaciones en busca de señales de segmentación. No puede vender análisis de
+    lo que escribes ni de con quién interactúas.
+  </p>
+  <p>
+    Es una negación plausible incorporada a la arquitectura. Un operador de servidor no puede
+    ser obligado a entregar contenido legible porque no lo tiene. El texto en claro existe
+    solo en los clientes — en tu navegador, en tu dispositivo.
+  </p>
+
+  <h2>Claves de las que no se te puede excluir</h2>
+  <p>
+    El problema más difícil de la identidad autosoberana es la recuperación de claves. Si
+    pierdes tu clave privada, pierdes tu identidad. Hashiverse trabaja en mecanismos de
+    recuperación que preservan la soberanía sin sacrificarla: el reparto de secreto de Shamir
+    (tu clave dividida entre varias partes de confianza, requiriendo M de N para
+    recuperarla), soporte para tokens de hardware, y claves de firma delegadas que te
+    permiten operar desde varios dispositivos sin exponer tu clave raíz. No son añadidos
+    posteriores — son una condición para que la soberanía sea real y no meramente teórica.
+  </p>
+</LoreDoc>
