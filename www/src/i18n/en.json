@@ -10,7 +10,8 @@
     "dev": "Dev",
     "github": "GitHub",
     "language": "Language",
-    "contents": "Contents"
+    "contents": "Contents",
+    "next": "Next"
   },
   "lore_sidebar": {
     "index": "Why Hashiverse?",

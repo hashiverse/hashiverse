@@ -14,6 +14,18 @@ const { title, description, sidebar = [], banner } = Astro.props;
 const current = Astro.url.pathname;
 const locale = Astro.currentLocale ?? "en";
 const t = strings_for(locale);
+
+const normalize_path = (path: string): string => {
+  const trimmed = path.replace(/\/$/, "");
+  return trimmed === "" ? "/" : trimmed;
+};
+
+const linear_pages = sidebar.filter((s) => !s.children && !s.href.startsWith("http"));
+const current_normalized = normalize_path(current);
+const current_index = linear_pages.findIndex((p) => normalize_path(p.href) === current_normalized);
+const next_page = current_index >= 0 && current_index < linear_pages.length - 1
+  ? linear_pages[current_index + 1]
+  : null;
 ---
 
 <Base title={title} description={description}>
@@ -57,6 +69,15 @@ const t = strings_for(locale);
       <h1>{title}</h1>
       {banner && <img src={banner} alt="" class="page-banner" />}
       <slot />
+      {next_page && (
+        <div class="page-next-wrap">
+          <a href={next_page.href} class="page-next" rel="next">
+            <span class="page-next-label">{t.nav.next}</span>
+            <span class="page-next-title">{next_page.label}</span>
+            <span class="page-next-arrow" aria-hidden="true">→</span>
+          </a>
+        </div>
+      )}
     </main>
   </div>
 </Base>
@@ -132,6 +153,49 @@ const t = strings_for(locale);
     width: min(300px, 40vw);
     margin: 0 0 1.5rem 2rem;
     border-radius: 8px;
+  }
+
+  .page-next-wrap {
+    clear: both;
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 3rem;
+  }
+
+  .page-next {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.75rem 1.1rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-raised);
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.95rem;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+  }
+
+  .page-next:hover {
+    border-color: var(--accent);
+    background: var(--bg-surface);
+    color: var(--accent-bright);
+    text-decoration: none;
+  }
+
+  .page-next-label {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .page-next-title {
+    font-weight: 600;
+  }
+
+  .page-next-arrow {
+    margin-left: 0.15rem;
   }
 
   .sidebar-toggle {

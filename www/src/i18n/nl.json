@@ -9,7 +9,9 @@
     "lore": "Visie",
     "dev": "Dev",
     "github": "GitHub",
-    "language": "Taal"
+    "language": "Taal",
+    "contents": "Inhoud",
+    "next": "Volgende"
   },
   "lore_sidebar": {
     "index": "Waarom Hashiverse?",

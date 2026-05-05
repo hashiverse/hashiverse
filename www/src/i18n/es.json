@@ -9,7 +9,9 @@
     "lore": "Visión",
     "dev": "Dev",
     "github": "GitHub",
-    "language": "Idioma"
+    "language": "Idioma",
+    "contents": "Contenido",
+    "next": "Siguiente"
   },
   "lore_sidebar": {
     "index": "¿Por qué Hashiverse?",
