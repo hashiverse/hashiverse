@@ -1,7 +1,9 @@
 import type React from "react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { open_compose } from "../tabs/compose/ComposeDialogStore.ts";
+import { LOCAL_SETTINGS_KEY_POST_LOGIN_RETURN, local_settings_set } from "../../tools/LocalSettings.ts";
+import type { UserSettingsCache } from "../../tools/UserSettingsCache.ts";
+import { open_compose } from "../compose/ComposeDialogStore.ts";
 
 function is_youtube_url(url: string): boolean {
 	try {
@@ -12,17 +14,30 @@ function is_youtube_url(url: string): boolean {
 	}
 }
 
-export const ShareTargetHandler: React.FC = () => {
+interface Props {
+	user_settings_cache: UserSettingsCache;
+}
+
+export const ShareTab: React.FC<Props> = ({ user_settings_cache }) => {
 	const location = useLocation();
 	const navigate = useNavigate();
+	const fired = useRef(false);
 
 	useEffect(() => {
-		const params = new URLSearchParams(location.search);
-		if (!params.get("share")) return;
+		if (fired.current) return;
+		fired.current = true;
 
+		const params = new URLSearchParams(location.search);
 		const text = params.get("text") ?? "";
 		const url = params.get("url") ?? "";
 		const has_file = params.get("has_file") === "true";
+
+		if (!user_settings_cache.is_logged_in) {
+			const return_url = location.pathname + location.search;
+			local_settings_set(LOCAL_SETTINGS_KEY_POST_LOGIN_RETURN, return_url).catch(console.error);
+			navigate("/login", { replace: true });
+			return;
+		}
 
 		navigate("/", { replace: true });
 
@@ -44,7 +59,7 @@ export const ShareTargetHandler: React.FC = () => {
 				share_url: url && !is_youtube_url(url) ? url : undefined,
 			});
 		})();
-	}, [location.search, navigate]);
+	}, [user_settings_cache.is_logged_in, location.search, location.pathname, navigate]);
 
 	return null;
 };

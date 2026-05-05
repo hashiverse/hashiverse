@@ -37,12 +37,11 @@ async function handleShareTarget(request) {
 	}
 
 	const params = new URLSearchParams();
-	params.set("share", "1");
 	if (text) params.set("text", text);
 	if (url) params.set("url", url);
 	if (has_file) params.set("has_file", "true");
 
-	return Response.redirect(`/#/?${params.toString()}`, 303);
+	return Response.redirect(`/#/share?${params.toString()}`, 303);
 }
 
 self.addEventListener("fetch", (event) => {
