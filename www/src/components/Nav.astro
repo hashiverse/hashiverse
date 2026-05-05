@@ -137,12 +137,13 @@ const current_flag = flag_for(locale);
     display: block;
   }
 
-  ul {
+  nav > ul {
     display: flex;
     gap: 1.5rem;
     list-style: none;
     margin: 0;
     padding: 0;
+    flex-wrap: nowrap;
   }
 
   nav a {
@@ -240,5 +241,30 @@ const current_flag = flag_for(locale);
     border-radius: 2px;
     display: block;
     flex-shrink: 0;
+  }
+
+  @media (max-width: 720px) {
+    nav {
+      gap: 0.6rem;
+      padding: 0.6rem 0.75rem;
+    }
+
+    .nav-logo img {
+      height: 22px;
+      width: auto;
+    }
+
+    nav a {
+      font-size: 0.7rem;
+      letter-spacing: 0.02em;
+    }
+
+    nav > ul {
+      gap: 0.6rem;
+    }
+
+    .lang-btn {
+      padding: 0.25rem 0.4rem;
+    }
   }
 </style>

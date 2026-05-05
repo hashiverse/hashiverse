@@ -9,7 +9,8 @@
     "lore": "Lore",
     "dev": "Dev",
     "github": "GitHub",
-    "language": "Language"
+    "language": "Language",
+    "contents": "Contents"
   },
   "lore_sidebar": {
     "index": "Why Hashiverse?",
