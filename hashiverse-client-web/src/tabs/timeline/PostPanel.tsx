@@ -131,7 +131,7 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 	const [is_expanded, set_is_expanded] = useState(false);
 	const [is_overflowing, set_is_overflowing] = useState(false);
 
-	const POST_CONTENT_MAX_HEIGHT = 300;
+	const POST_CONTENT_MAX_HEIGHT = 400;
 
 	useLayoutEffect(() => {
 		const el = content_ref.current;
