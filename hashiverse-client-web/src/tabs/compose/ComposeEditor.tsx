@@ -677,7 +677,7 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 			<div
 				style={{
 					position: "absolute",
-					bottom: "30px",
+					bottom: "calc(30px + var(--keyboard-inset-bottom, 0px))",
 					right: "30px",
 					zIndex: 10,
 				}}

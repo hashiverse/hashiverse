@@ -36,6 +36,7 @@ import { LOCAL_SETTINGS_KEY_POST_LOGIN_RETURN, local_settings_delete, local_sett
 import { register_bio } from "./tools/MentionStore.ts";
 import { NeedsLoggedIn } from "./tools/NeedsLoggedIn.tsx";
 import type { UserSettingsCache } from "./tools/UserSettingsCache.ts";
+import { useKeyboardInsetBottomCssVariable } from "./tools/useKeyboardInsetBottomCssVariable.ts";
 
 const theme = createTheme({
 	components: {
@@ -59,7 +60,7 @@ interface AppProps {
 }
 
 import { LOCAL_SETTINGS_KEY_LANGUAGE, LOCAL_SETTINGS_KEY_LAST_LOGIN_KEY } from "./tools/LocalSettings.ts";
-import { fetch_user_settings, useUserSettingsCache, type UserSettings } from "./tools/UserSettingsCache.ts";
+import { fetch_user_settings, type UserSettings, useUserSettingsCache } from "./tools/UserSettingsCache.ts";
 
 interface PostLoginReturnerProps {
 	user_settings_cache: UserSettingsCache;
@@ -91,6 +92,7 @@ const PostLoginReturner: React.FC<PostLoginReturnerProps> = ({ user_settings_cac
 };
 
 const App: React.FC<AppProps> = ({ initial_hashiverse, initial_settings }) => {
+	useKeyboardInsetBottomCssVariable();
 	const [hashiverse, set_hashiverse] = useState<HashiverseClientWasmProxy>(initial_hashiverse);
 	const user_settings_cache = useUserSettingsCache(hashiverse, initial_settings);
 
