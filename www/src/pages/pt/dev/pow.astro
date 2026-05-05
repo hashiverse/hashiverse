@@ -1,0 +1,95 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Proof of Work">
+  <p>
+    No Hashiverse, a proof of work não é uma funcionalidade de blockchain — é um filtro de spam
+    que não precisa de porteiro. Em vez de exigir que uma autoridade central decida quem está
+    autorizado a fazer o quê, a PoW faz com que cada ação tenha um custo real em computação. Os
+    maus atores que queiram inundar a rede com lixo têm de pagar por cada peça dele, enquanto
+    utilizadores legítimos pagam um custo demasiado pequeno para ser percetível.
+  </p>
+  <p>
+    A PoW não é usada num único sítio do sistema. Está entrelaçada em todas as camadas, com o
+    custo dimensionado para o potencial de abuso em cada camada.
+  </p>
+
+  <h2>PoW do envelope RPC</h2>
+  <p>
+    Cada pedido enviado a um servidor tem de incluir uma solução PoW válida: um salt tal que
+    <code>Blake3(timestamp || salt || payload_hash)</code> tenha um número mínimo de bits zero
+    à cabeça. O mínimo é definido por <code>Config.POW_MINIMUM_PER_ENVELOPE</code>. Os servidores
+    rejeitam qualquer pedido que não cumpra este limiar, antes de processarem o payload.
+  </p>
+  <p>
+    Esta é a primeira linha de defesa contra DDoS. Um requerente não pode enviar dez mil pedidos
+    de lixo por segundo — cada pedido exige computação real. O timestamp na entrada da PoW
+    impede ataques de replay; uma solução calculada há uma hora não é válida agora.
+  </p>
+  <p>
+    <strong>Origem:</strong> <a href={`${g.lib}/src/protocol/rpc/rpc.rs`}><code>rpc.rs</code></a>
+  </p>
+
+  <h2>PoW de identidade do servidor</h2>
+  <p>
+    Criar uma identidade de servidor exige encontrar pares de chaves tais que o ID resultante do
+    servidor tenha um número suficiente de bits zero à cabeça no seu hash Blake3. Isto demora
+    várias horas em hardware comum. Não é possível arrancar dez mil servidores falsos em
+    segundos. O custo PoW da criação de servidores é o mecanismo que torna os ataques de Sybil
+    ao anel DHT caros sem exigir que nenhuma autoridade central aprove novos servidores.
+  </p>
+  <p>
+    <strong>Origem:</strong> <a href={`${g.lib}/src/tools/server_id.rs`}><code>server_id.rs</code></a>
+  </p>
+
+  <h2>PoW de submissão de publicações</h2>
+  <p>
+    Submeter uma publicação é um protocolo em duas fases: <strong>Claim</strong> seguido de
+    <strong>Commit</strong>. A fase de claim exige PoW e reserva um espaço de submissão. A fase
+    de commit entrega o conteúdo real. Isto evita uma classe de ataque em que um adversário
+    inunda os servidores com payloads grandes sem fazer qualquer trabalho prévio.
+  </p>
+  <p>
+    Publicar nos servidores de hashtags e nos servidores de respostas exige uma submissão prévia
+    aos teus próprios servidores de cronologia (pelo menos três servidores, neste momento) antes
+    de a publicação rehash ser publicada, adicionando uma barreira adicional à amplificação
+    massiva por spam. Quanto mais frequentemente publicares na tua própria cronologia, mais PoW
+    precisas de fazer para a submissão.
+  </p>
+  <p>
+    <strong>Origem:</strong> <a href={`${g.lib}/src/protocol/posting/`}><code>hashiverse-lib/src/protocol/posting/</code></a>,
+    <a href={`${g.server}/src/server/handlers/`}><code>hashiverse-server/src/server/handlers/</code></a>
+  </p>
+
+  <h2>PoW de interação e classificação de feedback</h2>
+  <p>
+    Cada interação — gosto, não-gosto, denúncia — exige PoW para além do requisito base do
+    envelope RPC. A PoW por trás de um sinal de feedback determina o seu peso nas métricas de
+    dano da rede: sinais com PoW mais alta são preferidos a sinais com PoW mais baixa para o
+    mesmo par (publicação, tipo de feedback). Um máximo a nível de rede é mantido e recuperado
+    entre servidores.
+  </p>
+  <p>
+    Isto cria uma teoria de jogos interessante: podes aumentar a força do sinal de um feedback
+    investindo mais computação. Um utilizador que se importa fortemente com uma peça de conteúdo
+    — um jornalista a sinalizar uma publicação perigosa, um membro da comunidade a impulsionar
+    uma valiosa — pode colocar peso computacional real por trás do seu sinal. No entanto, o
+    sinal cumulativo de milhares ou milhões de interações com PoW moderada vai pesar mais que um
+    único sinal de PoW alta de um adversário a tentar manipular a classificação.
+  </p>
+  <p>
+    <strong>Origem:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>,
+    <a href={`${g.lib}/src/client/post_bundle/post_bundle_feedback_healing.rs`}><code>post_bundle_feedback_healing.rs</code></a>
+  </p>
+
+  <h2>Design do algoritmo de PoW</h2>
+  <p>
+    Em vez de usar uma única função de hash (o que convida à otimização por ASIC), a PoW do
+    Hashiverse encadeia múltiplos algoritmos numa sequência pseudoaleatória derivada da entrada.
+    Uma solução PoW válida tem de ter percorrido todos os algoritmos da cadeia. Isto eleva a fasquia
+    para o hardware especializado: um ASIC que seja rápido em Blake3 mas lento em SHA3 será
+    superado por um CPU genérico que lide com todos os algoritmos eficientemente.
+  </p>
+</DevDoc>

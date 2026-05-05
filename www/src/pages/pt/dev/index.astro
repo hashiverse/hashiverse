@@ -1,0 +1,96 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Visão Geral para Programadores">
+  <h2>Como começar</h2>
+  <p>
+    Se simplesmente queres saber como publicar programaticamente no Hashiverse — por botão,
+    Python ou linha de comandos — <a href="/pt/dev/getting-started">começa aqui</a>.
+    Se, em vez disso, queres saber como o Hashiverse foi construído, continua a ler.
+  </p>
+
+  <p>
+    O Hashiverse é uma rede social P2P descentralizada e resistente à computação pós-quântica. As
+    ambições descritas na secção <a href="/pt/lore/">Visão</a> traduzem-se diretamente em decisões
+    técnicas que vale a pena compreender antes de mergulhares no código. Esta secção cobre essas
+    decisões: por que foram tomadas, o que custam e onde vivem no código-fonte.
+  </p>
+
+  <h2>Estrutura do repositório</h2>
+  <pre><code>hashiverse/
+├── hashiverse-rust/                   Workspace Rust (nightly)
+│   ├── hashiverse-lib/                Protocolo principal — nativo + WASM
+│   ├── hashiverse-server-lib/         Biblioteca do servidor (infra reutilizável)
+│   ├── hashiverse-server/             Binário do servidor (wrapper fino)
+│   ├── hashiverse-client-wasm/        Wrapper WASM para browser
+│   └── hashiverse-integration-tests/  Testes ponto-a-ponto
+├── hashiverse-client-web/             SPA TypeScript / React 19
+└── www/                               Este site (Astro)</code></pre>
+
+  <h2>O design em duas camadas</h2>
+  <p>
+    <strong>hashiverse-lib</strong> é o protocolo. Compila para código nativo (para o servidor) e
+    para WebAssembly (para o cliente do browser). Toda a criptografia, lógica DHT, codificação
+    de publicações e API do cliente vivem aqui. Qualquer plataforma que possa correr WASM ou
+    Rust nativo pode ser um participante completo na rede.
+  </p>
+  <p>
+    <strong>hashiverse-client-web</strong> é o cliente de browser de referência — uma SPA React 19
+    que carrega o cliente WASM num Web Worker, mantendo a thread principal livre. Comunica com o
+    módulo WASM através de uma interface de passagem de mensagens; a lógica de protocolo que
+    invoca é idêntica àquela que corre nativamente no servidor.
+  </p>
+
+  <h2>Quatro módulos em hashiverse-lib</h2>
+  <ul>
+    <li>
+      <strong>transport/</strong> — Traits abstratas (<code>TransportFactory</code>,
+      <code>TransportServer</code>, <code>TransportServerHandler</code>) com duas implementações:
+      em memória (para testes) e HTTP/TCP (para produção). Troca de transportes sem alterar a
+      lógica do protocolo.
+    </li>
+    <li>
+      <strong>protocol/</strong> — Codificação/descodificação de pacotes RPC com PoW e
+      compressão, structs de pares, tipos de pedido/resposta, estruturas de dados de
+      publicações e bundles.
+    </li>
+    <li>
+      <strong>client/</strong> — API <code>HashiverseClient</code>, peer tracker, gestão de
+      bundles de publicações, cronologia com travessia recursiva de baldes e traits
+      <code>ClientStorage</code> / <code>KeyLockerManager</code> plugáveis.
+    </li>
+    <li>
+      <strong>tools/</strong> — Tipos centrais (<code>Hash</code>, <code>Id</code>,
+      <code>Signature</code>), primitivos criptográficos, PoW, abstração
+      <code>TimeProvider</code> e configuração do protocolo.
+    </li>
+  </ul>
+
+  <h2>Por onde começar</h2>
+  <p>
+    Se és novo no código-base, os melhores pontos de entrada são:
+  </p>
+  <ul>
+    <li>
+      <a href={`${g.lib}/src/lib.rs`}><code>hashiverse-lib/src/lib.rs</code></a> — o mapa dos
+      módulos. Quatro módulos de topo, cada um com âmbito claro.
+    </li>
+    <li>
+      <a href={`${g.lib}/src/client/mod.rs`}><code>hashiverse-lib/src/client/mod.rs</code></a> —
+      a API pública do cliente. A superfície com a qual interage um programador que esteja a
+      construir sobre o protocolo.
+    </li>
+    <li>
+      <a href={`${g.integrationTests}/tests/`}><code>hashiverse-integration-tests/tests/</code></a>
+      — testes ponto-a-ponto que levantam topologias reais de servidores em memória e exercitam
+      toda a stack do protocolo. Lê-los é a forma mais rápida de perceber como as peças encaixam.
+    </li>
+  </ul>
+  <p>
+    As secções deste guia para programadores cobrem cada uma uma área de design específica. Cada
+    uma aponta para os ficheiros de código-fonte relevantes para que possas seguir as ideias
+    diretamente até ao código.
+  </p>
+</DevDoc>

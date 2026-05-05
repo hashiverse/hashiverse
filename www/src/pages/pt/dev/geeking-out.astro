@@ -1,0 +1,355 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Para os Entusiastas">
+    <p>
+        A coisa mais divertida em construir o Hashiverse é que não pôde ser construído como
+        software tradicional. A sua independência absoluta de qualquer governo soberano ou
+        empresa significou que não podíamos depender de fornecedores de cloud centralizados nem de
+        servidores ou bases de dados. Caramba — nem sequer de DNS e dos certificados web padrão!
+    </p>
+    <p>
+        Qualquer pessoa pode modificar o código-fonte dos servidores ou dos clientes e participar
+        no protocolo Hashiverse, por isso até o próprio protocolo tem de ser imune a maus atores.
+    </p>
+    <p>
+        Aqui ficam alguns dos detalhes de implementação de que mais gostamos no Hashiverse. Cada
+        um aponta para o código-fonte, para que possas seguir a ideia diretamente até ao código.
+    </p>
+
+    <h2>Os gostos e os não-gostos contam-se a si próprios &mdash; sem servidores centrais</h2>
+    <p>
+        Contar numa rede distribuída é uma porcaria. Recorremos à estatística para fazer contagem
+        distribuída nos nossos mecanismos de feedback. Cada sinal de feedback transporta a sua
+        própria PoW, e cada bit adicional de PoW duplica o número estimado de cliques de
+        feedback. Os clientes fundem o feedback de vários servidores escolhendo o sinal mais
+        forte por publicação, e depois recuperam os pares mais fracos. A rede converge sem
+        nenhum coordenador. Não nos importam contagens exatas &mdash; em números suficientemente
+        grandes estamos no terreno estatístico certo, e é diabolicamente difícil de manipular.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>,
+        <a href={`${g.lib}/src/client/post_bundle/post_bundle_feedback_healing.rs`}><code>post_bundle_feedback_healing.rs</code></a>
+    </p>
+
+    <h2>Uma publicação viral recruta a rede inteira como CDN</h2>
+    <p>
+        Quando um servidor vê pedidos de obtenção suficientes para o mesmo conteúdo, começa a
+        colocá-lo em cache. O cliente que está a ir buscar carrega os dados para povoar essa
+        cache. Para uma publicação viral, todos os servidores ao longo do caminho de pesquisa de
+        cada cliente tornam-se nós de cache. Quanto mais popular o conteúdo, mais servidores o
+        colocam em cache &mdash; a rede escala-se a si própria.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.serverLib}/src/server/post_bundle_caching.rs`}><code>post_bundle_caching.rs</code></a>
+    </p>
+
+    <h2>Os hashtags em tendência emergem do nada</h2>
+    <p>
+        Sem contadores centrais. Como "em tendência" significa que muitos utilizadores estão a
+        publicar, a vista local de qualquer servidor aleatório já aproxima a verdade global.
+        Cada servidor segue os autores únicos por hashtag usando um pequeno contador
+        probabilístico. As contagens são dirigidas ao servidor do publicador &mdash; por isso só
+        podes inflacionar a contagem do teu próprio servidor, e mesmo assim o mesmo autor a
+        publicar 1000 vezes conta como um. Isto significa que fazer um hashtag entrar em
+        tendência é quase impossível de manipular.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.serverLib}/src/server/handlers/dispatch.rs`}><code>dispatch.rs</code></a>,
+        <a href={`${g.lib}/src/tools/hyper_log_log.rs`}><code>hyper_log_log.rs</code></a>
+    </p>
+
+    <h2>O conteúdo esquecido morre por abandono, não por velhice</h2>
+    <p>
+        Sem TTL. Sem temporizador de expiração. Quando o armazenamento de um servidor enche, ele
+        evict o conteúdo menos recentemente acedido. O conteúdo popular é tocado constantemente e
+        sobrevive indefinidamente. O conteúdo que ninguém lê desaparece silenciosamente, por
+        seleção natural baseada no padrão de acesso.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.serverLib}/src/environment/environment.rs`}><code>environment.rs</code></a>
+    </p>
+
+    <h2>A auto-recuperação só acontece quando alguém se importa</h2>
+    <p>
+        Quando um cliente vai buscar conteúdo a vários servidores e descobre que um tem
+        publicações em falta que outro tem, repara a lacuna &mdash; mas só porque estava a ler. O
+        conteúdo que ninguém lê nunca é recuperado. O conteúdo sob consumo ativo é recuperado
+        sempre que um cliente o vai buscar. A leitura é o fator de replicação.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/client/post_bundle/post_bundle_healing.rs`}><code>post_bundle_healing.rs</code></a>
+    </p>
+
+    <h2>O bootstrap não confia em ninguém &mdash; nem mesmo no DNS</h2>
+    <p>
+        Três domínios de bootstrap em três regiões, cada um resolvido através de três
+        fornecedores independentes de DNS-over-HTTPS com validação DNSSEC. Os resultados são
+        desduplicados e baralhados. Mesmo assim, cada par recebido tem de passar a verificação
+        criptográfica completa antes de o cliente confiar nele. Um fornecedor de DNS comprometido
+        não consegue injetar pares falsos porque não consegue forjar os milhares de milhões de
+        hashes que cada identidade de servidor exige.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/transport/bootstrap_provider/dnssec_bootstrap_provider.rs`}><code>dnssec_bootstrap_provider.rs</code></a>,
+        <a href={`${g.lib}/src/client/peer_tracker/peer_tracker.rs`}><code>peer_tracker.rs</code></a>
+    </p>
+
+    <h2>Certificados TLS para endereços IP &mdash; sem necessidade de DNS</h2>
+    <p>
+        Os browsers recusam HTTPS a um IP nu, a menos que o certificado cubra esse IP. As CAs
+        tradicionais só emitiam certificados para nomes de domínio &mdash; o que tornaria cada
+        servidor dependente do DNS. No final de 2025, a Let's Encrypt começou a emitir
+        certificados de IP. Estávamos à espera deste momento. Cada servidor auto-provisiona e
+        renova o seu próprio certificado de IP em segundo plano. Os clientes de browser podem
+        percorrer a DHT diretamente por IP sobre HTTPS de confiança.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.serverLib}/src/network/transport/https_transport_cert_refresher.rs`}><code>https_transport_cert_refresher.rs</code></a>
+    </p>
+
+    <h2>O teu filtro de spam corre sobre termodinâmica, não sobre bases de dados</h2>
+    <p>
+        Cada envelope RPC transporta uma solução de proof-of-work. Os servidores rejeitam
+        qualquer coisa abaixo do limiar antes mesmo de fazer parsing do payload. Sem CAPTCHA,
+        sem base de dados de rate-limit, sem verificação de conta. O custo é invisível para um
+        utilizador legítimo, mas leva o spammer à falência. E esta PoW serve adicionalmente para
+        fortalecer a reputação dos servidores e ajudar a afastar maus atores.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/protocol/rpc/rpc_request.rs`}><code>rpc_request.rs</code></a>
+    </p>
+
+    <h2>Os endpoints sensíveis custam exponencialmente mais para chamar (e fazer spam)</h2>
+    <p>
+        Um RPC de rotina custa cerca de 65 mil hashes. Falar com um servidor desconhecido custa
+        4&times; mais. Publicar custa 16&times; o baseline. O feedback custa 32&times;. Criar
+        uma identidade de servidor custa milhares de milhões de hashes (horas de trabalho). Cada
+        camada está dimensionada com precisão ao seu potencial de abuso.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a>
+    </p>
+
+    <h2>O raio da cache expande como uma onda de choque</h2>
+    <p>
+        Os clientes seguem até onde, a partir dos servidores de origem, os dados em cache se
+        propagaram. Cada hit de cache empurra o raio mais para fora. As pesquisas futuras começam
+        para lá do raio, batendo em servidores frescos em vez de martelarem a origem. O conteúdo
+        popular irradia para fora, o que significa que outros clientes encontram dados em cache
+        cedo no seu passeio. O conteúdo obscuro permanece local e sem cache. Sem configuração,
+        sem afinação &mdash; o protocolo adapta-se por simples observação.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/client/caching/cache_radius_tracker.rs`}><code>cache_radius_tracker.rs</code></a>
+    </p>
+
+    <h2>Vários níveis de granularidade de baldes domam a lei de potência</h2>
+    <p>
+        Ano &rarr; mês &rarr; semana &rarr; dia &rarr; 6 horas &rarr; 1 hora &rarr; 15 min
+        &rarr; 5 min &rarr; 1 min. Um utilizador que publique uma vez por mês custa um único
+        fetch a um balde grosseiro. Um utilizador que publique 100 vezes por dia desce até
+        baldes ao minuto, obtidos em paralelo. Mesmo protocolo, mesmo código, perfis de carga
+        radicalmente diferentes tratados de forma graciosa.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a>
+    </p>
+
+    <h2>Os baldes cheios dividem-se &mdash; não partem</h2>
+    <p>
+        Quando um balde de cronologia enche, sela-se. Os clientes veem a flag e descem para os
+        filhos de granularidade mais fina. Um hashtag em tendência cascata de baldes horários
+        para 15 minutos para 1 minuto à medida que o volume dispara, espalhando automaticamente a
+        carga por servidores diferentes.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.serverLib}/src/server/handlers/dispatch.rs`}><code>dispatch.rs</code></a>,
+        <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a>
+    </p>
+
+    <h2>Um único código-base, todas as plataformas &mdash; a sério</h2>
+    <p>
+        <code>hashiverse-lib</code> compila para Rust nativo (servidor) e WebAssembly (browser).
+        A lógica do protocolo, a criptografia e a API do cliente são o mesmo código a correr em
+        ambos os ambientes. O browser carrega-o num Web Worker para que a thread principal nunca
+        bloqueie. Quando testas o servidor, estás a testar o mesmo código que o browser corre.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={g.lib}><code>hashiverse-lib/</code></a>,
+        <a href={g.wasm}><code>hashiverse-client-wasm/</code></a>
+    </p>
+
+    <h2>Testes de integração com 100 servidores que terminam em segundos</h2>
+    <p>
+        O transporte em memória substitui o HTTP &mdash; latência de rede zero, sem portas, sem
+        limpeza. O tempo corre a 300&times; a velocidade real, comprimindo 30 minutos de
+        descoberta de pares em 6 segundos de relógio de parede. 100 servidores, 3 clientes,
+        bootstrap completo, submissão de publicações, auto-recuperação e verificação &mdash; um
+        processo, em menos de 30 segundos.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.integrationTests}/tests/client_meets_servers.rs`}><code>client_meets_servers.rs</code></a>
+    </p>
+
+    <h2>Adeus ASICs! A cadeia de PoW é auto-referencial</h2>
+    <p>
+        Cinco rondas de hashing encadeado em 17 algoritmos de hashing de última geração. O
+        algoritmo de cada ronda e a contagem de repetições são derivados do output da ronda
+        anterior. A sequência depende dos dados &mdash; um ASIC desenhado para ser rápido num
+        algoritmo não ganha nada se a cadeia passar por outros cinco. Esperamos pelo dia em que
+        o Hashiverse terá tanto sucesso que ASICs personalizados se tornem suficientemente
+        económicos para o tentar derrubar.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/tools/pow.rs`}><code>pow.rs</code></a>
+    </p>
+
+    <h2>Identidade à prova de quântico, comprometida hoje</h2>
+    <p>
+        Cada identidade incorpora compromissos com dois algoritmos de chave pós-quântica (Falcon
+        e Dilithium) a par da chave clássica Ed25519. O caminho de atualização está cozido em
+        cada identidade da rede &mdash; antes de existirem computadores quânticos. Duas
+        suposições independentes baseadas em lattices; ambas têm de quebrar em simultâneo. Em
+        resumo, a tua identidade Hashiverse não vai partir se os computadores quânticos se
+        tornarem mainstream.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/tools/keys_post_quantum.rs`}><code>keys_post_quantum.rs</code></a>
+    </p>
+
+    <h2>Sem palavras-passe, sem e-mail, sem problema</h2>
+    <p>
+        Sem servidores centrais significa sem base de dados de palavras-passe e sem e-mail para
+        te enviar spam. Geres as tuas próprias chaves &mdash; e damos-te três formas. <strong>Modo
+        convidado</strong>: zero configuração, só de leitura, basta começares a navegar.
+        <strong>Frase-chave</strong>: introduz uma passphrase, a mesma frase dá a mesma identidade
+        em qualquer dispositivo. <strong>Passkey</strong>: a tua impressão digital ou Face ID
+        torna-se a tua chave através do secure enclave do dispositivo &mdash; suportada por
+        hardware, sincronizada entre dispositivos, zero palavras-passe para memorizar.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/client/key_locker/key_locker.rs`}><code>key_locker.rs</code></a>,
+        <a href={`${g.web}/src/tabs/login/`}><code>login/</code></a>
+    </p>
+
+    <h2>Um único ciphertext, 32 chaves</h2>
+    <p>
+        As publicações são cifradas em repouso e em trânsito. Sem espreitadelas nem
+        pós-processamento por servidores manhosos. Uma única publicação cifrada pode ser
+        decifrada com até 32 passphrases diferentes &mdash; uma por contexto em que aparece. O
+        cabeçalho é auto-descritivo, por isso qualquer decifragem futura reconstrói a configuração
+        exata de cifragem só a partir do ciphertext.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/tools/encryption.rs`}><code>encryption.rs</code></a>
+    </p>
+
+    <h2>Cinco camadas de defesa contra DDoS antes de chegares ao código da aplicação</h2>
+    <p>
+        Camada 1: PoW em cada envelope RPC. Camada 2: pontuação por IP com decaimento temporal.
+        Camada 3: limite de ligações por IP. Camada 4: blacklist de IPs ao nível do kernel
+        quando a pontuação ultrapassa o limiar. Camada 5: timeouts de transporte para o
+        handshake TLS, leitura de cabeçalhos e leitura do corpo (defesa contra Slow Loris).
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.serverLib}/src/network/transport/ddos/ipset_ddos.rs`}><code>ipset_ddos.rs</code></a>,
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a>
+    </p>
+
+    <h2>Corre num VPS de 5 $ &mdash; por design, não por acaso</h2>
+    <p>
+        Armazenamento LSM-tree comprimido em disco. Caches em memória limitadas. Escritas
+        concorrentes com lock-striping. Contadores probabilísticos para tendências (64 bytes por
+        hashtag). E a DHT significa que cada servidor só guarda dados perto do seu próprio ID
+        &mdash; não a rede inteira.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.serverLib}/src/environment/`}><code>environment/</code></a>,
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a>
+    </p>
+
+    <h2>Cada costura do sistema é uma trait substituível</h2>
+    <p>
+        Transporte (canais em memória vs HTTP vs WASM fetch). Tempo (relógio real vs aceleração
+        300&times;). Armazenamento (IndexedDB vs em memória). Proteção contra DDoS (ipset do
+        kernel vs pontuação em memória). Gestão de chaves (enclave Web Crypto vs stubs de teste).
+        Troca qualquer uma sem tocar na lógica do protocolo. Os testes usam as baratas; a
+        produção usa as reais; mesmo caminho de código.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/transport/`}><code>transport/</code></a>,
+        <a href={`${g.lib}/src/tools/time_provider/`}><code>time_provider/</code></a>,
+        <a href={`${g.serverLib}/src/environment/`}><code>environment/</code></a>
+    </p>
+
+    <h2>PoW no browser distribuída por Web Workers isolados</h2>
+    <p>
+        O cliente WASM aproveita todos os teus núcleos distribuindo a proof-of-work por Web
+        Workers. Cada job concorrente de PoW é isolado para que não interfiram. Os resultados
+        fazem a ponte de Promises do JavaScript para Futures do Rust. A thread principal do
+        browser nunca toca num hash e nunca abranda.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.wasm}/src/wasm_parallel_pow_generator.rs`}><code>wasm_parallel_pow_generator.rs</code></a>
+    </p>
+
+    <h2>A auto-recuperação desperdiça zero largura de banda</h2>
+    <p>
+        O cliente envia um cabeçalho a descrever o que tem. O servidor responde apenas com os IDs
+        que lhe faltam. O cliente envia exatamente esses bytes. Se o servidor já tiver tudo, é
+        uma única ida-e-volta de cabeçalhos.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.serverLib}/src/server/handlers/dispatch.rs`}><code>dispatch.rs</code></a>
+    </p>
+
+    <h2>Dois algoritmos de compressão, um único byte de versão</h2>
+    <p>
+        LZ4 para pacotes RPC (velocidade). Brotli na qualidade máxima para publicações guardadas
+        (tamanho). Um único byte de versão à cabeça permite a evolução do algoritmo sem partir
+        nenhum dado existente. Abaixo de um tamanho mínimo, a compressão é simplesmente saltada
+        &mdash; o overhead excederia as poupanças.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/tools/compression.rs`}><code>compression.rs</code></a>
+    </p>
+
+    <h2>O recursive bucket visitor nunca recorre</h2>
+    <p>
+        O caminhante de cronologia usa frames de stack explícitos em vez de recursão de funções.
+        Um callback em cada nível decide se desce mais fundo, salta ou para. Cronologias
+        esparsas saltam totalmente os níveis aninhados. Cronologias densas só descem onde existe
+        conteúdo.
+    </p>
+    <p>
+        <strong>Origem:</strong>
+        <a href={`${g.lib}/src/client/timeline/recursive_bucket_visitor.rs`}><code>recursive_bucket_visitor.rs</code></a>
+    </p>
+</DevDoc>

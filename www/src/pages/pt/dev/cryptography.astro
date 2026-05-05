@@ -1,0 +1,145 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Fundamentos Criptográficos">
+  <p>
+    Cada afirmação que o Hashiverse faz sobre soberania de dados, resistência à censura e
+    independência de propriedade é sustentada por criptografia. Isto não é decorativo — é a razão
+    pela qual essas afirmações são verdadeiras. Compreender a camada criptográfica é compreender
+    o alicerce sobre o qual tudo o resto é construído.
+  </p>
+
+  <h2>Identidade</h2>
+  <p>
+    Uma identidade do Hashiverse não é atribuída por um servidor. É derivada de chaves:
+  </p>
+  <pre><code>ID = Blake3(ed25519_pub || Blake3(Falcon_pub)[0..16] || Blake3(Dilithium_pub)[0..16])</code></pre>
+  <p>
+    O teu ID público é um hash de 256 bits de três chaves públicas — uma clássica (Ed25519), duas
+    pós-quânticas (FN-DSA/Falcon e ML-DSA/Dilithium). Os compromissos de 16 bytes para as chaves
+    PQ vinculam-nas à tua identidade desde já, antes de os computadores quânticos serem uma
+    ameaça prática. Quando acontecer a migração quântica, o caminho de atualização já está
+    incorporado em todas as identidades da rede.
+  </p>
+  <p>
+    As identidades dos servidores funcionam da mesma forma, com o requisito adicional de que o ID
+    tem de satisfazer uma condição de proof-of-work (um prefixo de zeros à cabeça no hash). Isto
+    torna a criação de identidades de servidor computacionalmente cara, prevenindo ataques de
+    Sybil ao anel DHT.
+  </p>
+  <p>
+    A chave privada de assinatura Ed25519 do cliente é guardada exclusivamente no
+    <strong>secure enclave da Web Crypto API</strong> do browser, como um objeto
+    <code>CryptoKey</code> não-extraível. O browser expõe apenas uma operação de assinatura — os
+    bytes da chave privada nunca estão acessíveis ao JavaScript, ao módulo WASM, ou a qualquer
+    outro código a correr na página. Não existe mecanismo para exportar ou recuperar a chave
+    privada depois de importada. A assinatura acontece dentro da camada criptográfica do browser;
+    a chave nunca a abandona.
+  </p>
+  <p>
+    Esta é uma restrição deliberada, não uma limitação. Mesmo que o cliente WASM do Hashiverse
+    estivesse totalmente comprometido, um atacante poderia, no máximo, invocar a operação de
+    assinatura em nome da vítima — não conseguia roubar a chave e usá-la noutro sítio.
+  </p>
+  <p>
+    <strong>Origem:</strong> <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a> —
+    tipos <code>Hash</code>, <code>Id</code>, <code>Signature</code>;
+    <a href={`${g.lib}/src/tools/server_id.rs`}><code>server_id.rs</code></a> para a PoW de identidade do servidor.
+  </p>
+
+  <h2>Assinaturas híbridas pós-quânticas</h2>
+  <p>
+    A identidade de três chaves permite um caminho de migração progressivo:
+  </p>
+  <ul>
+    <li>Hoje: as publicações são assinadas com Ed25519. A verificação é rápida e bem compreendida.</li>
+    <li>Quando o Ed25519 for ameaçado: migrar a assinatura primária para FN-DSA (Falcon), que tem assinaturas mais pequenas que o Dilithium.</li>
+    <li>Se os algoritmos baseados em redes (lattices) forem mais tarde quebrados: recorrer ao ML-DSA (Dilithium) como camada final.</li>
+  </ul>
+  <p>
+    O SPHINCS+ foi considerado e rejeitado: as suas assinaturas têm vários kilobytes, o que é
+    proibitivo para uma rede de publicações de alto débito. A combinação Falcon + Dilithium
+    fornece duas suposições independentes de segurança baseadas em lattices, o que significa que
+    ambas teriam de ser quebradas em simultâneo para a identidade ser comprometida.
+  </p>
+  <p>
+    <strong>Origem:</strong> <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a> primitivos criptográficos;
+    <a href={`${g.lib}/src/protocol/posting/encoded_post.rs`}><code>encoded_post.rs</code></a> para a seleção do mecanismo de assinatura por publicação.
+  </p>
+
+  <h2>Hashing</h2>
+  <p>
+    Blake3 é a função de hash primária — rápida, paralelizável, e adequada para checksums,
+    endereçamento por conteúdo e derivação de chaves. Para a Proof of Work, a suite completa de
+    hashing disponível no protocolo inclui Blake2, Blake3, SHA2, SHA3, Whirlpool, Groestl e
+    Skein. A PoW encadeia múltiplos algoritmos numa sequência pseudoaleatória, o que aumenta a
+    resistência a ASICs ao exigir uma coimplementação eficiente de vários algoritmos
+    dependentes do caminho em simultâneo.
+  </p>
+  <p>
+    Todas as bibliotecas de hash são compiladas com <code>opt-level=3</code> mesmo nas builds de
+    debug — isto está configurado nos overrides de profile do <code>Cargo.toml</code> do
+    workspace para impedir que as suites de teste fiquem limitadas pela computação de hashes.
+  </p>
+
+  <h2>Cifragem em repouso</h2>
+  <p>
+    As publicações guardadas nos servidores são cifradas com ChaCha20-Poly1305. A chave é
+    derivada de uma passphrase que depende do tipo de balde:
+  </p>
+  <ul>
+    <li><strong>Cronologia de utilizador</strong>: a passphrase é o ID público do utilizador</li>
+    <li><strong>Hashtag</strong>: a passphrase é o texto do hashtag em minúsculas (sem #)</li>
+    <li><strong>Menção</strong>: a passphrase é o ID público do utilizador mencionado</li>
+    <li><strong>Resposta</strong>: a passphrase é a assinatura de conteúdo da publicação original</li>
+  </ul>
+  <p>
+    Um esquema personalizado de cifragem com várias passphrases, vagamente inspirado no
+    <code>age</code>, significa que uma única publicação que abranja vários contextos — uma
+    publicação com hashtag que também menciona um utilizador — pode ser decifrada por qualquer
+    pessoa que possua qualquer uma das passphrases. Os servidores guardam bytes cifrados que não
+    conseguem ler. Não há texto-claro em disco no servidor.
+  </p>
+  <p>
+    <strong>Origem:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post.rs`}><code>encoded_post.rs</code></a>
+    para a cifragem de publicações; <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a> para os primitivos
+    ChaCha20-Poly1305.
+  </p>
+
+  <h2>Assinaturas em tudo</h2>
+  <p>
+    Cada publicação é assinada pelo seu autor. Cada resposta de servidor é assinada pelo servidor
+    que a serve. Cada bundle é assinado. As assinaturas não são metadados opcionais — são o
+    mecanismo pelo qual os clientes podem confiar em conteúdo recebido de servidores não-fiáveis.
+    Um cliente nunca precisa de confiar num servidor; confia na assinatura criptográfica do
+    conteúdo que esse servidor entrega.
+  </p>
+
+  <h2>Duas camadas de segurança no transporte</h2>
+  <p>
+    O Hashiverse separa a cifragem do transporte da segurança do protocolo, e trata-as como
+    preocupações independentes:
+  </p>
+  <p>
+    <strong>Camada de transporte (TLS):</strong> A comunicação servidor-a-servidor e
+    cliente-a-servidor corre sobre HTTPS usando certificados TLS emitidos pelo
+    <strong>Let's Encrypt</strong>. Como os servidores Hashiverse são identificados por endereço
+    IP em vez de nome de domínio, o servidor obtém um certificado TLS apenas para IP através do
+    protocolo ACME. Isto cifra o tráfego em trânsito e impede a escuta passiva no fio.
+  </p>
+  <p>
+    <strong>Camada de protocolo (criptografia do Hashiverse):</strong> O TLS por si só não é
+    suficiente para uma rede descentralizada sem confiança — um servidor comprometido ou
+    malicioso poderia ainda assim servir conteúdo adulterado sobre uma ligação TLS válida. A
+    criptografia própria do Hashiverse fornece a garantia mais profunda: cada peça de conteúdo é
+    assinada pelas chaves do seu autor, as publicações são cifradas em repouso com chaves que o
+    servidor nunca tem, e as identidades dos servidores estão vinculadas a compromissos de
+    proof-of-work. Um cliente não precisa de confiar em nenhum servidor; verifica o conteúdo
+    diretamente contra assinaturas criptográficas, independentemente da forma como chegou.
+  </p>
+  <p>
+    O TLS trata da rede; a criptografia do Hashiverse trata da verdade.
+  </p>
+</DevDoc>
