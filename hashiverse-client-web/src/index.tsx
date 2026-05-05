@@ -21,6 +21,7 @@ import { ConfigTab } from "./tabs/config/ConfigTab.tsx";
 import { ErrorTab } from "./tabs/ErrorTab.tsx";
 import { HashtagsGuardTab } from "./tabs/hashtags/HashtagsGuardTab.tsx";
 import { HomeTab } from "./tabs/home/HomeTab.tsx";
+import { HASHIVERSE_DOMAINS } from "./tabs/login/domains.ts";
 import { LoginTab } from "./tabs/login/LoginTab.tsx";
 import { PeopleGuardTab } from "./tabs/people/PeopleGuardTab.tsx";
 import { ShareTab } from "./tabs/share/ShareTab.tsx";
@@ -32,7 +33,7 @@ import { PostSequelTimelineTab } from "./tabs/timeline/PostSequelTimelineTab.tsx
 import { PostTimelineTab } from "./tabs/timeline/PostTimelineTab.tsx";
 import { UserMentionedTimelineTab } from "./tabs/timeline/UserMentionedTimelineTab.tsx";
 import { UserTimelineTab } from "./tabs/timeline/UserTimelineTab.tsx";
-import { LOCAL_SETTINGS_KEY_POST_LOGIN_RETURN, local_settings_delete, local_settings_get, local_settings_set } from "./tools/LocalSettings.ts";
+import { LOCAL_SETTINGS_KEY_POST_LOGIN_RETURN, LOCAL_SETTINGS_KEY_PREFERRED_DOMAIN, local_settings_delete, local_settings_get, local_settings_set } from "./tools/LocalSettings.ts";
 import { register_bio } from "./tools/MentionStore.ts";
 import { NeedsLoggedIn } from "./tools/NeedsLoggedIn.tsx";
 import type { UserSettingsCache } from "./tools/UserSettingsCache.ts";
@@ -173,6 +174,41 @@ const App: React.FC<AppProps> = ({ initial_hashiverse, initial_settings }) => {
 		</div>
 	);
 };
+
+// On a fresh page load, check for a "preferred domain" autoredirect rule.
+//
+// If we just got auto-redirected here (autoredirected=1 in the search), wipe
+// any preferred-domain entry on this origin so we can't bounce the user back
+// somewhere on a subsequent visit, and strip the marker from the URL.
+//
+// Otherwise, if the user has saved a preferred domain that isn't this one,
+// substitute the hostname and redirect, keeping path/search/hash intact.
+async function maybe_consume_or_auto_redirect(): Promise<boolean> {
+	const search_params = new URLSearchParams(window.location.search);
+
+	if (search_params.get("autoredirected") === "1") {
+		await local_settings_delete(LOCAL_SETTINGS_KEY_PREFERRED_DOMAIN).catch(console.error);
+		search_params.delete("autoredirected");
+		const new_search = search_params.toString();
+		const new_url = `${window.location.pathname}${new_search ? `?${new_search}` : ""}${window.location.hash}`;
+		history.replaceState(null, "", new_url);
+		return false;
+	}
+
+	const preferred = await local_settings_get(LOCAL_SETTINGS_KEY_PREFERRED_DOMAIN);
+	if (!preferred) return false;
+	if (preferred === window.location.hostname) return false;
+	if (!(HASHIVERSE_DOMAINS as readonly string[]).includes(preferred)) return false;
+
+	const sep = window.location.search ? "&" : "?";
+	const url = `https://${preferred}${window.location.pathname}${window.location.search}${sep}autoredirected=1${window.location.hash}`;
+	window.location.replace(url);
+	return true;
+}
+
+if (await maybe_consume_or_auto_redirect()) {
+	await new Promise(() => {});
+}
 
 const stored_language = await local_settings_get(LOCAL_SETTINGS_KEY_LANGUAGE);
 if (stored_language && stored_language !== i18n.language) {
