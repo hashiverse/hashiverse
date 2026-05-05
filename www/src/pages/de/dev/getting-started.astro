@@ -49,10 +49,11 @@ client.post("Hello from Python! #hashiverse-python")`;
   <h3>Varianten</h3>
 
   <style>
-    .share-preview-row{padding:16px;border-radius:8px;margin:8px 0;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+    .share-preview-row{padding:16px;border-radius:8px;margin:8px 0;text-align:center}
     .share-preview-row.share-preview-light{background:#fafafa;color:#222}
     .share-preview-row.share-preview-dark{background:#0d0a2e;color:#fff}
-    .share-preview-row .share-preview-label{font:12px system-ui,sans-serif;margin-right:8px}
+    .share-preview-row .share-preview-label{font:12px system-ui,sans-serif;display:inline-block;margin-bottom:8px}
+    .share-preview-row .hv-share-light,.share-preview-row .hv-share-dark{margin:4px}
     .hv-share-light{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#fff;color:#0d0a2e;border:1px solid #e5e7eb;border-radius:999px;font:600 14px system-ui,sans-serif;text-decoration:none;transition:background .15s,border-color .15s}
     .hv-share-light:hover{background:#f3f4f6;border-color:#c026d3}
     .hv-share-light:focus-visible{outline:2px solid #5fdcff;outline-offset:2px}
@@ -64,12 +65,12 @@ client.post("Hello from Python! #hashiverse-python")`;
   </style>
 
   <div class="share-preview-row share-preview-light">
-    <span class="share-preview-label">Auf hellem Hintergrund:</span>
+    <span class="share-preview-label">Auf hellem Hintergrund:</span><br/>
     <a class="hv-share-light" href="https://app.hashiverse.com/#/share?text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
     <a class="hv-share-dark" href="https://app.hashiverse.com/#/share?text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
   </div>
   <div class="share-preview-row share-preview-dark">
-    <span class="share-preview-label">Auf dunklem Hintergrund:</span>
+    <span class="share-preview-label">Auf dunklem Hintergrund:</span><br/>
     <a class="hv-share-light" href="https://app.hashiverse.com/#/share?text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
     <a class="hv-share-dark" href="https://app.hashiverse.com/#/share?text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
   </div>
