@@ -23,6 +23,7 @@
   },
   "dev_sidebar": {
     "index": "Visión general",
+    "getting_started": "Primeros pasos",
     "cryptography": "Fundamentos criptográficos",
     "pow": "Prueba de trabajo",
     "network": "La red DHT",

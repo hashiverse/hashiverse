@@ -23,6 +23,7 @@
   },
   "dev_sidebar": {
     "index": "Overzicht",
+    "getting_started": "Aan de slag",
     "cryptography": "Cryptografische basis",
     "pow": "Proof of Work",
     "network": "Het DHT-netwerk",

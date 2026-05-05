@@ -23,6 +23,7 @@
   },
   "dev_sidebar": {
     "index": "Überblick",
+    "getting_started": "Erste Schritte",
     "cryptography": "Kryptografische Grundlage",
     "pow": "Proof of Work",
     "network": "Das DHT-Netzwerk",

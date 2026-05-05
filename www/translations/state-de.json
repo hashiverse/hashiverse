@@ -1,9 +1,10 @@
 {
-	"src/i18n/en.json": "d8ef",
+	"src/i18n/en.json": "d481",
 	"src/pages/en/dev/cryptography.astro": "8cb7",
 	"src/pages/en/dev/future.astro": "17e0",
 	"src/pages/en/dev/geeking-out.astro": "5d8f",
-	"src/pages/en/dev/index.astro": "fb71",
+	"src/pages/en/dev/getting-started.astro": "d724",
+	"src/pages/en/dev/index.astro": "914e",
 	"src/pages/en/dev/moderation.astro": "3a09",
 	"src/pages/en/dev/network.astro": "0f52",
 	"src/pages/en/dev/posts.astro": "ce74",

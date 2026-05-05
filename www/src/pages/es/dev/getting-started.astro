@@ -1,0 +1,105 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+
+const code_light = `<style>
+.hv-share-light{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#fff;color:#0d0a2e;border:1px solid #e5e7eb;border-radius:999px;font:600 14px system-ui,sans-serif;text-decoration:none;transition:background .15s,border-color .15s}
+.hv-share-light:hover{background:#f3f4f6;border-color:#c026d3}
+.hv-share-light:focus-visible{outline:2px solid #5fdcff;outline-offset:2px}
+.hv-share-light .hv-hash{font-size:18px;line-height:1;color:#c026d3}
+</style>
+<a class="hv-share-light" href="https://app.hashiverse.com/#/?share=true&text=YOUR_TEXT&url=YOUR_URL" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>`;
+
+const code_dark = `<style>
+.hv-share-dark{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#0d0a2e;color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:999px;font:600 14px system-ui,sans-serif;text-decoration:none;transition:background .15s,border-color .15s}
+.hv-share-dark:hover{background:#1a1850;border-color:#5fdcff}
+.hv-share-dark:focus-visible{outline:2px solid #5fdcff;outline-offset:2px}
+.hv-share-dark .hv-hash{font-size:18px;line-height:1;color:#5fdcff}
+</style>
+<a class="hv-share-dark" href="https://app.hashiverse.com/#/?share=true&text=YOUR_TEXT&url=YOUR_URL" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>`;
+
+const code_python = `from hashiverse_client import HashiverseClient
+
+client = HashiverseClient.create_from_keyphrase(
+    key_phrase="my secret keyphrase",
+    data_dir="~/.hashiverse",
+)
+client.post("Hello from Python! #hashiverse-python")`;
+---
+
+<DevDoc title="Primeros pasos">
+  <p>
+    Las formas más sencillas de publicar en Hashiverse sin escribir mucho código. Elige la que
+    mejor se adapte a ti.
+  </p>
+
+  <h2>Botones para compartir en tu sitio web</h2>
+  <p>
+    Coloca un botón en tu blog o sitio que abra un borrador de composición de Hashiverse
+    pre-rellenado con un enlace y texto. El <code>href</code> del botón apunta directamente a la
+    aplicación Hashiverse:
+  </p>
+  <pre><code>https://app.hashiverse.com/#/?share=true&amp;text=YOUR_TEXT&amp;url=YOUR_URL</code></pre>
+  <p>
+    Ambos parámetros de consulta son opcionales y deben estar codificados como URL. A continuación
+    dos estilos de botón de partida — cada snippet es totalmente autónomo: pégalo tal cual y el
+    botón funcionará. Reemplaza <code>YOUR_TEXT</code> y <code>YOUR_URL</code> por el enlace y el
+    mensaje que quieras dejar pre-rellenados.
+  </p>
+
+  <h3>Variantes</h3>
+
+  <style>
+    .share-preview-row{padding:16px;border-radius:8px;margin:8px 0;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+    .share-preview-row.share-preview-light{background:#fafafa;color:#222}
+    .share-preview-row.share-preview-dark{background:#0d0a2e;color:#fff}
+    .share-preview-row .share-preview-label{font:12px system-ui,sans-serif;margin-right:8px}
+    .hv-share-light{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#fff;color:#0d0a2e;border:1px solid #e5e7eb;border-radius:999px;font:600 14px system-ui,sans-serif;text-decoration:none;transition:background .15s,border-color .15s}
+    .hv-share-light:hover{background:#f3f4f6;border-color:#c026d3}
+    .hv-share-light:focus-visible{outline:2px solid #5fdcff;outline-offset:2px}
+    .hv-share-light .hv-hash{font-size:18px;line-height:1;color:#c026d3}
+    .hv-share-dark{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#0d0a2e;color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:999px;font:600 14px system-ui,sans-serif;text-decoration:none;transition:background .15s,border-color .15s}
+    .hv-share-dark:hover{background:#1a1850;border-color:#5fdcff}
+    .hv-share-dark:focus-visible{outline:2px solid #5fdcff;outline-offset:2px}
+    .hv-share-dark .hv-hash{font-size:18px;line-height:1;color:#5fdcff}
+  </style>
+
+  <div class="share-preview-row share-preview-light">
+    <span class="share-preview-label">Sobre fondo claro:</span>
+    <a class="hv-share-light" href="https://app.hashiverse.com/#/?share=true&text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
+    <a class="hv-share-dark" href="https://app.hashiverse.com/#/?share=true&text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
+  </div>
+  <div class="share-preview-row share-preview-dark">
+    <span class="share-preview-label">Sobre fondo oscuro:</span>
+    <a class="hv-share-light" href="https://app.hashiverse.com/#/?share=true&text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
+    <a class="hv-share-dark" href="https://app.hashiverse.com/#/?share=true&text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
+  </div>
+
+  <p>
+    Son plantillas iniciales — normalmente encajará mejor tu propio lenguaje visual. Solo respeta
+    el contrato del <code>href</code> y el botón funcionará.
+  </p>
+
+  <h3>Variante clara</h3>
+  <pre><code>{code_light}</code></pre>
+
+  <h3>Variante oscura</h3>
+  <pre><code>{code_dark}</code></pre>
+
+  <h2>Publicar desde Python</h2>
+  <p>Instala el cliente de Python desde PyPI:</p>
+  <pre><code>pip install hashiverse-client</code></pre>
+  <p>Después publica en cinco líneas:</p>
+  <pre><code>{code_python}</code></pre>
+  <p>
+    Consulta el <a href={g.python}>cliente Python completo</a> en GitHub para funciones avanzadas:
+    lectura de cronologías, flujos de hashtags, gestión de claves y reconexión desde una clave
+    guardada.
+  </p>
+
+  <h2>Cliente de línea de comandos</h2>
+  <p>
+    <em>Próximamente.</em> Un CLI independiente para publicar y consultar Hashiverse desde tu
+    shell está en la hoja de ruta.
+  </p>
+</DevDoc>
