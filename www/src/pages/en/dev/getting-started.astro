@@ -43,37 +43,43 @@ client.post("Hello from Python! #hashiverse-python")`;
     paste it as-is and the button works. Replace <code>YOUR_TEXT</code> and <code>YOUR_URL</code> with the link and message you want pre-filled.
   </p>
 
-  <h3>Light variant</h3>
+  <h3>Variants</h3>
 
   <style>
-    .share-preview-light{padding:16px;background:#fafafa;border-radius:8px;margin:8px 0}
+    .share-preview-row{padding:16px;border-radius:8px;margin:8px 0;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+    .share-preview-row.share-preview-light{background:#fafafa;color:#222}
+    .share-preview-row.share-preview-dark{background:#0d0a2e;color:#fff}
+    .share-preview-row .share-preview-label{font:12px system-ui,sans-serif;margin-right:8px}
     .hv-share-light{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#fff;color:#0d0a2e;border:1px solid #e5e7eb;border-radius:999px;font:600 14px system-ui,sans-serif;text-decoration:none;transition:background .15s,border-color .15s}
     .hv-share-light:hover{background:#f3f4f6;border-color:#c026d3}
     .hv-share-light:focus-visible{outline:2px solid #5fdcff;outline-offset:2px}
     .hv-share-light .hv-hash{font-size:18px;line-height:1;color:#c026d3}
-  </style>
-  <div class="share-preview-light">
-    <a class="hv-share-light" href="https://app.hashiverse.com/#/?share=true&text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
-  </div>
-  <pre><code>{code_light}</code></pre>
-
-  <h3>Dark variant</h3>
-
-  <style>
-    .share-preview-dark{padding:16px;background:#0d0a2e;border-radius:8px;margin:8px 0}
     .hv-share-dark{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#0d0a2e;color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:999px;font:600 14px system-ui,sans-serif;text-decoration:none;transition:background .15s,border-color .15s}
     .hv-share-dark:hover{background:#1a1850;border-color:#5fdcff}
     .hv-share-dark:focus-visible{outline:2px solid #5fdcff;outline-offset:2px}
     .hv-share-dark .hv-hash{font-size:18px;line-height:1;color:#5fdcff}
   </style>
-  <div class="share-preview-dark">
+
+  <div class="share-preview-row share-preview-light">
+    <span class="share-preview-label">On a light background:</span>
+    <a class="hv-share-light" href="https://app.hashiverse.com/#/?share=true&text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
     <a class="hv-share-dark" href="https://app.hashiverse.com/#/?share=true&text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
   </div>
-  <pre><code>{code_dark}</code></pre>
+  <div class="share-preview-row share-preview-dark">
+    <span class="share-preview-label">On a dark background:</span>
+    <a class="hv-share-light" href="https://app.hashiverse.com/#/?share=true&text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
+    <a class="hv-share-dark" href="https://app.hashiverse.com/#/?share=true&text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
+  </div>
 
   <p>
     These are starters — your own visual language usually fits better. Just keep the <code>href</code> contract and the button will work.
   </p>
+
+  <h3>Light variant</h3>
+  <pre><code>{code_light}</code></pre>
+
+  <h3>Dark variant</h3>
+  <pre><code>{code_dark}</code></pre>
 
   <h2>Posting from Python</h2>
   <p>Install the Python client from PyPI:</p>
