@@ -1,0 +1,157 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Inhoudsmoderatie">
+  <p>
+    Gedecentraliseerde moderatie is een onopgelost probleem. Hashiverse pretendeert het niet
+    volledig opgelost te hebben, maar heeft wel een gelaagde, principiële aanpak die de meeste
+    veelvoorkomende faalmodi adresseert zonder een centrale autoriteit opnieuw in te voeren.
+    Elke laag is op zichzelf nuttig; samen bieden ze betekenisvolle dekking.
+  </p>
+
+  <h2>Laag 1: Organisch vervallen via healing</h2>
+  <p>
+    Inhoud in Hashiverse blijft bestaan zolang clients die blijven ophalen. Telkens wanneer een
+    client een bucket berichten ophaalt, identificeert hij servers die berichten missen en
+    heelt die gaten. Dit betekent dat populaire, vaak bezochte inhoud voortdurend wordt
+    gerepliceerd over de dichtstbijzijnde servers van het netwerk. Inhoud die niemand ophaalt
+    wordt niet meer geheeld. Naarmate servers vollopen en hun LRU-verwijderbeleid toepassen,
+    wordt inhoud waarnaar niet wordt verwezen stilletjes gedropt — zonder centrale beslissing,
+    zonder takedown-bericht, zonder menselijk oordeel vereist.
+  </p>
+  <p>
+    Inhoud die voortduurt doet dat omdat hij voor iemand interessant blijft. Inhoud die acute
+    schade veroorzaakt — een intimidatiecampagne, gerichte desinformatie — piekt typisch in
+    betrokkenheid en vervaagt naarmate de episode voorbijgaat. Zodra clients ophouden hem op
+    te halen, stopt healing en vergeet het netwerk hem op natuurlijke wijze. Werkelijk
+    persistente schadelijke inhoud zou persistente menselijke interesse vereisen, wat een veel
+    moeilijkere lat is om vol te houden dan iets simpelweg eenmalig te plaatsen.
+  </p>
+
+  <h2>Laag 2: PoW-gewogen feedback</h2>
+  <p>
+    Gebruikers kunnen op berichten signaleren via getypte feedback: positieve reacties (like,
+    love, etc.) en meldingscategorieën waaronder gevoelige inhoud, haatspraak, intimidatie,
+    desinformatie, spam en oplichting. Elk signaal draagt een proof-of-work-niveau. Het
+    netwerk handhaaft het wereldwijd maximale PoW-signaal voor elk (post_id,
+    feedback_type)-paar en heelt dit maximum over servers heen.
+  </p>
+  <p>
+    Schademetrieken worden berekend uit het aggregaat van meldingssignalen, gewogen naar hun
+    PoW. Hoge-PoW-signalen van meerdere onafhankelijke gebruikers zijn zeer moeilijk te
+    manipuleren: een tegenstander zou het gecombineerde werk moeten overtreffen van een
+    gemeenschap die om een stuk inhoud geeft.
+  </p>
+
+  <h3>CSAM-melding</h3>
+  <p>
+    Materiaal van seksueel kindermisbruik (CSAM) is een onderscheiden feedbackcategorie met
+    een lagere afdek-drempel aan de clientzijde dan andere meldingstypes — een kleinere
+    hoeveelheid geaccumuleerd PoW-signaal is vereist voordat de client de inhoud afdekt. De
+    onderliggende PoW-mechanica zijn echter identiek aan alle andere feedbacktypes: melders
+    moeten nog steeds echt computationeel werk doen, wat het primaire mechanisme voor
+    sybil-weerstand is.
+  </p>
+  <p>
+    Dit ontwerp is een bewuste afweging. Elk mechanisme met lage drempel en snelle actie kan
+    worden bewapend: een trol zou legitieme inhoud valselijk als CSAM kunnen markeren om die
+    te censureren. De PoW-vereiste betekent dat campagnes voor massaal vals markeren een
+    echte en evenredige kost hebben, waardoor ze op grote schaal economisch onaantrekkelijk
+    worden. Afdekking is ook niet onomkeerbaar — de kijker behoudt de mogelijkheid om de
+    inhoud met een sterke waarschuwing te ontdekken — wat de autonomie van de gebruiker
+    behoudt en voorkomt dat één enkele valse markering een bericht permanent voor iedereen
+    het zwijgen oplegt.
+  </p>
+  <p>
+    Wanneer een gebruiker een CSAM-melding indient, toont de client een bevestigingsdialoog
+    die waarschuwt dat het ten onrechte melden van CSAM in veel jurisdicties illegaal is en
+    middelen van rechtshandhaving wegtrekt van echte gevallen van kindermisbruik.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>
+  </p>
+
+  <h2>Laag 3: Door de gebruiker configureerbare categorieën</h2>
+  <p>
+    CSAM wordt altijd gefilterd. Dit is een hardgecodeerde, niet te overschrijven standaard.
+    Alle andere schadecategorieën hebben door de gebruiker te configureren standaarden:
+    geweld, bedreigingen en spam worden standaard gefilterd; het filteren van
+    volwasseneninhoud staat standaard aan maar kan worden uitgezet voor passende contexten.
+    De configuratie woont in de client, niet op enige server, dus geen serverbeheerder kan de
+    keuzes van een gebruiker overschrijven.
+  </p>
+
+  <h2>Laag 4: Wrijvings-evenredige onthulling</h2>
+  <p>
+    In plaats van gemarkeerde inhoud volledig te verbergen — wat een vorm van censuur zou
+    zijn — introduceren clients een onthullingsvertraging evenredig aan de ernst van het
+    feedbacksignaal van de gemeenschap:
+  </p>
+  <ul>
+    <li>Laag signaal: 0–5 seconden vertraging voordat de inhoud wordt getoond</li>
+    <li>Matig signaal: 10–30 seconden</li>
+    <li>Hoog signaal: 30–60+ seconden</li>
+  </ul>
+  <p>
+    De vertraging is sessiegebonden: zodra een gebruiker de vertraging heeft uitgewacht en
+    een stuk inhoud heeft bekeken, wordt het in dezelfde sessie niet opnieuw gevraagd. Dit
+    respecteert de autonomie van de gebruiker — de inhoud is toegankelijk — terwijl
+    incidentele blootstelling aan ernstig gemarkeerde inhoud praktisch moeilijk wordt
+    gemaakt. De wrijving vervult een vergelijkbare functie als de "weet je het zeker?"-dialoog,
+    geschaald aan zorgen van de gemeenschap.
+  </p>
+
+  <h2>Laag 5: Beeldbeperkingen in publieke contexten</h2>
+  <p>
+    Afbeeldingen in hashtag- en mention-buckets — contexten waar inhoud opduikt voor
+    gebruikers die zich niet specifiek op de auteur hebben geabonneerd — worden standaard
+    beperkt. Een persoonlijke tijdlijn van een gebruiker heeft zo'n beperking niet. Dit
+    beperkt de blast radius van schade door beelden in ontdekkingscontexten zonder inhoud
+    binnen gekozen abonnementen te raken.
+  </p>
+
+  <h2>Laag 6: On-device classifiers (in afwachting)</h2>
+  <p>
+    Deze laag is gepland maar nog niet geïmplementeerd, in afwachting van voldoende
+    volwassenheid van AI-modellen aan de clientzijde die in de browser draaien. De bedoeling
+    is dat de client lokaal een naaktheidsclassifier draait — geen inhoud verzonden naar een
+    centrale dienst — en automatisch een inhoudswaarschuwing toepast voordat het op PoW
+    gebaseerde feedbacksysteem van de gemeenschap tijd heeft gehad om signaal te
+    verzamelen. Dit is bijzonder waardevol voor net geplaatste inhoud die nog niet door
+    genoeg gebruikers is gezien om afdek-drempels te activeren.
+  </p>
+  <p>
+    De voornaamste kandidaat is <a href="https://github.com/infinitered/nsfwjs">NSFWJS</a>,
+    die op MobileNet gebaseerde classificatie volledig in de browser uitvoert via
+    TensorFlow.js. Naarmate modelkwaliteit en inferentieprestaties van de browser
+    verbeteren, wordt ook een gelaagde benadering overwogen die NSFWJS combineert voor
+    snelle eerste-pass-screening met een capabeler model voor leeftijdsschatting.
+  </p>
+
+  <h2>Interactie van lagen</h2>
+  <p>
+    De lagen zijn ontworpen om constructief te interacteren. Een stuk schadelijke inhoud dat
+    het netwerk binnenkomt, ondervindt direct: PoW-kosten bij indiening (duur om op grote
+    schaal te posten), beeldbeperkingen in ontdekkingscontexten, on-device-classificatie en
+    feedback van de gemeenschap die in de loop van de tijd PoW-gewicht opbouwt en
+    toenemende wrijving introduceert. Na zes maanden vervalt de inhoud volledig. Geen
+    enkele laag is voldoende; samen creëren ze meerdere onafhankelijke barrières die een
+    tegenstander tegelijk moet overwinnen.
+  </p>
+
+  <h2>Bekende gaten</h2>
+  <p>
+    Op tekst gebaseerde schade die geen beeld-classifiers triggert en niet snel
+    gemeenschapsmeldingen accumuleert — verfijnde desinformatie, subtiele grooming,
+    contextafhankelijke bedreigingen — is het moeilijkste geval. Het zes-maanden-venster
+    betekent dat ernstige schade voor een ongemakkelijk lange tijd kan voortbestaan voor
+    expiratie. Dit zijn echte beperkingen van de architectuur. Het werk gaat door om
+    detectie te verbeteren binnen de beperkingen van het systeem decentraal houden en de
+    client de scheidsrechter laten zijn van wat wordt getoond.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>
+  </p>
+</DevDoc>

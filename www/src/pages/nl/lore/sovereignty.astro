@@ -1,0 +1,75 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Datasoevereiniteit">
+  <p>
+    Wanneer je op een gecentraliseerd platform post, publiceer je niet — je deponeert. De inhoud
+    is van het platform. Het platform beslist of die online blijft. Het platform beslist wie hem
+    kan zien, wanneer ze hem kunnen zien en onder welke omstandigheden hij verdwijnt. Je bent een
+    huurder, geen eigenaar, en de voorwaarden van jouw huur kunnen op elk moment veranderen
+    zonder kennisgeving of beroep.
+  </p>
+  <p>
+    Datasoevereiniteit betekent iets fundamenteler: jouw inhoud, jouw identiteit en jouw
+    relaties behoren toe aan jou op een manier die niet eenzijdig kan worden ingetrokken.
+  </p>
+
+  <h2>Identiteit die je niet kunt verliezen</h2>
+  <p>
+    In Hashiverse is jouw identiteit een cryptografisch sleutelpaar dat op je eigen apparaat
+    wordt gegenereerd. Jouw publieke ID — de hash van je publieke sleutels — is wiskundig
+    afgeleid van sleutels die alleen jij bezit. Geen server heeft hem aan je uitgegeven. Geen
+    bedrijf kan hem intrekken. Geen accountschorsing kan hem afpakken.
+  </p>
+  <p>
+    Wanneer je post, onderteken je de inhoud met je privésleutel. Iedereen, overal in het
+    netwerk, kan die handtekening verifiëren zonder een centrale autoriteit te vragen. De
+    authenticiteit van jouw berichten is bewijsbaar door wiskunde, niet door de database van
+    een bedrijf.
+  </p>
+
+  <h2>Inhoud die niet kan worden gewist</h2>
+  <p>
+    Jouw berichten worden redundant opgeslagen op de dichtstbijzijnde knooppunten in een
+    Kademlia distributed hash table. Er is geen enkele server die jouw gegevens bewaart. Er is
+    geen masterdatabase om jouw record uit te verwijderen. Wanneer je iets publiceert, verspreidt
+    het zich over onafhankelijke servers die door onafhankelijke mensen worden gerund. Het
+    weghalen zou vereisen dat een meerderheid van die servers wordt gecoördineerd — een
+    coördinatie die structureel moeilijk en economisch irrationeel is voor enige enkele actor.
+  </p>
+  <p>
+    Dit is niet simpelweg replicatie. Het netwerk heelt zichzelf actief. Als een knooppunt
+    offline gaat of gegevens verliest, detecteren de omliggende knooppunten het gat en
+    repliceren ze de ontbrekende inhoud. Een client die berichten van meerdere servers ophaalt
+    zal automatisch identificeren welke servers berichten missen en regelen dat die servers
+    krijgen wat ze missen — zonder enige centrale orkestratie.
+  </p>
+
+  <h2>Versleuteling in rust</h2>
+  <p>
+    Berichten die op servers worden opgeslagen zijn versleuteld. De versleutelingssleutel wordt
+    afgeleid uit de context van het bericht: jouw eigen publieke ID voor je persoonlijke
+    tijdlijn, de hashtagnaam voor hashtag-buckets, het ID van de ontvanger voor mentions. Een
+    server slaat inhoud op die hij niet kan lezen. Hij kan jouw berichten niet ontginnen op
+    targeting-signalen. Hij kan geen inzicht verkopen in wat je schrijft of met wie je
+    interacteert.
+  </p>
+  <p>
+    Dit is plausible deniability die in de architectuur is ingebouwd. Een server-operator kan
+    niet worden gedwongen leesbare inhoud te overhandigen omdat hij die niet heeft. De
+    leesbare tekst bestaat alleen in clients — in jouw browser, op jouw apparaat.
+  </p>
+
+  <h2>Sleutels waar je niet uit gesloten kunt worden</h2>
+  <p>
+    Het moeilijkste probleem in zelfsoevereine identiteit is sleutelherstel. Als jouw
+    privésleutel verloren gaat, verlies je jouw identiteit. Hashiverse werkt aan
+    herstelmechanismen die soevereiniteit behouden zonder die op te offeren: Shamir's secret
+    sharing (splits jouw sleutel over meerdere vertrouwde partijen, vereis M-of-N om te
+    herstellen), ondersteuning voor hardware-tokens en gedelegeerde ondertekeningssleutels
+    waarmee je vanaf meerdere apparaten kunt werken zonder je root-sleutel bloot te stellen.
+    Dit zijn geen bijzaken — ze zijn een vereiste opdat soevereiniteit echt is in plaats van
+    theoretisch.
+  </p>
+</LoreDoc>

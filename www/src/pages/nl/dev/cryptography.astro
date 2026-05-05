@@ -1,0 +1,150 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Cryptografische basis">
+  <p>
+    Elke claim die Hashiverse maakt over datasoevereiniteit, weerstand tegen censuur en
+    onafhankelijkheid van eigendom wordt gerugsteund door cryptografie. Dit is geen
+    versiering — het is de reden dat de claims waar zijn. De cryptografische laag begrijpen is
+    de basis begrijpen waarop al het andere gebouwd is.
+  </p>
+
+  <h2>Identiteit</h2>
+  <p>
+    Een Hashiverse-identiteit wordt niet door een server toegekend. Hij wordt afgeleid van
+    sleutels:
+  </p>
+  <pre><code>ID = Blake3(ed25519_pub || Blake3(Falcon_pub)[0..16] || Blake3(Dilithium_pub)[0..16])</code></pre>
+  <p>
+    Jouw publieke ID is een 256-bits hash van drie publieke sleutels — één klassieke (Ed25519),
+    twee post-quantum (FN-DSA/Falcon en ML-DSA/Dilithium). De 16-byte verbintenissen aan de
+    PQ-sleutels binden deze nu al in jouw identiteit, voordat quantumcomputers een praktische
+    bedreiging zijn. Wanneer de quantummigratie gebeurt, is het opgradepad al ingebed in elke
+    identiteit in het netwerk.
+  </p>
+  <p>
+    Server-identiteiten werken op dezelfde manier, met de aanvullende vereiste dat het ID moet
+    voldoen aan een proof-of-work-voorwaarde (een prefix met leidende nullen in de hash). Dit
+    maakt het aanmaken van server-identiteiten computationeel duur en voorkomt
+    Sybil-aanvallen op de DHT-ring.
+  </p>
+  <p>
+    De Ed25519-privé-ondertekeningssleutel van de client wordt uitsluitend opgeslagen in de
+    <strong>secure enclave van de Web Crypto API</strong> van de browser, als een
+    niet-extraheerbaar <code>CryptoKey</code>-object. De browser stelt alleen een
+    ondertekeningsoperatie beschikbaar — de ruwe privé-sleutelbytes zijn nooit toegankelijk
+    voor JavaScript, voor de WASM-module of voor enige andere code die op de pagina draait. Er
+    is geen mechanisme om de privé-sleutel te exporteren of op te halen zodra hij is
+    geïmporteerd. Het ondertekenen gebeurt binnen de cryptografische laag van de browser; de
+    sleutel verlaat die laag nooit.
+  </p>
+  <p>
+    Dit is een bewuste beperking, geen tekortkoming. Zelfs als de Hashiverse WASM-client
+    volledig zou worden gecompromitteerd, zou een aanvaller hooguit de ondertekeningsoperatie
+    namens het slachtoffer kunnen aanroepen — hij zou de sleutel niet kunnen stelen en elders
+    gebruiken.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a> —
+    <code>Hash</code>, <code>Id</code>, <code>Signature</code> types;
+    <a href={`${g.lib}/src/tools/server_id.rs`}><code>server_id.rs</code></a> voor PoW van server-identiteit.
+  </p>
+
+  <h2>Post-quantum hybride handtekeningen</h2>
+  <p>
+    De drie-sleutel-identiteit maakt een progressief migratiepad mogelijk:
+  </p>
+  <ul>
+    <li>Vandaag: berichten worden ondertekend met Ed25519. Verificatie is snel en goed begrepen.</li>
+    <li>Wanneer Ed25519 wordt bedreigd: migreer de primaire ondertekening naar FN-DSA (Falcon), dat kleinere handtekeningen heeft dan Dilithium.</li>
+    <li>Als roostergebaseerde algoritmen later worden gebroken: val terug op ML-DSA (Dilithium) als laatste laag.</li>
+  </ul>
+  <p>
+    SPHINCS+ werd overwogen en verworpen: zijn handtekeningen zijn meerdere kilobytes, wat
+    onhaalbaar is voor een hoog-doorvoer-berichtennetwerk. De combinatie Falcon + Dilithium
+    biedt twee onafhankelijke roostergebaseerde beveiligingsaannames, wat betekent dat beide
+    tegelijk gebroken zouden moeten worden om de identiteit te compromitteren.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a> cryptografische primitieven;
+    <a href={`${g.lib}/src/protocol/posting/encoded_post.rs`}><code>encoded_post.rs</code></a> voor selectie van het handtekeningmechanisme per bericht.
+  </p>
+
+  <h2>Hashing</h2>
+  <p>
+    Blake3 is de primaire hash-functie — snel, parallelliseerbaar en geschikt voor checksums,
+    inhouds-adressering en sleutelafleiding. Voor Proof of Work omvat de volledige
+    hash-suite die in het protocol beschikbaar is Blake2, Blake3, SHA2, SHA3, Whirlpool,
+    Groestl en Skein. PoW ketent meerdere algoritmen in een pseudo-willekeurige volgorde, wat
+    de weerstand tegen ASIC's vergroot door efficiënte co-implementatie van meerdere
+    pad-afhankelijke algoritmen tegelijk te vereisen.
+  </p>
+  <p>
+    Alle hash-bibliotheken worden gecompileerd met <code>opt-level=3</code> zelfs in
+    debug-builds — dit is geconfigureerd in de profile overrides van de workspace
+    <code>Cargo.toml</code> om te voorkomen dat testsuites een knelpunt worden door
+    hash-berekeningen.
+  </p>
+
+  <h2>Versleuteling in rust</h2>
+  <p>
+    Berichten die op servers worden opgeslagen zijn versleuteld met ChaCha20-Poly1305. De
+    sleutel wordt afgeleid van een wachtwoordzin die afhangt van het bucket-type:
+  </p>
+  <ul>
+    <li><strong>Gebruikerstijdlijn</strong>: wachtwoordzin is de publieke ID van de gebruiker</li>
+    <li><strong>Hashtag</strong>: wachtwoordzin is de hashtagtekst in kleine letters (zonder #)</li>
+    <li><strong>Mention</strong>: wachtwoordzin is de publieke ID van de genoemde gebruiker</li>
+    <li><strong>Antwoord</strong>: wachtwoordzin is de inhoudshandtekening van het oorspronkelijke bericht</li>
+  </ul>
+  <p>
+    Een aangepast multi-wachtwoordzin versleutelingsschema, losjes geïnspireerd op
+    <code>age</code>, betekent dat een enkel bericht dat meerdere contexten omspant — een
+    hashtag-bericht dat ook een gebruiker noemt — kan worden ontsleuteld door iedereen die
+    een van beide wachtwoordzinnen bezit. Servers slaan versleutelde bytes op die ze niet
+    kunnen lezen. Er is geen leesbare tekst op de schijf van de server.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post.rs`}><code>encoded_post.rs</code></a>
+    voor berichtversleuteling; <a href={`${g.lib}/src/tools/`}><code>hashiverse-lib/src/tools/</code></a> voor de ChaCha20-Poly1305-primitieven.
+  </p>
+
+  <h2>Handtekeningen op alles</h2>
+  <p>
+    Elk bericht wordt door zijn auteur ondertekend. Elke serverreactie wordt door de
+    bedienende server ondertekend. Elke bundle wordt ondertekend. Handtekeningen zijn geen
+    optionele metadata — ze zijn het mechanisme waarmee clients inhoud die van niet-vertrouwde
+    servers wordt ontvangen kunnen vertrouwen. Een client hoeft een server nooit te
+    vertrouwen; hij vertrouwt de cryptografische handtekening op de inhoud die de server
+    levert.
+  </p>
+
+  <h2>Twee lagen transportbeveiliging</h2>
+  <p>
+    Hashiverse scheidt transportversleuteling van protocolbeveiliging en behandelt ze als
+    onafhankelijke aandachtspunten:
+  </p>
+  <p>
+    <strong>Transportlaag (TLS):</strong> Server-naar-server- en client-naar-server-communicatie
+    loopt over HTTPS met TLS-certificaten uitgegeven door <strong>Let's Encrypt</strong>. Omdat
+    Hashiverse-servers worden geïdentificeerd door IP-adres in plaats van domeinnaam, verkrijgt
+    de server een TLS-certificaat voor alleen IP via het ACME-protocol. Dit versleutelt
+    verkeer tijdens transport en voorkomt passief afluisteren op de lijn.
+  </p>
+  <p>
+    <strong>Protocollaag (Hashiverse-cryptografie):</strong> TLS alleen is niet voldoende voor
+    een trustless gedecentraliseerd netwerk — een gecompromitteerde of kwaadwillende server
+    zou nog steeds gemanipuleerde inhoud kunnen aanbieden over een geldige TLS-verbinding. De
+    eigen cryptografie van Hashiverse biedt de diepere garantie: elk stuk inhoud wordt
+    ondertekend door de sleutels van zijn auteur, berichten worden in rust versleuteld met
+    sleutels die de server nooit bezit, en server-identiteiten zijn gebonden aan
+    proof-of-work-verbintenissen. Een client hoeft geen enkele server te vertrouwen; hij
+    verifieert inhoud rechtstreeks tegen cryptografische handtekeningen, ongeacht hoe deze is
+    aangekomen.
+  </p>
+  <p>
+    TLS regelt het netwerk; Hashiverse-cryptografie regelt de waarheid.
+  </p>
+</DevDoc>

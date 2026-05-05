@@ -1,0 +1,113 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Het DHT-netwerk">
+  <p>
+    Hoe vinden honderden onafhankelijke servers zonder centrale directory elkaar, worden ze het
+    eens over waar gegevens leven en routeren ze verzoeken efficiënt? Hashiverse gebruikt een
+    Kademlia distributed hash table — dezelfde algoritmefamilie die door BitTorrent, IPFS en
+    de peer-discoverylaag van Ethereum wordt gebruikt — aangepast voor de toegangspatronen van
+    een sociaal netwerk.
+  </p>
+
+  <h2>De ring</h2>
+  <p>
+    Elke entiteit in Hashiverse — servers, gebruikers, berichten, hashtags — heeft een
+    256-bits identificator afgeleid van zijn Blake3-hash. Deze ID's leven op een ring: de
+    adresruimte loopt rond bij 2<sup>256</sup>. "Afstand" tussen twee ID's is de XOR van hun
+    bitpatronen, een metriek die de ring nuttige routingseigenschappen geeft.
+  </p>
+  <p>
+    Elke server onderhoudt verbindingen met andere servers waarvan de ID's qua XOR-afstand
+    dichtbij de eigen ID liggen, plus verbindingen op exponentieel toenemende afstanden (de
+    Kademlia k-buckets). Deze structuur betekent dat elke server een query in O(log n) hops
+    kan routeren naar de server die het dichtst bij een gegeven doel-ID ligt, waarbij n het
+    aantal servers in het netwerk is.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.server}/src/server/kademlia/kademlia.rs`}><code>kademlia.rs</code></a>
+  </p>
+
+  <h2>Waar gegevens wonen</h2>
+  <p>
+    Een bucket berichten wordt opgeslagen op de servers waarvan de ID's het dichtst bij het
+    <code>location_id</code> van de bucket liggen — een hash afgeleid van het bucket-type,
+    de basis-ID (gebruiker, hashtag of bericht) en het tijdvenster. Dit betekent:
+  </p>
+  <ul>
+    <li>De berichten van een gebruiker worden opgeslagen op de servers die het dichtst bij de ID van die gebruiker in de ring liggen.</li>
+    <li>De berichten van een hashtag worden opgeslagen dichtbij de hash-ID van de hashtag.</li>
+    <li>Naarmate nieuwe servers toetreden en vertrekken, verschuift de naaste-buurset, en healing propageert gegevens naar de nieuwe naaste servers.</li>
+  </ul>
+  <p>
+    Er is geen master-index. Geen server weet waar alles is. Elke server weet waar dingen
+    in de buurt zijn, en hoe te routeren naar dingen die ver weg zijn.
+  </p>
+
+  <h2>Belastingverdeling</h2>
+  <p>
+    Populaire hashtags zouden een knelpunt zijn als alle berichten voor een hashtag voor
+    onbepaalde tijd op dezelfde handvol servers terechtkwamen. Hashiverse verdeelt deze
+    belasting met behulp van op tijdperken gebaseerde sleutelrotatie: de location-ID voor
+    een hashtag-bucket verschuift in de loop van de tijd, dus verschillende tijdperken
+    landen op verschillende delen van de ring — verschillende servers. Alle
+    tijdlijn-location-ID's roteren op een maandelijkse cadans; maar drukkere tijdlijnen
+    overlopen automatisch in buckets met toenemende granulariteit.
+  </p>
+  <p>
+    Het bucketsysteem is hiërarchisch: 1-maand-buckets verdelen zich in wekelijks, dan
+    dagelijks, dan 6-uurs, uurlijks, 15-minuten, 5-minuten en 1-minuten-buckets. Het laden
+    van de tijdlijn doorloopt deze hiërarchie recursief — beginnend grof en alleen
+    drillen naar fijnere buckets waar inhoud bestaat. Een tijdlijn met spaarzame
+    activiteit laadt goedkoop; een dichte tijdlijn laadt efficiënt omdat elke bucket
+    parallel kan worden opgehaald.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a>,
+    <a href={`${g.lib}/src/client/timeline/recursive_bucket_visitor.rs`}><code>recursive_bucket_visitor.rs</code></a>
+  </p>
+
+  <h2>Transportabstractie</h2>
+  <p>
+    Het protocol is transport-agnostisch. De <code>TransportFactory</code>,
+    <code>TransportServer</code> en <code>TransportServerHandler</code> traits in
+    <a href={`${g.lib}/src/transport/`}><code>hashiverse-lib/src/transport/</code></a> definiëren de interface; implementaties
+    worden uitgewisseld zonder de protocol-logica aan te raken:
+  </p>
+  <ul>
+    <li>
+      <strong>mem_transport</strong>: In-memory channels, gebruikt in tests. Maakt het
+      mogelijk om volledige multi-server-topologieën in één enkel proces op te starten
+      zonder netwerkoverhead.
+    </li>
+    <li>
+      <strong>HttpsTransport / TcpTransport</strong>: Productie-implementaties in
+      <a href={`${g.server}/src/network/transport/`}><code>hashiverse-server/src/network/transport/</code></a>,
+      met HTTPS dat automatisch geleverde certificaten gebruikt via rcgen en instant-acme
+      (Let's Encrypt).
+    </li>
+    <li>
+      <strong>WasmTransport</strong>: Browser HTTP-transport via gloo-net, in
+      <a href={`${g.wasm}/src/wasm_transport.rs`}><code>wasm_transport.rs</code></a>.
+    </li>
+  </ul>
+  <p>
+    De integratietests benutten dit zwaar: een test die healinggedrag, DHT-routing of
+    bericht-propagatie verifieert, kan volledig in het geheugen draaien met
+    deterministische timing, geen poorten en geen opruimactie.
+  </p>
+
+  <h2>Test-harness-orkestratie</h2>
+  <p>
+    De test-harness-binary start een primaire server (voor bootstrap) plus een configureerbaar
+    aantal secundaire servers in één enkel proces met behulp van Tokio's <code>JoinSet</code>,
+    allemaal dezelfde annuleringstoken delend voor nette afsluiting. De
+    <code>HashiverseServer</code>-orkestrator initialiseert Kademlia, spawnt
+    transport-handlers en beheert peer-ontdekking.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.integrationTests}/src/bin/test_harness.rs`}><code>hashiverse-integration-tests/src/bin/test_harness.rs</code></a>
+  </p>
+</DevDoc>

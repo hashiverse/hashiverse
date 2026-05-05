@@ -1,0 +1,98 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Hoe bij te dragen">
+  <p>
+    Hashiverse heeft geen bedrijf erachter en geen eigen servers. Zijn veerkracht, beschikbaarheid
+    en weerstand tegen censuur zijn volledig een functie van hoeveel onafhankelijke servers er in
+    het netwerk bestaan. Elk knooppunt dat je toevoegt maakt het netwerk moeilijker aan te vallen,
+    moeilijker tot zwijgen te brengen en nuttiger voor iedereen erop. Als je gelooft in wat
+    Hashiverse probeert te zijn, is een server draaien de meest directe manier om te helpen.
+  </p>
+  <p>
+    Het goede nieuws: het kost ongeveer evenveel als een kop koffie per maand. En als je meer
+    wilt bijdragen, is de juiste zet om <em>meer</em> servers te draaien, niet een grotere — tien
+    machines van $5 verspreid over verschillende providers en regio's zijn voor het netwerk veel
+    waardevoller dan één machine van $50.
+  </p>
+
+  <h2>Wat je nodig hebt</h2>
+  <p>
+    Een willekeurige goedkope VPS van een willekeurige provider voldoet — Hetzner, DigitalOcean,
+    Vultr, Linode en vele anderen bieden geschikte machines voor ongeveer $5/maand. De
+    minimumvereisten zijn bescheiden:
+  </p>
+  <ul>
+    <li><strong>Opslag:</strong> 20 GB schijfruimte</li>
+    <li><strong>Bandbreedte:</strong> 1 TB per maand</li>
+    <li><strong>OS:</strong> elke moderne Linux met Docker geïnstalleerd</li>
+  </ul>
+  <p>
+    De CPU- en RAM-vereisten zijn minimaal — de server is in Rust geschreven en is ontworpen om
+    efficiënt te draaien op de kleinste beschikbare instance-formaten.
+  </p>
+
+    <h2>De server installeren en draaien</h2>
+    <p>
+        Een belangrijk punt om te noteren is dat wanneer je een server opstart, deze eerst flink wat
+        Proof of Work moet uitvoeren voordat hij een vertrouwde plek in het Hashiverse-netwerk krijgt
+        aangewezen. Wees dus niet verbaasd als je CPU de eerste paar uur op het maximum draait en de
+        logs blijven praten over PoWs, iters en ETA.
+    </p>
+    <p>
+        We raden een standaard linux-server aan. Ubuntu werkt prima, of het nu 2024 of 2026 is.
+        Plak het volgende in het opstartscript / user-data / cloud-init-veld wanneer je je server
+        aanmaakt (de naam varieert per provider). Het installeert Docker, opent de firewall, schrijft
+        het compose-bestand en start de stack op.
+    </p>
+    <pre><code>#!/usr/bin/env bash
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y docker.io docker-compose-v2 ufw
+
+ufw allow 22/tcp
+ufw allow from 0.0.0.0/0 to any port 443 proto tcp
+ufw --force enable
+
+mkdir -p /opt/hashiverse && cd /opt/hashiverse
+
+cat &gt; docker-compose.yml &lt;&lt;"YAML"
+services:
+  hashiverse-server:
+    image: ghcr.io/hashiverse/hashiverse-server:latest
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:443:443"
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./data:/data
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  watchtower:
+    image: nickfedor/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 3600
+YAML
+
+docker compose pull
+docker compose up -d</code></pre>
+  <p>
+    Watchtower houdt de server automatisch up-to-date naarmate er nieuwe versies worden uitgebracht.
+    De <code>NET_ADMIN</code>-capability is vereist voor de ingebouwde DDoS-bescherming van de
+    server, die <code>ipset</code> en <code>iptables</code> gebruikt om verkeer van misbruikende
+    IP's op kernel-niveau te laten vallen. De <code>./data</code>-volume is waar de server zijn
+    identiteit en opgeslagen versleutelde berichten persisteert — bewaar dit veilig als je om
+    continuïteit geeft, hoewel Hashiverse ontworpen is om zichzelf te herstellen als je een server
+    vernietigt en een nieuwe opstart.
+  </p>
+</LoreDoc>

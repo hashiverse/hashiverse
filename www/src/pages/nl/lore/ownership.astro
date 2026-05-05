@@ -1,0 +1,90 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Bestand tegen overname">
+  <p>
+    In 2022 werd Twitter overgenomen door één enkel individu en binnen enkele weken omgevormd tot
+    iets onherkenbaars. De gemeenschappen die er hun aanwezigheid hadden opgebouwd hadden geen
+    stem, geen veto, geen uitweg die niet betekende opnieuw vanaf nul te beginnen. Alles wat ze
+    hadden opgebouwd stond op grond die niet van hen was.
+  </p>
+  <p>
+    Dit is het eigendomsprobleem. Elk gecentraliseerd platform, hoe goedbedoeld ook bij de
+    oprichting, is een overnamedoelwit. Zijn waarden zijn afhankelijk van zijn eigendom. Zijn
+    gemeenschap is gegijzelde van wie de sleutels in handen heeft.
+  </p>
+
+  <h2>Protocollen versus platformen</h2>
+  <p>
+    De oplossing is architecturaal: bouw een protocol, geen platform. Niemand bezit e-mail. Geen
+    miljardair of overheid kan het web overnemen. Dit zijn open standaarden, geïmplementeerd door
+    veel onafhankelijke actoren, bestuurd door geen enkele entiteit. Iedereen kan ze
+    implementeren. Iedereen kan een server draaien. Geen enkel enkelvoudig faalpunt kan ze
+    platleggen.
+  </p>
+  <p>
+    Hashiverse is op hetzelfde principe ontworpen. Het is een open protocol. De broncode is
+    openbaar. Iedereen kan een server draaien, en het draaien van een server geeft je gelijke
+    status in het netwerk — er zijn geen bevoorrechte knooppunten. Iedereen kan een client
+    bouwen. Het netwerk heeft geen hoofdkantoor, geen moederbedrijf, geen raad van bestuur.
+  </p>
+
+  <h2>Overname duur maken</h2>
+  <p>
+    Open source alleen is niet genoeg. Een goed gefinancierde actor zou kunnen proberen het
+    netwerk te domineren door een groot deel van de knooppunten te draaien en zo de peer-topologie
+    in zijn voordeel vorm te geven. Hashiverse maakt dit op een specifieke manier duur:
+    server-identiteit vereist substantiële proof of work — een paar uur berekening per server.
+    Miljoenen servers opstarten om de DHT-ring te domineren is niet alleen duur in hardware; het is
+    duur in tijd, met een werkvereiste die zo geschaald is dat hij bestand is tegen
+    parallellisatie.
+  </p>
+  <p>
+    De Kademlia DHT-ring verdeelt gegevens over de dichtstbijzijnde servers op basis van
+    hash-afstand. Een gecoördineerde aanvaller zou een groot deel van de ring moeten controleren
+    om inhoud betekenisvol te censureren of te manipuleren — en elke server in die positie moest
+    zijn plek verdienen door berekeningen die niet vervalst kunnen worden.
+  </p>
+  <p>
+    Er is een tweede laag bescherming die zich in de loop van de tijd opstapelt. Telkens wanneer
+    een client een server vraagt iets te doen — berichten ophalen, een bericht opslaan, een
+    vraag beantwoorden — doet de client eerst een kleine proof of work namens de server en dient
+    die in. De server stapelt deze bijdragen op van alle clients die ooit hem gebruikt hebben.
+    Hoe beter zijn opgespaarde proof of work, hoe sterker zijn status bij zijn peers in de
+    Kademlia-ring. Een server die maandenlang draait en duizenden gebruikers bedient heeft een
+    reputatie opgebouwd die een nieuw gefabriceerde nepserver simpelweg niet kan repliceren.
+    Gloednieuwe servers daarentegen hebben geen opgebouwde reputatie en moeten meer werk doen om
+    door hun peers serieus genomen te worden. Tijd zelf wordt een verdediging: hoe langer het
+    netwerk al draait, hoe hoger de lat die een zou-zijn-aanvaller moet halen om met
+    gevestigde, vertrouwde knooppunten te concurreren.
+  </p>
+
+  <h2>Post-quantum veerkracht</h2>
+  <p>
+    Bestand zijn tegen overname omvat ook bestand zijn tegen toekomstige technologische
+    bedreigingen. De cryptografische basis van elk identiteitssysteem dat op klassieke
+    elliptische-curve handtekeningen (zoals Ed25519) is gebouwd, zal door voldoende geavanceerde
+    quantumcomputers te kraken zijn. Als dat op een gecentraliseerd platform gebeurt, patcht de
+    operator het systeem en migreert gebruikers. In een gedecentraliseerd protocol is er geen
+    operator om dat te doen.
+  </p>
+  <p>
+    Hashiverse pakt dit proactief aan. Elke identiteit bevat verbintenissen aan twee
+    post-quantum sleutels — ML-DSA (Dilithium) en FN-DSA (Falcon) — naast de klassieke
+    Ed25519-sleutel. De identiteits-hash wordt uit alle drie berekend, dus de identiteit zelf is
+    al gebonden aan post-quantum sleutels nog vóórdat quantumcomputers een realistische
+    bedreiging vormen. Wanneer de tijd komt om te migreren, is het opgradepad al ingebouwd.
+  </p>
+
+  <h2>Bestuur dat niet bestaat</h2>
+  <p>
+    De laatste laag van weerstand tegen overname is de afwezigheid van een bestuursstructuur die
+    overgenomen kan worden. Er is geen stichting om de financiering van te onthouden, geen
+    non-profit om te infiltreren, geen bedrijf om over te nemen. De protocolspecificatie zit in
+    de open-source code. Een server draaien maakt je deel van het netwerk. De gemeenschap
+    beslist gezamenlijk, via de clients die ze gebruiken en de servers die ze draaien, hoe het
+    netwerk eruitziet. Dit is langzamer en rommeliger dan top-down bestuur — en dat is precies
+    de bedoeling.
+  </p>
+</LoreDoc>

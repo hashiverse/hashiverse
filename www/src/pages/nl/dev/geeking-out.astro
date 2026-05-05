@@ -1,0 +1,360 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Voor de techneuten">
+    <p>
+        Het leukste aan het bouwen van Hashiverse is dat het niet kon worden gebouwd zoals
+        traditionele software. De absolute onafhankelijkheid van enige soevereine overheid of
+        bedrijf betekende dat we niet konden vertrouwen op gecentraliseerde cloudproviders of
+        servers of databases. Verdorie — zelfs niet op DNS en standaard webcertificaten!
+    </p>
+    <p>
+        Iedereen kan de broncode van de servers of de clients aanpassen en deelnemen aan het
+        Hashiverse-protocol, dus zelfs het protocol zelf moet immuun zijn voor kwaadwillenden.
+    </p>
+    <p>
+        Hier zijn enkele van de implementatiedetails waar we bij Hashiverse vooral van genieten.
+        Elk verwijst naar de bron zodat je het idee rechtstreeks de code in kunt volgen.
+    </p>
+
+    <h2>Likes en dislikes tellen zichzelf &mdash; geen centrale servers vereist</h2>
+    <p>
+        Tellen in een gedistribueerd netwerk is walgelijk. We wenden ons tot statistiek om
+        gedistribueerd tellen te doen voor onze feedbackmechanismen. Elk feedbacksignaal
+        draagt zijn eigen PoW, en elke extra PoW-bit verdubbelt het geschatte aantal
+        feedback-clicks. Clients voegen feedback van meerdere servers samen door per bericht
+        het sterkste signaal te nemen, en helen vervolgens zwakkere peers. Het netwerk
+        convergeert zonder enige coördinator. Exacte tellingen interesseren ons niet
+        &mdash; bij voldoende grote aantallen zitten we in de juiste statistische orde van
+        grootte, en het is verdomd lastig te manipuleren.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>,
+        <a href={`${g.lib}/src/client/post_bundle/post_bundle_feedback_healing.rs`}><code>post_bundle_feedback_healing.rs</code></a>
+    </p>
+
+    <h2>Een viraal bericht recruteert het hele netwerk als zijn CDN</h2>
+    <p>
+        Wanneer een server genoeg fetch-verzoeken voor dezelfde inhoud ziet, begint hij die te
+        cachen. De ophalende client uploadt de data om die cache te vullen. Voor een viraal
+        bericht wordt elke server langs het lookup-pad van elke client een cache-knooppunt.
+        Hoe populairder de inhoud, hoe meer servers hem cachen &mdash; het netwerk schaalt
+        zichzelf.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.serverLib}/src/server/post_bundle_caching.rs`}><code>post_bundle_caching.rs</code></a>
+    </p>
+
+    <h2>Trending hashtags ontstaan uit het niets</h2>
+    <p>
+        Geen centrale tellers. Aangezien "trending" betekent dat veel gebruikers posten,
+        benadert de lokale weergave van een willekeurige server al de globale waarheid. Elke
+        server volgt unieke auteurs per hashtag met een kleine probabilistische teller.
+        Tellingen zijn thuisgebracht op de server van de poster &mdash; je kunt dus alleen je
+        eigen server-telling opblazen, en zelfs dan telt dezelfde auteur die 1.000 keer post
+        als één. Dit betekent dat een hashtag laten trenden vrijwel onmogelijk te
+        manipuleren is.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.serverLib}/src/server/handlers/dispatch.rs`}><code>dispatch.rs</code></a>,
+        <a href={`${g.lib}/src/tools/hyper_log_log.rs`}><code>hyper_log_log.rs</code></a>
+    </p>
+
+    <h2>Vergeten inhoud sterft door verwaarlozing, niet door ouderdom</h2>
+    <p>
+        Geen TTL. Geen vervaltimer. Wanneer de opslag van een server vol raakt, verwijdert hij
+        de minst recent benaderde inhoud. Populaire inhoud wordt voortdurend aangeraakt en
+        overleeft voor onbepaalde tijd. Inhoud die niemand leest verdwijnt stilletjes via
+        natuurlijke selectie op toegangspatroon.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.serverLib}/src/environment/environment.rs`}><code>environment.rs</code></a>
+    </p>
+
+    <h2>Healing gebeurt alleen als iemand erom geeft</h2>
+    <p>
+        Wanneer een client inhoud van meerdere servers ophaalt en ontdekt dat één server
+        berichten mist die een andere wel heeft, heelt hij het gat &mdash; maar alleen omdat
+        hij aan het lezen was. Inhoud die niemand leest wordt nooit geheeld. Inhoud onder
+        actieve consumptie wordt geheeld telkens wanneer een client hem ophaalt. Lezerschap
+        is de replicatiefactor.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/client/post_bundle/post_bundle_healing.rs`}><code>post_bundle_healing.rs</code></a>
+    </p>
+
+    <h2>Bootstrappen vertrouwt niemand &mdash; zelfs DNS niet</h2>
+    <p>
+        Drie bootstrap-domeinen verspreid over drie regio's, elk opgelost via drie
+        onafhankelijke DNS-over-HTTPS-providers met DNSSEC-validatie. Resultaten worden
+        ontdubbeld en geschud. Zelfs dan moet elke ontvangen peer volledige cryptografische
+        verificatie doorstaan voordat de client hem vertrouwt. Een gecompromitteerde
+        DNS-provider kan geen nep-peers injecteren omdat ze de miljarden hashes die elke
+        server-identiteit vereist niet kunnen vervalsen.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/transport/bootstrap_provider/dnssec_bootstrap_provider.rs`}><code>dnssec_bootstrap_provider.rs</code></a>,
+        <a href={`${g.lib}/src/client/peer_tracker/peer_tracker.rs`}><code>peer_tracker.rs</code></a>
+    </p>
+
+    <h2>TLS-certificaten voor kale IP-adressen &mdash; geen DNS vereist</h2>
+    <p>
+        Browsers weigeren HTTPS naar een kaal IP tenzij het certificaat dat IP omvat.
+        Traditionele CA's gaven alleen certificaten uit voor domeinnamen &mdash; wat elke
+        server afhankelijk zou maken van DNS. Eind 2025 begon Let's Encrypt
+        IP-certificaten uit te geven. We hielden onze adem in voor dit moment. Elke server
+        levert en vernieuwt zijn eigen IP-certificaat automatisch op de achtergrond.
+        Browserclients kunnen direct via IP over vertrouwde HTTPS de DHT bewandelen.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.serverLib}/src/network/transport/https_transport_cert_refresher.rs`}><code>https_transport_cert_refresher.rs</code></a>
+    </p>
+
+    <h2>Je spamfilter draait op thermodynamica, niet op databases</h2>
+    <p>
+        Elke RPC-envelope draagt een proof-of-work-oplossing. Servers wijzen alles onder de
+        drempel af voordat de payload zelfs maar wordt geparseerd. Geen CAPTCHA, geen
+        rate-limit-database, geen accountverificatie. De kost is onzichtbaar voor een
+        legitieme gebruiker maar maakt een spammer bankroet. En deze PoW dient er bovendien
+        toe om de reputatie van de servers te versterken om kwaadwillenden af te weren.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/protocol/rpc/rpc_request.rs`}><code>rpc_request.rs</code></a>
+    </p>
+
+    <h2>Gevoelige endpoints kosten exponentieel meer om aan te roepen (en te spammen)</h2>
+    <p>
+        Een routine-RPC kost ~65K hashes. Praten met een onbekende server kost 4&times;
+        meer. Posten kost 16&times; basislijn. Feedback kost 32&times;. Het aanmaken van
+        een server-identiteit kost miljarden hashes (uren werk). Elke laag is precies
+        geschaald aan zijn misbruikpotentieel.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a>
+    </p>
+
+    <h2>De cache-straal breidt zich uit als een schokgolf</h2>
+    <p>
+        Clients houden bij hoe ver vanuit de oorsprongsservers gecachte data is verspreid.
+        Elke cache-hit duwt de straal verder. Toekomstige lookups beginnen voorbij de
+        straal en raken verse servers in plaats van de oorsprong te hameren. Populaire
+        inhoud straalt naar buiten, wat betekent dat andere clients vroeg in hun walk
+        gecachte data raken. Obscure inhoud blijft lokaal en ongecached. Geen configuratie,
+        geen tuning &mdash; het protocol past zich aan via eenvoudige observatie.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/client/caching/cache_radius_tracker.rs`}><code>cache_radius_tracker.rs</code></a>
+    </p>
+
+    <h2>Meerdere niveaus van bucket-granulariteit temmen de machtswet</h2>
+    <p>
+        Jaar &rarr; maand &rarr; week &rarr; dag &rarr; 6 uur &rarr; 1 uur &rarr; 15 min
+        &rarr; 5 min &rarr; 1 min. Een gebruiker die eens per maand post kost één grove
+        bucket-fetch. Een gebruiker die 100 keer per dag post drilt naar minuut-niveau-buckets
+        die parallel worden opgehaald. Hetzelfde protocol, dezelfde code, wild verschillende
+        belastingsprofielen die soepel worden afgehandeld.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a>
+    </p>
+
+    <h2>Volle buckets splitsen &mdash; ze breken niet</h2>
+    <p>
+        Wanneer een tijdlijn-bucket volraakt, wordt hij verzegeld. Clients zien de vlag en
+        drillen in fijner gegranuleerde kinderen. Een trending hashtag cascadeert van
+        uurlijks naar 15 minuten naar 1 minuut buckets als het volume piekt, en spreidt de
+        belasting automatisch over verschillende servers.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.serverLib}/src/server/handlers/dispatch.rs`}><code>dispatch.rs</code></a>,
+        <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a>
+    </p>
+
+    <h2>Eén codebase, elk platform &mdash; echt waar</h2>
+    <p>
+        <code>hashiverse-lib</code> compileert naar native Rust (server) en WebAssembly
+        (browser). De protocol-logica, cryptografie en client-API zijn dezelfde code die in
+        beide omgevingen draait. De browser laadt het in een Web Worker zodat de
+        hoofdthread nooit blokkeert. Wanneer je de server test, test je dezelfde code die
+        de browser draait.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={g.lib}><code>hashiverse-lib/</code></a>,
+        <a href={g.wasm}><code>hashiverse-client-wasm/</code></a>
+    </p>
+
+    <h2>Integratietests met 100 servers eindigen in seconden</h2>
+    <p>
+        In-memory transport vervangt HTTP &mdash; nul netwerklatentie, geen poorten, geen
+        opruim. De tijd loopt op 300&times; werkelijke snelheid, en perst 30 minuten
+        peer-discovery samen tot 6 wandkloksecondes. 100 servers, 3 clients, volledige
+        bootstrap, bericht-indiening, healing en verificatie &mdash; één proces, onder de
+        30 seconden.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.integrationTests}/tests/client_meets_servers.rs`}><code>client_meets_servers.rs</code></a>
+    </p>
+
+    <h2>ASIC's wegwezen! De PoW-keten is zelfreferentieel</h2>
+    <p>
+        Vijf ronden van geketende hashing over 17 state-of-the-art hashing-algoritmen. Het
+        algoritme en het herhalingstal van elke ronde worden afgeleid uit de uitvoer van
+        de vorige ronde. De volgorde is data-afhankelijk &mdash; een ASIC die ontworpen is
+        om snel te zijn in één algoritme wint niets als de keten via vijf andere routeert.
+        We kijken uit naar de dag waarop Hashiverse zo succesvol is dat aangepaste ASIC's
+        economisch genoeg worden om hem te dwarsbomen.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/tools/pow.rs`}><code>pow.rs</code></a>
+    </p>
+
+    <h2>Quantum-bestendige identiteit, vandaag al vastgelegd</h2>
+    <p>
+        Elke identiteit bevat verbintenissen aan twee post-quantum sleutel-algoritmen
+        (Falcon en Dilithium) naast de klassieke Ed25519-sleutel. Het opgradepad is in elke
+        identiteit in het netwerk gebakken &mdash; vóórdat quantumcomputers bestaan. Twee
+        onafhankelijke roosteraannames; beide moeten tegelijk breken. Kortom, jouw
+        Hashiverse-identiteit zal niet breken als quantumcomputers mainstream worden.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/tools/keys_post_quantum.rs`}><code>keys_post_quantum.rs</code></a>
+    </p>
+
+    <h2>Geen wachtwoorden, geen e-mail, geen probleem</h2>
+    <p>
+        Geen centrale servers betekent geen wachtwoorddatabase en geen e-mail om je mee te
+        spammen. Je beheert je eigen sleutels &mdash; en we geven je drie manieren.
+        <strong>Gastmodus</strong>: nul setup, alleen-lezen, gewoon beginnen met
+        rondkijken. <strong>Sleutelzin</strong>: voer een wachtzin in, dezelfde zin geeft
+        op elk apparaat dezelfde identiteit. <strong>Passkey</strong>: jouw vingerafdruk of
+        Face ID wordt jouw sleutel via de secure enclave van je apparaat &mdash;
+        hardware-ondersteund, gesynchroniseerd over apparaten, geen wachtwoorden te
+        onthouden.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/client/key_locker/key_locker.rs`}><code>key_locker.rs</code></a>,
+        <a href={`${g.web}/src/tabs/login/`}><code>login/</code></a>
+    </p>
+
+    <h2>Eén ciphertext, 32 sleutels</h2>
+    <p>
+        Berichten worden in rust en tijdens transport versleuteld. Geen gluren of
+        nabewerking door duistere servers. Een enkel versleuteld bericht kan worden
+        ontsleuteld door tot 32 verschillende wachtwoordzinnen &mdash; één per context
+        waarin het verschijnt. De header is zelfbeschrijvend, dus elke toekomstige
+        ontsleuteling reconstrueert de exacte versleutelingsconfiguratie alleen uit de
+        ciphertext.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/tools/encryption.rs`}><code>encryption.rs</code></a>
+    </p>
+
+    <h2>Vijf lagen DDoS-verdediging voordat je de applicatiecode bereikt</h2>
+    <p>
+        Laag 1: PoW op elke RPC-envelope. Laag 2: per-IP-scoring met tijdsverval. Laag 3:
+        per-IP-verbindingscap. Laag 4: zwarte lijst op IP op kernel-niveau wanneer de score
+        de drempel overschrijdt. Laag 5: transport-time-outs voor TLS-handshake,
+        header-lezing en body-lezing (Slow Loris-verdediging).
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.serverLib}/src/network/transport/ddos/ipset_ddos.rs`}><code>ipset_ddos.rs</code></a>,
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a>
+    </p>
+
+    <h2>Draait op een $5-VPS &mdash; door ontwerp, niet bij toeval</h2>
+    <p>
+        Gecomprimeerde LSM-tree-opslag op schijf. Begrensde in-memory-caches. Lock-striped
+        gelijktijdige schrijfacties. Probabilistische tellers voor trending (64 bytes per
+        hashtag). En de DHT betekent dat elke server alleen data opslaat in de buurt van
+        zijn eigen ID &mdash; niet het hele netwerk.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.serverLib}/src/environment/`}><code>environment/</code></a>,
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a>
+    </p>
+
+    <h2>Elke naad in het systeem is een uitwisselbare trait</h2>
+    <p>
+        Transport (mem-channels vs HTTP vs WASM-fetch). Tijd (echte klok vs 300&times;-versnelling).
+        Opslag (IndexedDB vs in-memory). DDoS-bescherming (kernel-ipset vs in-memory-scoring).
+        Sleutelbeheer (Web Crypto-enclave vs test-stubs). Wissel een van deze uit zonder de
+        protocol-logica te raken. Tests gebruiken de goedkope; productie gebruikt de echte;
+        zelfde code-pad.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/transport/`}><code>transport/</code></a>,
+        <a href={`${g.lib}/src/tools/time_provider/`}><code>time_provider/</code></a>,
+        <a href={`${g.serverLib}/src/environment/`}><code>environment/</code></a>
+    </p>
+
+    <h2>Browser-PoW over geïsoleerde Web Workers</h2>
+    <p>
+        De WASM-client benut al je cores door proof-of-work over Web Workers te verdelen.
+        Elke gelijktijdige PoW-job is geïsoleerd zodat ze elkaar niet kunnen verstoren.
+        Resultaten overbruggen terug van JavaScript Promises naar Rust Futures. De
+        hoofdthread van de browser raakt nooit een hash en wordt nooit trager.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.wasm}/src/wasm_parallel_pow_generator.rs`}><code>wasm_parallel_pow_generator.rs</code></a>
+    </p>
+
+    <h2>Healing verspilt nul bandbreedte</h2>
+    <p>
+        De client stuurt een header die beschrijft wat hij heeft. De server reageert met
+        alleen de ID's die hij mist. De client stuurt precies die bytes. Als de server al
+        alles heeft, is het een enkele heen-en-weer van headers.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.serverLib}/src/server/handlers/dispatch.rs`}><code>dispatch.rs</code></a>
+    </p>
+
+    <h2>Twee compressie-algoritmen, één versie-byte</h2>
+    <p>
+        LZ4 voor RPC-pakketten (snelheid). Brotli op maximale kwaliteit voor opgeslagen
+        berichten (grootte). Een enkele leidende versie-byte maakt evolutie van het
+        algoritme mogelijk zonder bestaande data te breken. Onder een minimumgrootte wordt
+        compressie volledig overgeslagen &mdash; de overhead zou de besparingen
+        overschrijden.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/tools/compression.rs`}><code>compression.rs</code></a>
+    </p>
+
+    <h2>De recursieve bucket-visitor recursiet nooit</h2>
+    <p>
+        De tijdlijn-walker gebruikt expliciete stack-frames in plaats van functierecursie.
+        Een callback op elk niveau beslist of er dieper gedrild, overgeslagen of gestopt
+        wordt. Spaarzame tijdlijnen slaan geneste niveaus volledig over. Dichte tijdlijnen
+        drillen alleen naar beneden waar inhoud bestaat.
+    </p>
+    <p>
+        <strong>Bron:</strong>
+        <a href={`${g.lib}/src/client/timeline/recursive_bucket_visitor.rs`}><code>recursive_bucket_visitor.rs</code></a>
+    </p>
+</DevDoc>

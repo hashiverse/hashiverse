@@ -1,0 +1,101 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Proof of Work">
+  <p>
+    In Hashiverse is proof of work geen blockchain-feature — het is een spamfilter dat geen
+    poortwachter nodig heeft. In plaats van een centrale autoriteit te vereisen die beslist
+    wie wat mag doen, zorgt PoW ervoor dat elke actie een echte kost in berekening met zich
+    meedraagt. Kwaadwillenden die het netwerk met afval willen overspoelen moeten voor elk
+    stukje ervan betalen, terwijl legitieme gebruikers een kost betalen die te klein is om
+    op te merken.
+  </p>
+  <p>
+    PoW wordt niet op één plek in het systeem gebruikt. Het is door elke laag heen geweven,
+    met de kost geschaald aan het potentieel voor misbruik bij elke laag.
+  </p>
+
+  <h2>RPC-envelope-PoW</h2>
+  <p>
+    Elk verzoek dat naar een server wordt gestuurd moet een geldige PoW-oplossing bevatten:
+    een salt zodat <code>Blake3(timestamp || salt || payload_hash)</code> een minimum aantal
+    leidende nul-bits heeft. Het minimum wordt ingesteld door
+    <code>Config.POW_MINIMUM_PER_ENVELOPE</code>. Servers wijzen elk verzoek dat aan deze
+    drempel niet voldoet af voordat de payload wordt verwerkt.
+  </p>
+  <p>
+    Dit is de eerste verdedigingslinie tegen DDoS. Een aanvrager kan geen tienduizend
+    rommel-verzoeken per seconde sturen — elk verzoek vereist echte berekening. De
+    tijdstempel in de PoW-input voorkomt replay-aanvallen; een oplossing die een uur geleden
+    is berekend is nu niet geldig.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.lib}/src/protocol/rpc/rpc.rs`}><code>rpc.rs</code></a>
+  </p>
+
+  <h2>Server-identiteit-PoW</h2>
+  <p>
+    Het aanmaken van een server-identiteit vereist het vinden van sleutelparen zodat de
+    resulterende server-ID een voldoende aantal leidende nul-bits in zijn Blake3-hash
+    heeft. Dit duurt enkele uren op standaardhardware. Je kunt geen tienduizend nepservers
+    in seconden opstarten. De PoW-kost van het aanmaken van servers is het mechanisme dat
+    Sybil-aanvallen op de DHT-ring duur maakt zonder dat een centrale autoriteit nieuwe
+    servers hoeft goed te keuren.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.lib}/src/tools/server_id.rs`}><code>server_id.rs</code></a>
+  </p>
+
+  <h2>Bericht-indienings-PoW</h2>
+  <p>
+    Een bericht indienen is een twee-fase-protocol: <strong>Claim</strong> dan
+    <strong>Commit</strong>. De claim-fase vereist PoW en reserveert een indieningsslot. De
+    commit-fase levert de werkelijke inhoud. Dit voorkomt een klasse aanvallen waarbij een
+    tegenstander servers overspoelt met grote payloads zonder vooraf werk te doen.
+  </p>
+  <p>
+    Posten naar hashtag-servers en posten naar antwoord-servers vereist eerdere indiening
+    bij je eigen tijdlijn-servers (op dit moment minstens drie servers) voordat het
+    rehash-bericht wordt gepubliceerd, wat een extra barrière toevoegt aan
+    bulk-spam-versterking. Hoe vaker je naar je eigen tijdlijn post, hoe meer PoW je voor
+    indiening moet doen.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.lib}/src/protocol/posting/`}><code>hashiverse-lib/src/protocol/posting/</code></a>,
+    <a href={`${g.server}/src/server/handlers/`}><code>hashiverse-server/src/server/handlers/</code></a>
+  </p>
+
+  <h2>Interactie-PoW en feedback-rangschikking</h2>
+  <p>
+    Elke interactie — like, dislike, melding — vereist PoW bovenop de basis
+    RPC-envelope-vereiste. De PoW achter een feedbacksignaal bepaalt zijn gewicht in de
+    schademetrieken van het netwerk: signalen met hogere PoW hebben de voorkeur boven
+    signalen met lagere PoW voor hetzelfde (post, feedback type)-paar. Een netwerkbreed
+    maximum wordt onderhouden en over servers heen geheeld.
+  </p>
+  <p>
+    Dit creëert een interessante speltheorie: je kunt de signaalsterkte van een feedback
+    verhogen door meer berekening te investeren. Een gebruiker die sterk om een stuk inhoud
+    geeft — een journalist die een gevaarlijk bericht markeert, een gemeenschapslid dat een
+    waardevol bericht versterkt — kan echt computationeel gewicht achter zijn signaal
+    leggen. Het cumulatieve signaal van duizenden of miljoenen matige-PoW-interacties zal
+    echter zwaarder wegen dan een enkel hoge-PoW-signaal van een tegenstander die de
+    rangschikking probeert te manipuleren.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_feedback.rs`}><code>encoded_post_feedback.rs</code></a>,
+    <a href={`${g.lib}/src/client/post_bundle/post_bundle_feedback_healing.rs`}><code>post_bundle_feedback_healing.rs</code></a>
+  </p>
+
+  <h2>PoW-algoritme-ontwerp</h2>
+  <p>
+    In plaats van een enkele hash-functie te gebruiken (wat ASIC-optimalisatie uitnodigt),
+    ketent Hashiverse PoW meerdere algoritmen in een pseudo-willekeurige volgorde afgeleid
+    van de input. Een geldige PoW-oplossing moet alle algoritmen in de keten hebben
+    doorlopen. Dit verhoogt de lat voor gespecialiseerde hardware: een ASIC die snel is in
+    Blake3 maar traag in SHA3 zal worden uitgeschakeld door een algemene CPU die alle
+    algoritmen efficiënt verwerkt.
+  </p>
+</DevDoc>

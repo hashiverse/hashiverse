@@ -1,0 +1,36 @@
+{
+  "site": {
+    "default_description": "Jouw gedecentraliseerde P2P sociale netwerk.",
+    "title_suffix": "Hashiverse",
+    "prerelease_label": "Prerelease"
+  },
+  "nav": {
+    "app": "App",
+    "lore": "Visie",
+    "dev": "Dev",
+    "github": "GitHub",
+    "language": "Taal"
+  },
+  "lore_sidebar": {
+    "index": "Waarom Hashiverse?",
+    "sovereignty": "Datasoevereiniteit",
+    "advertising": "Vrij van advertenties",
+    "invisible_hand": "De onzichtbare hand",
+    "ownership": "Bestand tegen overname",
+    "moderation": "Verantwoorde decentralisatie",
+    "competitors": "Hashiverse vergeleken",
+    "contribute": "Hoe bij te dragen"
+  },
+  "dev_sidebar": {
+    "index": "Overzicht",
+    "cryptography": "Cryptografische basis",
+    "pow": "Proof of Work",
+    "network": "Het DHT-netwerk",
+    "posts": "Berichtenprotocol",
+    "moderation": "Inhoudsmoderatie",
+    "resilience": "Veerkracht en zelfherstel",
+    "future": "Toekomstige richtingen",
+    "geeking_out": "Voor de techneuten",
+    "api_reference": "API-referentie"
+  }
+}
