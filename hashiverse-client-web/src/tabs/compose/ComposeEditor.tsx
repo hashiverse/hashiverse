@@ -218,6 +218,10 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 		}
 	}, [editor, restore_draft]);
 
+	useEffect(() => {
+		if (editor) editor.setEditable(!submitting);
+	}, [editor, submitting]);
+
 	const insert_image_file_input_on_changed = async (e: React.ChangeEvent<HTMLInputElement>) => {
 		if (!e.target.files?.length) return;
 		const file = e.target.files[0];
@@ -227,6 +231,7 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 	};
 
 	const do_submit = async () => {
+		if (submitting) return;
 		try {
 			set_submitting(true);
 			if (!editor) return;
