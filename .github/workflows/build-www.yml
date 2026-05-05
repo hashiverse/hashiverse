@@ -16,6 +16,8 @@ jobs:
 
       - uses: ./.github/actions/set-cargo-version-from-tag
 
+      - uses: ./.github/actions/set-npm-version-from-tag
+
       # --- Rust docs ---
 
       - uses: dtolnay/rust-toolchain@nightly

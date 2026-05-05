@@ -13,6 +13,8 @@ jobs:
 
       - uses: ./.github/actions/set-cargo-version-from-tag
 
+      - uses: ./.github/actions/set-npm-version-from-tag
+
       - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: wasm32-unknown-unknown

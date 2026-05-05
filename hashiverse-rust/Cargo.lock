@@ -1726,7 +1726,7 @@ checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 
 [[package]]
 name = "hashiverse-client-python"
-version = "1.0.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1741,7 +1741,7 @@ dependencies = [
 
 [[package]]
 name = "hashiverse-client-wasm"
-version = "1.0.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1771,7 +1771,7 @@ dependencies = [
 
 [[package]]
 name = "hashiverse-integration-tests"
-version = "1.0.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1788,7 +1788,7 @@ dependencies = [
 
 [[package]]
 name = "hashiverse-lib"
-version = "1.0.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1846,7 +1846,7 @@ dependencies = [
 
 [[package]]
 name = "hashiverse-server"
-version = "1.0.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1860,7 +1860,7 @@ dependencies = [
 
 [[package]]
 name = "hashiverse-server-lib"
-version = "1.0.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
