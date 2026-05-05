@@ -12,6 +12,8 @@ const locales = fs.readdirSync(i18n_dir)
 
 const sitemap_locales = Object.fromEntries(locales.map((l) => [l, l]));
 
+const fallback = Object.fromEntries(locales.filter((l) => l !== "en").map((l) => [l, "en"]));
+
 export default defineConfig({
   site: "https://www.hashiverse.com",
   integrations: [
@@ -27,9 +29,11 @@ export default defineConfig({
   i18n: {
     defaultLocale: "en",
     locales,
+    fallback,
     routing: {
       prefixDefaultLocale: true,
       redirectToDefaultLocale: false,
+      fallbackType: "redirect",
     },
   },
 });
