@@ -23,6 +23,7 @@
   },
   "dev_sidebar": {
     "index": "Overview",
+    "getting_started": "Getting Started",
     "cryptography": "Cryptographic Foundation",
     "pow": "Proof of Work",
     "network": "The DHT Network",
