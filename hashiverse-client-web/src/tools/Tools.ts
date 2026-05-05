@@ -8,10 +8,14 @@ export class Tools {
 		return import.meta.env.PROD;
 	}
 
+	private static readonly DEFAULT_YELLOW_SKIN_COLORS = ["FFCC4D", "FFD635", "F9DC2A", "FCD34D"];
+
 	public static create_avatar(id: string, avatar: string | undefined | null) {
+		const has_chosen_avatar = !!avatar;
 		const avatar_icon = createAvatar(AvatarCollection, {
-			seed: avatar ? avatar : id,
+			seed: has_chosen_avatar ? (avatar as string) : id,
 			size: 128,
+			...(has_chosen_avatar ? {} : { skinColor: Tools.DEFAULT_YELLOW_SKIN_COLORS }),
 		});
 
 		return avatar_icon.toDataUri();
