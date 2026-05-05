@@ -12,16 +12,19 @@ const links = [
 
 const current = Astro.url.pathname;
 
-const locale_flags: Record<string, { src: string; label: string }> = {
-  en: { src: "/flags/us.svg", label: "English" },
-  fr: { src: "/flags/fr.svg", label: "Français" },
-  de: { src: "/flags/de.svg", label: "Deutsch" },
-  es: { src: "/flags/es.svg", label: "Español" },
-  nl: { src: "/flags/nl.svg", label: "Nederlands" },
-};
+function flag_for(code: string): { src: string; label: string } {
+  const src = `/flags/${code}.svg`;
+  try {
+    const display = new Intl.DisplayNames([code], { type: "language" }).of(code);
+    if (!display) return { src, label: code };
+    return { src, label: display.charAt(0).toLocaleUpperCase(code) + display.slice(1) };
+  } catch {
+    return { src, label: code };
+  }
+}
 
 const path_without_locale = current.replace(/^\/[a-z]{2}(\/|$)/, "/");
-const current_flag = locale_flags[locale] ?? { src: `/flags/${locale}.svg`, label: locale };
+const current_flag = flag_for(locale);
 ---
 
 <nav>
@@ -57,7 +60,7 @@ const current_flag = locale_flags[locale] ?? { src: `/flags/${locale}.svg`, labe
     </button>
     <ul class="lang-menu" role="menu" hidden data-lang-menu>
       {supported_locales.map((l) => {
-        const flag = locale_flags[l] ?? { src: `/flags/${l}.svg`, label: l };
+        const flag = flag_for(l);
         return (
           <li role="none">
             <a
