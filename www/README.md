@@ -4,6 +4,10 @@
 
 - [![build-www](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml)
 
+## Checks
+
+- [![check-www](https://github.com/hashiverse/hashiverse/actions/workflows/check-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/check-www.yml) — runs on every PR touching `www/`. Performs `npm run build` (Astro production build) to catch broken pages and config before release.
+
 ## Translations
 
 - [![check-translations-www](https://github.com/hashiverse/hashiverse/actions/workflows/check-translations-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/check-translations-www.yml)

@@ -1,0 +1,34 @@
+name: check-www
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "www/**"
+      - ".github/workflows/check-www.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "www/**"
+      - ".github/workflows/check-www.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: www/package-lock.json
+
+      - name: Install packages
+        working-directory: www
+        run: npm install
+
+      - name: Build Astro site
+        working-directory: www
+        run: npm run build
