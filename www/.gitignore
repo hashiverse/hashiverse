@@ -3,6 +3,7 @@
 # Dist
 node_modules
 dist/
+.astro/
 
 # IDE
 .vscode/*
