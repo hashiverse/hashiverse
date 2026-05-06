@@ -1,0 +1,8 @@
+# Force LF line endings for all text files on every platform.
+# Without this, Windows git with core.autocrlf=true checks files out as CRLF,
+# which makes biome (and rustfmt-style tools) fail locally while CI on Linux
+# passes against LF-on-disk content.
+#
+# Git auto-detects binary files (PNG, WebP, ICO, ...) from content, so no
+# explicit binary list is needed.
+* text=auto eol=lf

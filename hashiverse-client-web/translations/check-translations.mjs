@@ -33,7 +33,8 @@ const en_hashes = Object.fromEntries(Object.entries(en_strings).map(([k, v]) => 
 
 const desired_manifest = ["en", ...langs];
 const current_manifest_text = fs.existsSync(manifest_path) ? fs.readFileSync(manifest_path, "utf8") : "";
-const desired_manifest_text = `${JSON.stringify(desired_manifest, null, "\t")}\n`;
+// Single-line array form so biome's JSON formatter leaves it alone.
+const desired_manifest_text = `[${desired_manifest.map((l) => `"${l}"`).join(", ")}]\n`;
 if (current_manifest_text !== desired_manifest_text) {
 	fs.writeFileSync(manifest_path, desired_manifest_text);
 }
