@@ -1,0 +1,192 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+---
+
+<DevDoc title="Toekomstige richtingen">
+  <p>
+    Hashiverse is een werkend protocol, geen voltooid protocol. Verschillende belangrijke
+    gebieden zijn ofwel deels opgelost ofwel waarvan bekend is dat ze verbetering behoeven
+    naarmate het netwerk schaalt. Deze pagina beschrijft de meest belangrijke geplande
+    richtingen.
+  </p>
+
+  <h2>Sleutelherstel en -beheer</h2>
+  <p>
+    Zelfsoevereine identiteit heeft een fundamentele kwetsbaarheid: als je je privésleutel
+    verliest, verlies je je identiteit. Er is geen "wachtwoord vergeten" voor een
+    cryptografisch sleutelpaar. Dit is de meest significante bruikbaarheidsbarrière voor
+    daadwerkelijke adoptie van Hashiverse.
+  </p>
+  <p>
+    De geplande aanpak is <strong>Shamir's secret sharing</strong>: splits jouw privésleutel
+    in N delen zodat elke M ervan (M ≤ N) de sleutel kan reconstrueren, maar M-1 delen niets
+    onthullen. Je verdeelt de delen onder vertrouwde partijen — vrienden, familieleden,
+    institutionele sleutelhouders — en je kunt je sleutel herstellen als M van hen meewerken.
+    De beveiligingsaanname is dat geen M-1 van je sleutelhouders tegen je samenspannen.
+  </p>
+  <p>
+    Variaties op dit thema omvatten:
+  </p>
+  <ul>
+    <li>
+      <strong>Derde-partij-sleutelhouders</strong>: gespecialiseerde diensten die één deel
+      bewaren en het vrijgeven na identiteitsverificatie (biometrisch, herstelcode, etc.),
+      die een vertrouwd herstelmechanisme bieden zonder de volledige sleutel te bewaren.
+    </li>
+    <li>
+      <strong>Hardware-tokens</strong>: Yubikeys en soortgelijke apparaten kunnen één deel
+      of de root-sleutel direct bewaren, met de hardware die manipulatieweerstand en
+      pincodebescherming biedt.
+    </li>
+    <li>
+      <strong>Delegate-sleutels</strong>: al gedeeltelijk geïmplementeerd — een
+      root-sleutel kan delegate-sleutels autoriseren voor dagelijkse ondertekening zonder
+      de root bloot te stellen. Een apparaat verliezen betekent zijn delegate-sleutel
+      intrekken, niet je identiteit verliezen.
+    </li>
+  </ul>
+
+  <h2>Interoperabiliteit</h2>
+  <p>
+    Hashiverse hoeft bestaande sociale netwerken niet te vervangen om nuttig te zijn. Bruggen
+    die bestaande sociale grafen importeren — Twitter/X-geschiedenis, Mastodon/ActivityPub
+    feeds, Bluesky AT Protocol-data — verlagen de overstapkosten voor gebruikers die al
+    elders gemeenschappen hebben. Dit is een bewuste groeistrategie: maak Hashiverse de
+    plek waar jouw identiteit soeverein is, en laat bestaande netwerken erin voeden in
+    plaats van gebruikers te vragen opnieuw te beginnen.
+  </p>
+
+  <h2>Uitgebreide ondertekeningsschema's voor berichtauteurschap</h2>
+  <p>
+    Op dit moment moet elk bericht direct worden ondertekend door de sleutel die het
+    <code>client_id</code> van de poster genereert. Twee belangrijke real-world-patronen
+    vereisen meer flexibiliteit.
+  </p>
+
+  <h3>Vluchtige sleutels</h3>
+  <p>
+    Een client wil misschien niet elke keer dat hij post zijn master-ondertekeningssleutel
+    ontgrendelen — bijvoorbeeld op een mobiel apparaat waar de master-sleutel in een
+    hardware-enclave is opgeslagen of achter een trage biometrische controle. Vluchtige
+    sleutels lossen dit op: de client genereert een kortlevend sleutelpaar, ondertekent de
+    publieke vluchtige sleutel één keer met de master-sleutel, en gebruikt vervolgens de
+    vluchtige sleutel voor dagelijkse posts zonder de master-sleutel weer aan te raken.
+  </p>
+  <p>
+    Servers zouden zulke berichten accepteren door een drie-stappen-controle uit te voeren:
+  </p>
+  <ol>
+    <li>
+      Verifieer dat de handtekening van de berichtinhoud geldig is onder de aangeleverde
+      <code>ephemeral_signature_pub</code>.
+    </li>
+    <li>
+      Verifieer dat <code>ephemeral_signature_pub</code> zelf een handtekening draagt die
+      geldig is onder de aangeleverde <code>signature_pub</code> (de master-publieke
+      sleutel).
+    </li>
+    <li>
+      Verifieer dat <code>signature_pub</code> hasht naar het <code>client_id</code> van
+      de poster, wat bevestigt dat de vertrouwensketen terugleidt naar de opgegeven
+      identiteit.
+    </li>
+  </ol>
+  <p>
+    Vluchtige sleutels kunnen een vervaltijdstempel dragen die naast de publieke sleutel
+    is ondertekend, zodat een gelekte of gestolen apparaatsleutel ongeldig wordt na een
+    begrensd venster, zelfs als intrekking vertraagd is.
+  </p>
+
+  <h3>Organisatorische delegatie</h3>
+  <p>
+    Een organisatie wil mogelijk publiceren onder één enkele gedeelde identiteit terwijl het
+    vermogen om te posten over meerdere individuele accounts wordt verdeeld — een
+    nieuwsorganisatie waarvan de journalisten elk een eigen <code>client_id</code> hebben
+    maar allemaal onder de identiteit van de organisatie schrijven, bijvoorbeeld.
+  </p>
+  <p>
+    Het geplande model is dat de root-identiteit van de organisatie een ondertekende
+    delegatielijst publiceert: een set <code>client_id</code>'s die zijn geautoriseerd om
+    namens haar te posten. Servers die een bericht van een gedelegeerde auteur accepteren
+    zouden verifiëren dat de ondertekeningssleutel toebehoort aan een gedelegeerd
+    <code>client_id</code> en dat het delegatie-record een geldige handtekening van de
+    root-sleutel van de organisatie draagt. Elk van de gedelegeerde clients kan posten;
+    geen van hen heeft de master-sleutel van de organisatie nodig.
+  </p>
+
+  <h2>Client-reputatie en attestatie uit de echte wereld</h2>
+  <p>
+    Proof-of-work verhoogt de kosten van het aanmaken van grote aantallen nepidentiteiten,
+    maar het is niet het enige beschikbare instrument. Een aanvullende richting is
+    <strong>client-reputatie</strong>: mechanismen waarmee een client, naast een bericht of
+    een stuk feedback, kan aantonen dat hij een echte, langdurig bestaande of extern
+    geverifieerde deelnemer is. Verschillende benaderingen worden onderzocht.
+  </p>
+
+  <h3>Externe identiteitsattestatie</h3>
+  <p>
+    Derde-partij-identiteitsleveranciers kunnen instaan voor het feit dat een
+    Hashiverse-sleutel toebehoort aan een geverifieerd mens zonder te onthullen wie dat
+    mens is. Twee brede modellen worden overwogen:
+  </p>
+  <ul>
+    <li>
+      <strong>OIDC-providers</strong>: een OpenID Connect-flow waarin de client eigendom
+      bewijst van een account bij een gerenommeerde provider (Google, Apple, een nationaal
+      identiteitsschema, etc.) en een ondertekende attestatie ontvangt die dat account
+      bindt aan zijn Hashiverse-<code>client_id</code>. De attestatie reist mee met
+      berichten als optioneel anti-sybil-signaal; servers en lezers kunnen kiezen hoeveel
+      gewicht ze eraan geven.
+    </li>
+    <li>
+      <strong>Door de overheid uitgegeven identiteit</strong>: schema's gemodelleerd naar
+      <a href="https://www.yivi.app/">Yivi</a> en
+      <a href="https://www.digidentity.eu/">Digidentity</a> (Nederlandse eID-providers)
+      stellen een overheid of gereguleerde instelling in staat specifieke attributen te
+      attesteren — leeftijd, nationaliteit, uniek burgerservicenummer — tegen een
+      cryptografische sleutel, zonder de onderliggende persoonsgegevens aan het netwerk
+      bekend te maken. Een client zou "geverifieerd uniek mens in jurisdictie X" kunnen
+      bewijzen aan een server zonder zijn naam of documentnummer te onthullen.
+    </li>
+  </ul>
+  <p>
+    Beide benaderingen zijn strikt opt-in: clients zonder attestatie blijven normaal
+    deelnemen op het basis-PoW-niveau. Attestaties zijn signalen, geen poortwachters.
+  </p>
+
+  <h3>Geaccumuleerde PoW als reputatie</h3>
+  <p>
+    Telkens wanneer een client een RPC uitvoert moet hij een verse proof-of-work bijvoegen.
+    Dit wordt momenteel besteed en weggegooid, maar het vertegenwoordigt een waarneembare
+    staat van dienst: een client die maandenlang actief is heeft noodzakelijkerwijs veel
+    meer cumulatieve PoW uitgevoerd dan een die gisteren is aangemaakt.
+  </p>
+  <p>
+    Een geplande uitbreiding slaat de best gemeten PoW van een client op volgens een
+    <strong>dag-en-maand-vervalmodel</strong> — hetzelfde halfwaardetijd-schema dat vandaag
+    voor server-reputatie wordt gebruikt. Een client die regelmatig post bouwt een sterke
+    vervallen score op; een vers gefabriceerde bot die slechts uren bestaat heeft een
+    bijna-nul-score en moet compenseren met een hogere PoW per verzoek om geaccepteerd te
+    worden. Dit verschuift de economie tegen sybil-boerderijen: de aanvaller moet ofwel
+    significant echte tijd investeren om elke identiteit op te warmen, ofwel een
+    voortdurend hogere PoW-belasting per verzoek betalen voor elke identiteit die de
+    opwarmperiode overslaat.
+  </p>
+  <p>
+    Omdat de geaccumuleerde score in de loop van de tijd vervalt in plaats van zonder
+    grenzen te groeien, zou een slapend account dat na lange afwezigheid terugkeert een
+    bescheiden PoW-toeslag moeten betalen tot het recente activiteit heropbouwt — een
+    klein ongemak voor legitieme gebruikers en een betekenisvolle barrière voor bots die
+    worden gemaakt, in een burst worden gebruikt en dan worden weggegooid.
+  </p>
+
+  <h2>Diverse verbeteringen</h2>
+  <ul>
+    <li>
+      <strong>Async traits</strong>: async traits worden native ondersteund in recente Rust
+      nightly, maar <code>async_trait</code> is nog steeds nodig voor correcte
+      <code>Send + Sync</code>-grenzen op trait-objecten. Wanneer de standaardbibliotheek
+      dit stabiliseert, kan de macro worden verwijderd.
+    </li>
+  </ul>
+</DevDoc>

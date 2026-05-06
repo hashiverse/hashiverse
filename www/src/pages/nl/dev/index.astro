@@ -1,0 +1,96 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Ontwikkelaarsoverzicht">
+  <h2>Aan de slag</h2>
+  <p>
+    Als je gewoon wilt weten hoe je programmatisch op Hashiverse kunt posten — via een knop,
+    Python of de opdrachtregel —
+    <a href="/nl/dev/getting-started">begin hier</a>.
+    Als je in plaats daarvan wilt weten hoe Hashiverse is gebouwd, lees dan verder.
+  </p>
+
+  <p>
+    Hashiverse is een gedecentraliseerd, post-quantum-bestendig P2P sociaal netwerk. De ambities
+    beschreven in de <a href="/nl/lore/">Visie</a>-sectie vertalen zich rechtstreeks naar
+    technische beslissingen die het waard zijn te begrijpen voordat je in de code duikt. Deze
+    sectie behandelt die beslissingen: waarom ze zijn genomen, wat ze kosten en waar ze in de
+    broncode wonen.
+  </p>
+
+  <h2>Repository-indeling</h2>
+  <pre><code>hashiverse/
+├── hashiverse-rust/                   Rust workspace (nightly)
+│   ├── hashiverse-lib/                Core protocol — native + WASM
+│   ├── hashiverse-server-lib/         Server library (reusable infra)
+│   ├── hashiverse-server/             Server binary (thin wrapper)
+│   ├── hashiverse-client-wasm/        Browser WASM wrapper
+│   └── hashiverse-integration-tests/  End-to-end tests
+├── hashiverse-client-web/             TypeScript / React 19 SPA
+└── www/                               Deze site (Astro)</code></pre>
+
+  <h2>Het tweelaagsontwerp</h2>
+  <p>
+    <strong>hashiverse-lib</strong> is het protocol. Het compileert naar native code (voor de
+    server) en naar WebAssembly (voor de browserclient). Alle cryptografie, DHT-logica,
+    bericht-encodering en client-API leven hier. Elk platform dat WASM of native Rust kan
+    draaien kan een volwaardige deelnemer in het netwerk zijn.
+  </p>
+  <p>
+    <strong>hashiverse-client-web</strong> is de referentie-browserclient — een React 19 SPA die
+    de WASM-client in een Web Worker laadt en de hoofdthread vrijhoudt. Hij praat via een
+    interface op basis van berichtuitwisseling met de WASM-module; de protocol-logica die hij
+    aanroept is identiek aan wat native op de server draait.
+  </p>
+
+  <h2>Vier modules in hashiverse-lib</h2>
+  <ul>
+    <li>
+      <strong>transport/</strong> — Abstracte traits (<code>TransportFactory</code>,
+      <code>TransportServer</code>, <code>TransportServerHandler</code>) met twee implementaties:
+      in-memory (voor tests) en HTTP/TCP (voor productie). Wissel transports uit zonder de
+      protocol-logica te raken.
+    </li>
+    <li>
+      <strong>protocol/</strong> — RPC-pakketcodering/-decodering met PoW en compressie,
+      peer-structs, request/response-types, post- en bundle-datastructuren.
+    </li>
+    <li>
+      <strong>client/</strong> — <code>HashiverseClient</code>-API, peer-tracker,
+      post-bundlebeheer, tijdlijn met recursieve bucket-traversal, en pluggable
+      <code>ClientStorage</code> / <code>KeyLockerManager</code> traits.
+    </li>
+    <li>
+      <strong>tools/</strong> — Kerntypes (<code>Hash</code>, <code>Id</code>,
+      <code>Signature</code>), cryptografische primitieven, PoW,
+      <code>TimeProvider</code>-abstractie en protocolconfiguratie.
+    </li>
+  </ul>
+
+  <h2>Waar te beginnen</h2>
+  <p>
+    Als je nieuw bent in de codebase zijn de beste instappunten:
+  </p>
+  <ul>
+    <li>
+      <a href={`${g.lib}/src/lib.rs`}><code>hashiverse-lib/src/lib.rs</code></a> — de modulekaart. Vier topmodules,
+      elk duidelijk afgebakend.
+    </li>
+    <li>
+      <a href={`${g.lib}/src/client/mod.rs`}><code>hashiverse-lib/src/client/mod.rs</code></a> — de publieke client-API. Het
+      contactvlak waar een ontwikkelaar die op het protocol bouwt mee te maken heeft.
+    </li>
+    <li>
+      <a href={`${g.integrationTests}/tests/`}><code>hashiverse-integration-tests/tests/</code></a> — end-to-end-tests die echte
+      server-topologieën in het geheugen opstarten en de volledige protocolstack uitoefenen.
+      Deze lezen is de snelste manier om te begrijpen hoe de stukken in elkaar passen.
+    </li>
+  </ul>
+  <p>
+    De secties in deze ontwikkelaarsgids behandelen elk een specifiek ontwerpgebied. Elke sectie
+    verwijst naar de relevante bronbestanden zodat je de ideeën rechtstreeks de code in kunt
+    volgen.
+  </p>
+</DevDoc>

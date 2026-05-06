@@ -1,0 +1,134 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Verantwoorde decentralisatie">
+    <p>
+        Decentralisatie is geen morele positie. Het is een architecturale. En een gedecentraliseerd
+        netwerk kan inhoud hosten die schadelijk, illegaal of simpelweg corrosief is voor de
+        gemeenschappen die het gebruiken. "Geen centrale autoriteit" kan geen excuus zijn voor "alles
+        kan." De vraag is niet of er gemodereerd moet worden, maar hoe te modereren zonder het
+        enkele controlepunt opnieuw in te voeren dat decentralisatie juist probeert te elimineren.
+    </p>
+    <p>
+        Dit is een van de moeilijkste problemen in het ontwerp van Hashiverse, en het is er een die
+        het team serieus neemt in plaats van als andermans zorg af te doen.
+    </p>
+
+    <h2>De beperking: geen poortwachter</h2>
+    <p>
+        Op een gecentraliseerd platform is moderatie in principe rechttoe rechtaan: een team
+        beoordeelt inhoud, past beleid toe en verwijdert overtredingen. De uitkomst hangt volledig
+        af van de kwaliteit en consistentie van dat team en dat beleid — daarom kent gecentraliseerde
+        moderatie haar eigen ernstige falen. Maar het mechanisme is duidelijk.
+    </p>
+    <p>
+        In Hashiverse is er geen moderatieteam. Er is geen beleidscommissie. Berichten worden
+        ondertekend door hun auteurs, opgeslagen op onafhankelijke servers en opgehaald door
+        clients. Geen enkele entiteit heeft de bevoegdheid om een bericht uit het netwerk te
+        verwijderen. Elk mechanisme dat die bevoegdheid introduceert herintroduceert het
+        eigendomsprobleem.
+    </p>
+    <p>
+        Het ontwerp moet dus anders werken: het moet schadelijke inhoud duur maken om te produceren,
+        moeilijk om naar boven te halen en zelfbeperkend over de tijd — zonder dat een centrale
+        actor per stuk inhoud beslissingen hoeft te nemen.
+    </p>
+
+    <h2>Hoe de lagen werken</h2>
+    <p>
+        Hashiverse gebruikt een gelaagde aanpak waarbij elke laag een andere dimensie van het
+        probleem aanpakt en de lagen elkaar versterken:
+    </p>
+
+    <h3>Natuurlijk vervallen</h3>
+    <p>
+        Inhoud in Hashiverse blijft bestaan omdat mensen blijven lezen. Het principe achter zowel
+        healing als caching is eenvoudig: data die het waard is om te repliceren — data die voor
+        iemand, ergens, relevant is — wordt gerepliceerd. Wanneer een client een bericht ophaalt,
+        controleert hij welke servers het missen en heelt die gaten. Inhoud die mensen blijven
+        bezoeken wordt verder gerepliceerd. Inhoud die niemand bezoekt wordt niet meer geheeld, en
+        terwijl servers vollopen en hun verwijderbeleid toepassen, verdwijnt vergeten inhoud
+        stilletjes — zonder dat iemand hoeft te beslissen om hem weg te halen.
+    </p>
+    <p>
+        Dit is geen censuur. Het is hetzelfde mechanisme waarmee een boek niet meer wordt herdrukt,
+        een website donker wordt als niemand het domein verlengt, een gesprek wordt vergeten. De
+        meeste gecoördineerde schade is acuut — een intimidatiecampagne, een doxbericht, een valse
+        beschuldiging. Zodra de directe schade is geleden en mensen er niet meer mee bezig zijn,
+        stopt het netwerk met die inhoud te repliceren. Inhoud die voortduurt doet dat omdat zij
+        voor iemand nog steeds van belang blijft.
+    </p>
+    <p>
+        Er is een Mexicaans gezegde dat dit perfect vat:
+    </p>
+    <blockquote>
+        <p>
+            <em>Uno muere dos veces. La primera, cuando dejas de respirar. La segunda, cuando alguien pronuncia tu nombre por última vez.</em>
+            —
+            Je sterft twee keer. Eerst, wanneer je stopt met ademen. Daarna, wanneer jouw naam voor het laatst wordt uitgesproken.
+        </p>
+    </blockquote>
+
+    <h3>Proof-of-work-feedback</h3>
+    <p>
+        Gebruikers kunnen signalen over inhoud geven — likes, dislikes, meldingen — en elk signaal
+        vereist een kleine proof of work. De werkvereiste maakt bulk-signaalvulling duur. Belangrijker
+        nog, de kwaliteit van een signaal wordt gemeten aan de hand van het werk erachter: een
+        melding gerugsteund door meer berekening weegt zwaarder dan een melding gerugsteund door
+        minder. Het resultaat is een door de gemeenschap gewogen schademetriek die geen enkele
+        actor gemakkelijk kan manipuleren.
+    </p>
+
+    <h3>Configureerbare categorieën</h3>
+    <p>
+        Gebruikers kunnen instellen welke schadecategorieën zij gefilterd willen hebben: geweld,
+        bedreigingen, spam, volwasseneninhoud, zelfbeschadiging. CSAM wordt het meest agressief
+        gefilterd — dat is een niet-onderhandelbare standaard. Andere categorieën worden standaard
+        gefilterd maar kunnen worden aangepast voor contexten waar andere normen gelden
+        (bijvoorbeeld platformen voor volwasseneninhoud). Dit respecteert dat verschillende
+        gemeenschappen verschillende standaarden hebben terwijl een harde ondergrens op de ergste
+        inhoud wordt gehandhaafd.
+    </p>
+
+    <h3>Wrijving, geen censuur</h3>
+    <p>
+        In plaats van gemarkeerde inhoud volledig te verbergen, introduceert Hashiverse wrijving
+        evenredig aan de ernst van de feedback van de gemeenschap. Inhoud met milde
+        downvote-signalen vereist mogelijk een paar seconden vertraging voordat hij wordt getoond;
+        inhoud met ernstige signalen kan een minuut wachten vereisen. Dit betekent dat de inhoud
+        niet wordt gecensureerd — een gebruiker die hem oprecht wil zien, kan dat — maar terloops
+        bladeren leidt er natuurlijk omheen. De wrijving is tijdelijk en sessiegebonden, dus zij
+        stapelt zich niet op tot permanente blokkades.
+    </p>
+
+    <h3>Beeldbeperkingen en classifiers</h3>
+    <p>
+        Afbeeldingen in hashtag- en mention-contexten — waar inhoud opduikt voor mensen die zich
+        niet specifiek op een gebruiker hebben geabonneerd — worden standaard automatisch beperkt.
+    </p>
+    <p>
+        Naarmate AI aan de clientzijde verbetert, biedt een naaktheidsclassifier op het apparaat
+        zelf (specifiek <a href="https://github.com/infinitered/nsfwjs">NSFWJS</a>) een verdere
+        laag zonder dat enige inhoud naar een centrale dienst hoeft te worden gestuurd voor
+        analyse. De classifier draait lokaal, de beslissing blijft lokaal.
+    </p>
+
+    <h2>De eerlijke gaten</h2>
+    <p>
+        Deze lagen elimineren niet alle schade. Op tekst gebaseerde schade — gecoördineerde
+        intimidatie, gerichte desinformatie, verfijnde oplichtingen — is moeilijker te detecteren
+        zonder semantisch begrip. Het venster waarin inhoud verloopt betekent dat ernstige schade
+        maandenlang kan voortbestaan voordat de inhoud verloopt. Zonder gecentraliseerde
+        inhoudsmoderatie is er geen equivalent van een takedown-bericht voor urgente situaties.
+    </p>
+    <p>
+        Hashiverse pretendeert niet anders. Dit zijn echte beperkingen van een architectuur die
+        weigert een centrale autoriteit in te voeren. De overtuiging die aan het ontwerp ten
+        grondslag ligt is dat de schade van gecentraliseerde inhoudscontrole — onderdrukking,
+        partijdigheid, een afkoelend effect op legitieme meningsuiting — minstens zo ernstig is als
+        de schade die centrale moderatie voorkomt, en dat een gelaagde, gedistribueerde aanpak het
+        nastreven waard is, ook al is hij niet perfect. Het team blijft werken aan het verbeteren
+        van deze mechanismen zonder de kernarchitectuur te compromitteren.
+    </p>
+</LoreDoc>

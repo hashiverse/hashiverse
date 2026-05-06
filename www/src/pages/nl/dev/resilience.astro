@@ -1,0 +1,316 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Veerkracht en zelfherstel">
+    <p>
+        Een gedecentraliseerd netwerk is slechts zo duurzaam als zijn vermogen om te herstellen
+        van gedeeltelijke storingen. Servers gaan offline. Nieuwe servers treden toe en moeten
+        hun gegevens bootstrappen. Netwerkpartities veroorzaken divergentie. Hashiverse pakt dit
+        aan via zelfherstellende protocollen die opereren zonder enige centrale coördinator —
+        gedreven door clients en servers die inconsistentie detecteren en repareren.
+    </p>
+
+    <h2>Sharding en belastingverdeling</h2>
+    <p>
+        Sociale media volgen machtswetten. Een klein aantal gebruikers en hashtags trekt de
+        overgrote meerderheid van volgers aan en genereert het merendeel van de berichten. In
+        een naïeve DHT zou dit betekenen dat een klein aantal knooppunten het merendeel van de
+        belasting zou dragen — wat hen tot prestatieknelpunten en hoogwaardige DDoS-doelwitten
+        maakt vanwege de inhoud die zij hosten. Hashiverse pakt dit aan op het niveau van het
+        datamodel via op tijd en frequentie gebaseerde sharding.
+    </p>
+
+    <h3>Op tijdperken gebaseerde bucket-sleutels</h3>
+    <p>
+        De inhoud van een gebruiker of hashtag wordt niet onder één enkele vaste DHT-sleutel
+        opgeslagen. De sleutel is een functie van de publieke ID (of hashtag-tekst) van de
+        gebruiker <em>en</em> een tijd-tijdperk. Dit betekent dat de DHT-locatie van de
+        berichten van een gebruiker in de loop van de tijd verschuift, waardoor de
+        verantwoordelijkheid voor het hosten van zijn inhoud zich over verschillende knooppunten
+        in verschillende tijdperken verspreidt.
+    </p>
+    <p>
+        Voor gebruikers en hashtags met hoog volume wordt de sleutelruimte verder onderverdeeld:
+        hoe drukker een identiteit is qua berichtvolume, hoe granulairder de
+        bucket-onderverdeling wordt. De inhoud van een productieve poster wordt verdeeld over
+        meer, kleinere buckets — elk gehost door een ander gebied van de DHT-ring. Dit is
+        vastgelegd in het type <code>BucketLocation</code>, dat de identiteit, het tijdperk en
+        de bucket-granulariteit samen codeert.
+    </p>
+    <p>
+        Het resultaat is dat geen enkel knooppunt permanent verantwoordelijk wordt voor het
+        verkeer van een power user, en geen knooppunt een stabiel doelwit wordt voor een
+        DDoS-aanval gericht op het tot zwijgen brengen van een specifiek account of een
+        specifieke hashtag.
+    </p>
+    <p>
+        <strong>Bron:</strong> <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a> —
+        <code>BucketLocation</code>
+    </p>
+
+    <h2>Vraaggestuurde caching</h2>
+    <p>
+        Naast healing (dat ontbrekende gegevens achteraf repareert), implementeert Hashiverse
+        vraaggestuurde caching om de belasting op de DHT-dichtstbijzijnde servers voor populaire
+        buckets te verminderen. Tussenliggende servers cachen post-bundles en feedback-bundles
+        namens de knooppunten die het dichtst bij de inhoud staan, bedienen clients direct en
+        beëindigen de Kademlia-walk vroegtijdig. De cache breidt zich naar buiten uit onder
+        aanhoudende vraag en krimpt automatisch wanneer de interesse afneemt — volledig
+        zelfregulerend, geen coördinatie vereist.
+    </p>
+
+    <h3>Hit-drempel-tokenmechanisme</h3>
+    <p>
+        Elke server onderhoudt een <strong>bundle-cache</strong> en een
+        <strong>feedback-cache</strong> (één Moka-gewogen cache per type). Bij elk binnenkomend
+        <code>GetPostBundleV1</code>- of <code>GetPostBundleFeedbackV1</code>-verzoek verhoogt
+        de server een hit-teller voor die bucket-locatie. Zodra de teller de drempel bereikt
+        (momenteel 10 hits binnen het idle-venster), geeft de server een
+        <code>CacheRequestTokenV1</code> uit — een kortlevend token ondertekend door de server
+        en gebonden aan die bucket-locatie.
+    </p>
+    <p>
+        De client verzamelt eventuele tokens die tijdens zijn Kademlia-walk worden uitgegeven.
+        Na succesvol ophalen en verifiëren van de bundle van een verantwoordelijke server,
+        uploadt hij de bundle asynchroon naar elke token-uitgevende server via
+        <code>CachePostBundleV1</code> / <code>CachePostBundleFeedbackV1</code>. De server
+        valideert het token (handtekening, vervaldatum, locatie-overeenkomst), parseert de
+        bundle en slaat hem op in de in-memory-cache. Latere clients die door die server lopen
+        ontvangen de gecachte bundle direct, zonder de walk inwaarts voort te zetten.
+    </p>
+    <p>
+        Een in-flight deduplicatiecache (gesleuteld op location-ID, TTL die overeenkomt met de
+        token-levensduur) voorkomt dat de server dubbele tokens uitgeeft aan meerdere
+        gelijktijdige walkers voor dezelfde bucket.
+    </p>
+    <p>
+        <strong>Bron:</strong> <a href={`${g.serverLib}/src/server/post_bundle_caching.rs`}><code>post_bundle_caching.rs</code></a>,
+        <a href={`${g.serverLib}/src/server/post_bundle_feedback_caching.rs`}><code>post_bundle_feedback_caching.rs</code></a>
+    </p>
+
+    <h3>Live versus verzegelde buckets</h3>
+    <p>
+        De cache maakt onderscheid tussen live en verzegelde data:
+    </p>
+    <ul>
+        <li>
+            <strong>Live buckets</strong> (huidig tijdperk, accepteert nog berichten) — elke
+            gecachte bundle draagt een absolute vervaldatum van <em>servertijd + 5 minuten</em>.
+            Bundles worden alleen geserveerd terwijl ze vers zijn; verlopen vermeldingen worden
+            bij het lezen overgeslagen zonder ze te verwijderen, waardoor de hit-count-historie
+            van de locatie behouden blijft zodat de drempel snel weer bereikt kan worden
+            wanneer er nieuwe inhoud arriveert.
+        </li>
+        <li>
+            <strong>Verzegelde buckets</strong> (tijdperk gesloten, geen nieuwe berichten) —
+            gecachte bundles dragen geen individuele vervaldatum. Ze worden alleen verwijderd
+            door de location-niveau time-to-idle (60 seconden zonder verzoeken), of door de
+            byte-capaciteitslimiet van Moka. Zolang een verzegelde bucket warm blijft,
+            persisteert zijn gecachte kopie voor onbepaalde tijd.
+        </li>
+    </ul>
+
+    <h3>Ontdekkingsstraal aan clientzijde</h3>
+    <p>
+        Om gebruik te maken van de uitbreidende cache, onderhoudt elke client een per-bucket
+        <strong>ontdekkingsstraal</strong>: de XOR-afstand tot de verste server die met succes
+        een bundle teruggaf bij de vorige walk. Bij de volgende walk slaat de
+        <code>PeerIterator</code> servers over die dichterbij zijn dan deze straal en begint
+        vanaf de grens naar buiten te queryen — direct naar waar de cache het laatst werd
+        gevonden, en omzeilt de verantwoordelijke (binnenste) servers volledig.
+    </p>
+    <p>
+        De straal wordt na elke walk bijgewerkt naar de XOR-afstand van de verste positieve
+        responder. Als buitenste cache-lagen sindsdien zijn verlopen en geen server aan de
+        grens reageert, valt de walk terug op de eerstvolgende dichtere peer en krimpt de
+        straal natuurlijk om de huidige cache-diepte te weerspiegelen. De straal wordt
+        bewaard in een time-to-idle-cache, dus buckets die een tijdje niet zijn bezocht
+        beginnen bij de volgende toegang weer vers vanaf de verantwoordelijke servers.
+    </p>
+
+    <h3>Cache-verwijdering en -capaciteit</h3>
+    <p>
+        Beide caches worden gewogen op de werkelijke bundle-byte-grootte, ondersteund door
+        Moka's W-TinyLFU-toelatingsbeleid. Plaatshouder-vermeldingen (locaties die zijn
+        bevraagd maar nog niet met een bundle zijn gevuld) gebruiken een klein vast gewicht
+        zodat ze meedoen in de frequentieschets zonder echte capaciteit te verbruiken. Wanneer
+        de byte-hoogwaterlijn wordt bereikt, worden de minst frequent gebruikte locaties als
+        eerste verwijderd. Elke locatie heeft ook een 60-seconden time-to-idle: een locatie
+        die geen verzoeken meer ontvangt wordt stilletjes verwijderd, waarbij zijn hit-teller
+        wordt gereset en de effectieve cache-straal krimpt.
+    </p>
+    <p>
+        De bundle-cache slaat per locatie tot een configureerbaar aantal originators op
+        (momenteel 5). Als er een nieuwe originator arriveert wanneer de per-locatie-cap vol
+        is, wordt de bundle die het eerst verloopt vervangen. Verzegelde bundles (geen
+        vervaldatum) worden behandeld alsof ze het laatst verlopen en worden alleen verdrongen
+        door andere verzegelde bundles.
+    </p>
+    <p>
+        <strong>Bron:</strong> <a href={`${g.serverLib}/src/server/post_bundle_caching_shared.rs`}><code>post_bundle_caching_shared.rs</code></a>,
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a> — <code>SERVER_POST_BUNDLE_CACHE_MAX_BYTES</code> e.a.
+    </p>
+
+    <h2>Healing van post-bundles</h2>
+    <p>
+        Wanneer een client berichten voor een bucket ophaalt, bevraagt hij meerdere servers en
+        verzamelt hun antwoorden. Vervolgens vergelijkt hij: welke server heeft berichten die
+        een andere server mist? Voor elk donor-doelpaar waarbij de donor berichten heeft die
+        het doel mist, regelt de client een twee-fase-heal:
+    </p>
+    <ol>
+        <li>
+            <strong>Claim-fase</strong>: De client vraagt de doelserver welke van de berichten
+            van de donor hij nodig heeft, met een <code>HealPostBundleClaimV1</code>-verzoek.
+            De server verklaart welke bericht-ID's hij mist.
+        </li>
+        <li>
+            <strong>Commit-fase</strong>: De client (of de donor, optredend als proxy) stuurt
+            die specifieke berichtbytes naar het doel via <code>HealPostBundleCommitV1</code>.
+        </li>
+    </ol>
+    <p>
+        Dit draait in achtergrondtaken die worden gespawned nadat de primaire fetch van de
+        client is voltooid. De gebruiker ziet zijn inhoud zonder te wachten op healing; het
+        netwerk repareert zichzelf parallel.
+    </p>
+    <p>
+        <strong>Bron:</strong> <a href={`${g.lib}/src/client/post_bundle/post_bundle_healing.rs`}><code>post_bundle_healing.rs</code></a>,
+        <a href={`${g.integrationTests}/tests/test_healing_post_bundles.rs`}><code>test_healing_post_bundles.rs</code></a>
+    </p>
+
+    <h2>Feedback-healing</h2>
+    <p>
+        Feedbacksignalen — likes, meldingen, dislikes — divergeren ook over servers heen
+        terwijl ze door het netwerk verspreiden. Een melding kan server A bereiken maar server
+        B niet. Feedback-healing pakt dit los van post-healing aan omdat feedback een andere
+        datavorm heeft (het 50-byte <code>EncodedPostFeedbackV1</code>-record) en een andere
+        merge-regel.
+    </p>
+    <p>
+        De merge-regel voor feedback is: voor elk (post_id, feedback_type)-paar, behoud het
+        signaal met de hoogste PoW over alle servers. De client, na het verzamelen van
+        feedback van meerdere servers, berekent het wereldwijde maximum en identificeert
+        servers met zwakkere signalen dan het wereldwijde maximum. Vervolgens stuurt hij de
+        sterkere signalen naar die servers via <code>HealPostBundleFeedbackV1</code>.
+    </p>
+    <p>
+        Dit is een eenfase-heal (geen claim-stap): het feedback-record is klein genoeg dat
+        het onvoorwaardelijk versturen ervan goedkoper is dan de heen-en-weer van eerst
+        vragen.
+    </p>
+    <p>
+        <strong>Bron:</strong> <a href={`${g.lib}/src/client/post_bundle/post_bundle_feedback_healing.rs`}><code>post_bundle_feedback_healing.rs</code></a>,
+        <a href={`${g.integrationTests}/tests/test_healing_post_bundle_feedbacks.rs`}><code>test_healing_post_bundle_feedbacks.rs</code></a>
+    </p>
+
+    <h2>DDoS-weerstand</h2>
+    <p>
+        Hashiverse heeft vier lagen DDoS-bescherming die aanvallen op progressief eerdere
+        punten in de levenscyclus van de verbinding onderscheppen, van kernel-pakketfiltering
+        tot rate limiting op applicatieniveau.
+    </p>
+
+    <h3>Kernel-laag: ipset-zwarte lijst</h3>
+    <p>
+        Voor aanhoudende of ernstige aanvallen escaleert de server naar het droppen van
+        pakketten op kernel-niveau via Linux's <code>ipset</code>. Op de zwarte lijst gezette
+        IP's worden toegevoegd aan een hashset met een time-out van vijf minuten; iptables (of
+        nftables) dropt overeenkomende pakketten voordat ze de applicatielaag bereiken,
+        waardoor zelfs de kost van het accepteren en weigeren van de TCP-verbinding wordt
+        geëlimineerd.
+    </p>
+    <pre><code>ipset create hashiverse_ddos_blacklist hash:ip timeout 300</code></pre>
+    <p>
+        De Rust-server voegt IP's toe aan deze set met behulp van niet-blokkerende
+        <code>Command::new("ipset")</code>-aanroepen — de kernel-operatie blokkeert de
+        verzoekafhandeling niet. Dit vereist <code>CAP_NET_ADMIN</code> of root in productie,
+        beheerd via Linux Ambient Capabilities.
+    </p>
+
+    <h3>Pre-TLS: verbindingscap en per-IP-slot-limiet</h3>
+    <p>
+        Elke nieuwe TCP-verbinding wordt gecontroleerd <em>vóór</em> de TLS-handshake begint.
+        Twee bewakers draaien op dit punt:
+    </p>
+    <ul>
+        <li>
+            <strong>Globale verbindingscap</strong> — een semafoor beperkt het totale aantal
+            gelijktijdige in-flight TCP-verbindingen. Als de cap wordt bereikt, wordt de
+            socket onmiddellijk gesloten; er worden geen handshake-resources verbruikt.
+        </li>
+        <li>
+            <strong>Per-IP-verbindingscap</strong> — een aparte in-memory-teller beperkt
+            hoeveel gelijktijdige verbindingen een enkel IP mag bezitten. Dit voorkomt dat
+            één adres alle beschikbare slots monopoliseert. IP's die al op de
+            applicatielaag-banlijst staan worden ook hier afgewezen.
+        </li>
+    </ul>
+    <p>
+        Beide controles worden uitgevoerd voordat <code>TlsAcceptor::accept</code> wordt
+        aangeroepen, dus een vloed van nieuwe verbindingen vanaf één IP verbruikt geen CPU
+        voor TLS-onderhandeling. De server is voorlopig bewust alleen IPv4; IPv6-ondersteuning
+        vereist tracking op prefix-niveau (/64) om effectief te zijn, wat nog niet is
+        geïmplementeerd.
+    </p>
+
+    <h3>TLS-handshake-time-out</h3>
+    <p>
+        Zodra een verbinding de pre-TLS-bewakers passeert, wordt de TLS-handshake omhuld door
+        een harde time-out. Een client die een ClientHello stuurt maar de handshake nooit
+        voltooit — een klassieke trage verbinding op TLS-niveau — wordt na een vast aantal
+        seconden gedropt en zijn bad-request-score wordt verhoogd, wat hem in de richting van
+        de applicatielaag-ban beweegt.
+    </p>
+
+    <h3>Slow Loris-verdediging: header- en body-leesvertijden</h3>
+    <p>
+        Na een succesvolle TLS-handshake bewaken twee verdere time-outs tegen
+        verbindingsvasthoudende aanvallen op de HTTP-laag:
+    </p>
+    <ul>
+        <li>
+            <strong>Header-leestime-out</strong> — als een HTTP/1.1-client zijn
+            request-headers niet binnen het toegestane venster heeft afgemaakt, wordt de
+            verbinding verbroken. Dit is de primaire verdediging tegen klassieke Slow Loris-aanvallen,
+            waarbij een aanvaller veel verbindingen opent en de headers druppelsgewijs één
+            byte tegelijk verstuurt om slots voor onbepaalde tijd open te houden.
+        </li>
+        <li>
+            <strong>Body-leestime-out</strong> — een aparte time-out dekt de request-body.
+            Dit verdedigt tegen body-niveau-varianten waarbij headers snel arriveren maar de
+            body in slow motion wordt gestreamd. Gecombineerd met een expliciete maximale
+            body-grootte begrenst dit zowel tijd als geheugen verbruikt per verzoek.
+        </li>
+    </ul>
+
+    <h3>Applicatielaag: IP-reputatiecache</h3>
+    <p>
+        Verzoeken die alle bovenstaande passeren worden per IP-adres bijgehouden met behulp
+        van een <strong>Moka</strong> in-memory-cache. IP's die de drempel voor het
+        verzoektempo binnen een glijdend venster overschrijden ontvangen een Hashiverse
+        RPC-foutreactie en accumuleren een bad-request-score. Zodra de score een drempel
+        overschrijdt, wordt het IP gepromoveerd naar de ipset-zwarte lijst, waardoor het
+        voor toekomstige verbindingen wordt gedropt naar de kernel-laag.
+    </p>
+    <p>
+        <strong>Bron:</strong> <a href={`${g.serverLib}/src/network/transport/`}><code>hashiverse-server-lib/src/network/transport/</code></a>,
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a>
+    </p>
+
+    <h2>TimeProvider-abstractie</h2>
+    <p>
+        De <code>TimeProvider</code>-trait abstraheert over echte tijd, wat
+        <code>ScaledTimeProvider</code> mogelijk maakt — een tijdversnelde simulatieklok die
+        in tests wordt gebruikt. Integratietests die healinggedrag verifiëren over
+        tijdvensters die normaal uren zouden duren, kunnen in seconden draaien door de tijd
+        te schalen. Zo kan de integratietestsuite de volledige healing-levenscyclus —
+        inclusief vervaltijd van oude inhoud — verifiëren zonder vertragingen op de
+        wandklok.
+    </p>
+    <p>
+        <strong>Bron:</strong> <a href={`${g.lib}/src/tools/time_provider/`}><code>hashiverse-lib/src/tools/time_provider/</code></a>
+    </p>
+</DevDoc>

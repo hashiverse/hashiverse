@@ -1,0 +1,117 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Berichtenprotocol">
+  <p>
+    Een bericht in Hashiverse is HTML — geschreven in de browser met een rich-text-editor,
+    DOMPurify-gesaneerd voor weergave. Tussen auteurschap en weergave zit een pijplijn van
+    compressie, versleuteling, ondertekening, twee-fase-indiening, DHT-routing en
+    bundle-aggregatie. Deze pagina volgt een bericht door die pijplijn.
+  </p>
+
+  <h2>Het gecodeerde bericht</h2>
+  <p>
+    <code>EncodedPostV1</code> is het draadformaat voor een enkel bericht. Het bevat:
+  </p>
+  <ul>
+    <li><strong>header</strong>: bytes van de verificatiesleutel, post-quantum verbintenisbytes, tijdstempel, berichtlengte en <code>linked_base_ids</code> — verwijzingen naar eerdere berichten waarop dit bericht antwoordt of voortbouwt.</li>
+    <li><strong>signature</strong>: Ed25519 (of PQ) handtekening over de header- en bericht-hashes.</li>
+    <li><strong>post</strong>: de HTML-inhoud, Brotli-gecomprimeerd en versleuteld.</li>
+    <li><strong>post_id</strong>: Blake3-hash van de handtekening — een stabiel, verifieerbaar inhoudsadres.</li>
+  </ul>
+  <p>
+    Versleuteling gebruikt meerdere wachtwoordzinnen — één per context waarin het bericht
+    verschijnt — via een aangepast multi-key-schema geïnspireerd op het
+    <code>age</code>-versleutelingsformaat. Een bericht dat zowel in de tijdlijn van een
+    gebruiker als onder een hashtag staat, wordt versleuteld met zowel de publieke ID van de
+    gebruiker als de hashtag-string als wachtwoordzinnen. Beide sleutels ontsleutelen het.
+    Servers die de versleutelde bytes bewaren kunnen geen van beide lezen.
+  </p>
+
+  <h2>Indiening: Claim dan Commit</h2>
+  <p>
+    Bericht-indiening is een twee-fase-protocol:
+  </p>
+  <ol>
+    <li>
+      <strong>SubmitClaim</strong>: De client stuurt een claim-verzoek met PoW. De server
+      valideert de PoW en, als de bericht-ID nog niet aanwezig is, geeft een token uit dat
+      toestemming verleent om te commit'en.
+    </li>
+    <li>
+      <strong>SubmitCommit</strong>: De client stuurt de werkelijke berichtbytes met het
+      token. De server slaat het bericht op en retourneert een bevestigingshandtekening.
+    </li>
+  </ol>
+  <p>
+    Het scheiden van claim en commit voorkomt aanvallen via payload-flooding: een server
+    kan claims te kwader trouw goedkoop afwijzen (alleen PoW verifiëren) voordat een grote
+    payload wordt geaccepteerd. De bevestigingshandtekening van de server is voor de client
+    het bewijs dat het bericht is geaccepteerd.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.server}/src/server/handlers/`}><code>hashiverse-server/src/server/handlers/</code></a>
+  </p>
+
+  <h2>Bundles en buckets</h2>
+  <p>
+    Berichten worden niet individueel opgeslagen of opgehaald — ze worden gegroepeerd in
+    <code>EncodedPostBundleV1</code>-objecten, één bundle per bucket per server. Een bundle
+    bevat ongeveer 20 berichten van een bepaalde location-ID (een specifiek tijdvenster voor
+    een specifieke gebruiker, hashtag of antwoord-context), maar dit getal kan groter zijn
+    door healing en eventuele consistentievertragingen. Bundles worden ondertekend door de
+    bedienende peer.
+  </p>
+  <p>
+    De tijdlijn van een gebruiker ophalen betekent de bucket-hiërarchie recursief
+    doorlopen: begin met de maandelijkse bucket, drill in de wekelijkse, dagelijkse,
+    uurlijkse en fijnere buckets waar berichten bestaan. De
+    <code>RecursiveBucketVisitor</code> behandelt dit met een callback die op elk niveau
+    beslist of er in fijnere granulariteit moet worden recursied of overgeslagen, wat
+    efficiënte paginering mogelijk maakt zelfs over spaarzame tijdlijnen.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.lib}/src/protocol/posting/encoded_post_bundle.rs`}><code>encoded_post_bundle.rs</code></a>,
+    <a href={`${g.lib}/src/client/timeline/`}><code>hashiverse-lib/src/client/timeline/</code></a>
+  </p>
+
+  <h2>Bucket-types</h2>
+  <p>
+    Vier (op het moment van schrijven) bucket-types bepalen hoe berichten worden geïndexeerd
+    en ontdekt:
+  </p>
+  <ul>
+    <li><strong>User (0)</strong>: de persoonlijke tijdlijn van de auteur</li>
+    <li><strong>Hashtag (1)</strong>: berichten met een gegeven hashtag</li>
+    <li><strong>Mention (2)</strong>: berichten die een specifieke gebruiker noemen</li>
+    <li><strong>ReplyToPost (3)</strong>: berichten die antwoorden op een specifiek bericht</li>
+  </ul>
+  <p>
+    Een enkel bericht kan tegelijkertijd in meerdere buckets verschijnen, elk versleuteld met
+    de passende wachtwoordzin voor die bucket.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a>
+  </p>
+
+  <h2>Opslag</h2>
+  <p>
+    Op de server worden bericht-bundles op schijf gepersisteerd, terwijl hun metadata wordt
+    gepersisteerd naar <strong>fjall</strong> — een puur-Rust ingebedde key-value-store met
+    automatische compactie en goede schrijfdoorvoer. fjall is gekozen boven redb en sled
+    vanwege zijn onderhoudsstaat van dienst en operationele eenvoud. Berichten worden
+    opgeslagen als Brotli-gecomprimeerde, versleutelde bytes.
+  </p>
+  <p>
+    Op de browserclient worden berichten gecached in <strong>IndexedDB</strong> via
+    <code>indexed_db_futures</code>, met een in-memory stub voor testen. Elke categorie
+    client-side-data wordt in rust versleuteld met een andere sleutel, gekozen om bij zijn
+    toegangsmodel te passen.
+  </p>
+  <p>
+    <strong>Bron:</strong> <a href={`${g.server}/src/environment/`}><code>hashiverse-server/src/environment/</code></a>,
+    <a href={`${g.wasm}/src/wasm_client_storage.rs`}><code>wasm_client_storage.rs</code></a>
+  </p>
+</DevDoc>

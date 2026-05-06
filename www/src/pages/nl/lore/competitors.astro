@@ -1,0 +1,163 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Hashiverse vergeleken">
+  <p>
+    Sociale media zijn geen nulsomspel. Elk project dat een beter publiek plein probeert te bouwen —
+    centraal of gedecentraliseerd, commercieel of door de gemeenschap gerund — verricht werk dat
+    ertoe doet. De mensen achter X, Bluesky, Mastodon en Nostr proberen elk echte problemen op te
+    lossen, en elk heeft vooruitgang geboekt die respect verdient.
+  </p>
+  <p>
+    Maar de problemen zijn structureel, en in de structuur leven de verschillen. De gevaarlijkste
+    macht die een sociale-mediaplatform kan uitoefenen is niet de luide variant — accounts
+    verbannen, berichten verwijderen — maar de stille: inhoudsmoderatie die subtiel, selectief en
+    onzichtbaar is. Wanneer een handvol mensen kan bepalen welke ideeën worden versterkt en welke
+    stilletjes worden onderdrukt, zonder dat iemand weet dat het is gebeurd, hebben zij het vermogen
+    om de publieke opinie op beschavingsschaal te hervormen. Niet door argument of overtuiging, maar
+    door stille curatie. Dit is geen hypothetisch risico. Het is de standaard-werkmodus van elk
+    platform dat zijn eigen feed-algoritme en moderatiepijplijn beheert.
+  </p>
+  <p>
+    De vraag is niet welk platform vandaag de beste features heeft — features veranderen. De vraag
+    is: welke architectuur maakt het <em>onmogelijk</em> voor een kleine groep mensen om stilletjes
+    te filteren wat de rest van ons ziet? Welk ontwerp zorgt ervoor dat geen toekomstige eigenaar,
+    geen toekomstige overheid, geen toekomstig verdienmodel de soevereiniteit van de mensen die het
+    netwerk gebruiken kan ondermijnen?
+  </p>
+  <p>
+    Dat is de standaard die Hashiverse zichzelf oplegt. Niet beter — <em>structureel anders</em>.
+  </p>
+
+  <h2>Twitter/X, Threads en gecentraliseerde platformen</h2>
+  <p>
+      Twitter/X en Threads zijn de twee grootste gecentraliseerde microblog-platformen. Twitter/X
+    heeft bewezen dat korte publieke berichten de dominante modus konden worden van burgerlijk
+    discours, breaking news en culturele commentaar. Threads, gesteund door Meta's miljarden
+    bestaande gebruikers, toonde aan dat een nieuwkomer vrijwel van de ene op de andere dag een
+    massale schaal kon bereiken. Beide zijn indrukwekkende prestaties, en beide hebben gevormd hoe
+    de wereld communiceert.
+  </p>
+  <p>
+    Maar beide zijn bedrijven, in handen van individuen, verantwoording schuldig aan
+    aandeelhouders. De eigenaar kan het algoritme veranderen, de regels veranderen, het
+    verificatiesysteem veranderen, het hele karakter van het platform veranderen — en de
+    gemeenschap die er haar aanwezigheid heeft opgebouwd heeft geen structureel verhaal. Nog
+    crucialer: de eigenaar bepaalt wat je ziet. Het algoritme beslist welke berichten worden
+    versterkt en welke stilletjes worden begraven — en die beslissingen zijn ondoorzichtig. Een
+    bericht kan in de schaduw worden beperkt, gedegradeerd of uit de zoekresultaten worden
+    uitgesloten zonder dat de auteur of zijn publiek het ooit weet. Dit is de meest potente vorm
+    van inhoudsmoderatie: de variant die niemand kan detecteren, gehanteerd door wie de sleutels
+    van het algoritme in handen heeft. X en Threads verschillen in stijl en cultuur, maar het
+    structurele probleem is identiek — een klein aantal mensen binnen een privébedrijf cureert in
+    stilte het publieke gesprek.
+  </p>
+  <p>
+    Hashiverse kan niet worden overgenomen, want er valt niets over te nemen. Er is geen bedrijf,
+    geen bestuur, geen serverpark dat door één entiteit wordt beheerd. Er is geen algoritme dat
+    bepaalt wat je ziet — jouw client haalt berichten direct uit het gedistribueerde netwerk, en
+    wat je leest is wat is geplaatst, ongefilterd en niet door enige tussenpersoon gerangschikt.
+    Jouw identiteit is een cryptografisch sleutelpaar op jouw apparaat — niet een rij in iemand
+    anders' database. Jouw berichten zijn door jou ondertekend, redundant opgeslagen op
+    onafhankelijke knooppunten en versleuteld zodat zelfs de servers die ze bewaren ze niet kunnen
+    lezen. Geen eigenaar kan jouw account opschorten, want niemand heeft het uitgegeven. Niemand
+    kan stilletjes beslissen dat jouw stem niet doorklinkt.
+  </p>
+
+  <h2>Bluesky</h2>
+  <p>
+    Bluesky verdient lof omdat het het idee van gedecentraliseerde sociale media heeft genomen en
+    een product heeft uitgebracht dat mensen daadwerkelijk willen gebruiken. Het AT-protocol
+    introduceert doordachte concepten — draagbare identiteit via DIDs, gefedereerde
+    data-repositories en samen te stellen moderatie via labelingdiensten. Bluesky bewees dat
+    decentralisatie en goede UX elkaar niet uitsluiten.
+  </p>
+  <p>
+    De structurele zorg is dat de decentralisatie van Bluesky vandaag grotendeels theoretisch is.
+    Het bedrijf Bluesky PBC beheert de dominante relay, de dominante app view en de dominante
+    client. Het AT-protocol staat iedereen toe een Personal Data Server te draaien, maar in de
+    praktijk loopt het netwerk nog steeds via infrastructuur die door één organisatie wordt
+    beheerd. DIDs bieden draagbare identiteit, maar de DID-methode die in brede gebruik is
+    (did:plc) leunt op een gecentraliseerde PLC-directory die Bluesky zelf beheert. En wie de
+    relay en app view beheert, beheert wat er vindbaar is. Het labelingsysteem voor moderatie van
+    Bluesky is in theorie samenstelbaar, maar de standaardlabels — toegepast door het bedrijf —
+    zijn wat de meeste gebruikers zien. Subtiele beslissingen over wat wordt gelabeld,
+    gedegradeerd of gefilterd op het niveau van de relay gebeuren in stilte, binnen
+    infrastructuur die één organisatie beheert.
+  </p>
+  <p>
+    Hashiverse heeft geen relay, geen app view, geen gecentraliseerde directory. De Kademlia DHT
+    verdeelt de gegevensopslag over alle deelnemende servers op basis van hash-afstand — er is
+    geen bevoorrechte infrastructuur om van afhankelijk te zijn of in te kapselen. Geen
+    tussenpersoon bepaalt wat vindbaar is en wat niet. Identiteit wordt rechtstreeks afgeleid van
+    jouw cryptografische sleutels, zonder dat een externe directory nodig is. De decentralisatie
+    is geen toekomstig doel; het is de startarchitectuur — en daarmee de onmogelijkheid van
+    onzichtbare curatie.
+  </p>
+
+  <h2>Mastodon</h2>
+  <p>
+    Mastodon is het project dat heeft bewezen dat federatieve sociale media op grote schaal konden
+    werken. Het bracht het fediverse-concept naar miljoenen gebruikers en toonde aan dat
+    gemeenschappen zichzelf konden besturen via onafhankelijk beheerde instanties. Het ActivityPub
+    protocol dat het populariseerde is een open W3C-standaard, en de cultuur van
+    gemeenschapseigendom die Mastodon heeft gevoed is iets waar de hele decentralisatiebeweging
+    schatplichtig aan is.
+  </p>
+  <p>
+    Het federatiemodel introduceert echter zijn eigen centralisatiedruk. Een klein aantal grote
+    instanties (mastodon.social voorop) host een onevenredig groot deel van de gebruikers. Jouw
+    identiteit is gekoppeld aan jouw instantie-server — als jouw instantie sluit, verlies je je
+    handle en je volgers. Beheerders van instanties hebben volledige toegang tot je berichten en
+    directe berichten in leesbare tekst. Migreren tussen instanties is mogelijk maar verlieslatend:
+    je behoudt je volgerslijst maar verliest je berichtgeschiedenis. En elke
+    instantiebeheerder is een poortwachter met eenzijdige macht om te modereren — om in stilte te
+    blokkeren, te filteren of te defedereren — naar eigen oordeel. Voor de meerderheid van de
+    gebruikers die zich op een paar grote instanties concentreren betekent dit dat een klein
+    aantal beheerders stilletjes vormgeeft welke inhoud bereikbaar is. De moderatie is goed
+    bedoeld, maar zij is ondoorzichtig en de macht is niet gecontroleerd.
+  </p>
+  <p>
+    In Hashiverse is jouw identiteit niet aan enige server gebonden. Het is een cryptografisch
+    sleutelpaar dat jij beheert. Je kunt met elke server in het netwerk interactie hebben zonder
+    daar een account aan te maken. Jouw berichten zijn versleuteld in rust — serverbeheerders
+    kunnen ze niet lezen en daarom niet selectief filteren. Als een server offline gaat, zorgt de
+    Kademlia DHT ervoor dat jouw gegevens op andere knooppunten worden gerepliceerd. Er is geen
+    instantie om vandaan te migreren, want er is geen instantie om bij te horen — en geen
+    beheerder die in stilte kan beslissen dat jouw berichten niet gezien zouden mogen worden.
+  </p>
+
+  <h2>Nostr</h2>
+  <p>
+    Nostr ligt qua filosofie het dichtst bij Hashiverse, en is het project dat het meest direct
+    heeft aangetoond dat cryptografische identiteit en relay-gebaseerde distributie eenvoudig
+    genoeg konden zijn voor echte adoptie. Het ontwerp is elegant minimaal — gebeurtenissen
+    ondertekend door sleutels, gepubliceerd naar relays, opgehaald door clients. Nostr bewees dat
+    je geen complex protocol nodig hebt om een censuurbestendig netwerk te bouwen, en de
+    gemeenschap heeft in opmerkelijk korte tijd een indrukwekkend ecosysteem van clients en tools
+    opgebouwd.
+  </p>
+  <p>
+    De gebieden waarop Hashiverse afwijkt zijn specifiek en bewust. Nostr-relays zijn opt-in: jij
+    kiest naar welke relays je publiceert, en als die relays offline gaan, kan jouw inhoud
+    onbereikbaar worden. Er is geen garantie op protocolniveau dat jouw gegevens worden
+    gerepliceerd of dat ze het uitvallen van een relay zullen overleven. Nostr-events worden in
+    leesbare tekst op relays opgeslagen — relay-operators kunnen alles lezen, en metadata (wie
+    post, wanneer, hoe vaak) is volledig zichtbaar. Een relay die jouw inhoud kan lezen kan ook
+    selectief weigeren die te bedienen — en omdat gebruikers doorgaans naar slechts een paar
+    relays publiceren, kan een klein aantal relay-operators stilletjes vormgeven wat zich door
+    het netwerk verspreidt zonder dat iemand de gaten opmerkt. De cryptografische basis is
+    secp256k1 (de curve van Bitcoin), die geen pad biedt naar post-quantum weerstand.
+  </p>
+  <p>
+    De Kademlia DHT van Hashiverse biedt datareplicatie op protocolniveau — jouw berichten worden
+    opgeslagen op de dichtstbijzijnde knooppunten op basis van hash-afstand, en het netwerk
+    herstelt zichzelf actief wanneer knooppunten offline gaan. Berichten zijn versleuteld in
+    rust, dus servers kunnen de inhoud die ze bewaren niet lezen. Identiteit is gebouwd op drie
+    handtekeningschema's tegelijk — Ed25519 voor vandaag, ML-DSA en FN-DSA voor de post-quantum
+    toekomst — met alle drie vanaf dag één in de identiteits-hash gebakken. En het
+    proof-of-work-systeem dat server-identiteit en RPC-verzoeken bestuurt, schept een economische
+    kost voor Sybil-aanvallen die het relay-model van Nostr niet oplegt.
+  </p>
+</LoreDoc>

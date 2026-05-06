@@ -1,0 +1,22 @@
+name: Set npm package version from release tag
+description: |
+  When the calling workflow is triggered by a release event, rewrites the
+  version in hashiverse-client-web/package.json (and package-lock.json) from
+  the release tag (leading "v" stripped). No-op for non-release triggers.
+
+  Tag format must be valid SemVer: v1.0.5 (stable), v1.0.5-rc1 /
+  v1.0.5-beta.2 (pre-release with hyphen).
+
+runs:
+  using: composite
+  steps:
+    - name: Set npm package version from release tag
+      if: github.event_name == 'release'
+      shell: bash
+      working-directory: hashiverse-client-web
+      run: |
+        tag="${{ github.event.release.tag_name }}"
+        version="${tag#v}"
+        npm version --no-git-tag-version --allow-same-version "$version"
+        echo "--- package.json after rewrite ---"
+        grep -m1 '"version"' package.json

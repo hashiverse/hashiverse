@@ -9,7 +9,9 @@
     "lore": "Visión",
     "dev": "Dev",
     "github": "GitHub",
-    "language": "Idioma"
+    "language": "Idioma",
+    "contents": "Contenido",
+    "next": "Siguiente"
   },
   "lore_sidebar": {
     "index": "¿Por qué Hashiverse?",
@@ -23,6 +25,7 @@
   },
   "dev_sidebar": {
     "index": "Visión general",
+    "getting_started": "Primeros pasos",
     "cryptography": "Fundamentos criptográficos",
     "pow": "Prueba de trabajo",
     "network": "La red DHT",

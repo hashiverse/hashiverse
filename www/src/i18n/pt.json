@@ -1,0 +1,39 @@
+{
+  "site": {
+    "default_description": "A tua rede social P2P descentralizada.",
+    "title_suffix": "Hashiverse",
+    "prerelease_label": "Pré-lançamento"
+  },
+  "nav": {
+    "app": "App",
+    "lore": "Visão",
+    "dev": "Dev",
+    "github": "GitHub",
+    "language": "Idioma",
+    "contents": "Conteúdo",
+    "next": "Seguinte"
+  },
+  "lore_sidebar": {
+    "index": "Porquê o Hashiverse?",
+    "sovereignty": "Soberania dos Dados",
+    "advertising": "Liberdade da Publicidade",
+    "invisible_hand": "A Mão Invisível",
+    "ownership": "Resistência à Propriedade",
+    "moderation": "Descentralização Responsável",
+    "competitors": "Como o Hashiverse se Compara",
+    "contribute": "Como Contribuir"
+  },
+  "dev_sidebar": {
+    "index": "Visão Geral",
+    "getting_started": "Como Começar",
+    "cryptography": "Fundamentos Criptográficos",
+    "pow": "Prova de Trabalho",
+    "network": "A Rede DHT",
+    "posts": "Protocolo de Publicações",
+    "moderation": "Moderação de Conteúdo",
+    "resilience": "Resiliência e Auto-recuperação",
+    "future": "Direções Futuras",
+    "geeking_out": "Para os Entusiastas",
+    "api_reference": "Referência da API"
+  }
+}

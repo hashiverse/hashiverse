@@ -1,6 +1,7 @@
 ---
 import Base from './Base.astro';
 import Nav from '../components/Nav.astro';
+import { strings_for } from '../i18n/strings';
 
 interface Props {
   title: string;
@@ -11,13 +12,37 @@ interface Props {
 
 const { title, description, sidebar = [], banner } = Astro.props;
 const current = Astro.url.pathname;
+const locale = Astro.currentLocale ?? "en";
+const t = strings_for(locale);
+
+const normalize_path = (path: string): string => {
+  const trimmed = path.replace(/\/$/, "");
+  return trimmed === "" ? "/" : trimmed;
+};
+
+const linear_pages = sidebar.filter((s) => !s.children && !s.href.startsWith("http"));
+const current_normalized = normalize_path(current);
+const current_index = linear_pages.findIndex((p) => normalize_path(p.href) === current_normalized);
+const next_page = current_index >= 0 && current_index < linear_pages.length - 1
+  ? linear_pages[current_index + 1]
+  : null;
 ---
 
 <Base title={title} description={description}>
   <Nav />
   <div class="layout">
     {sidebar.length > 0 && (
-      <aside>
+      <button
+        type="button"
+        class="sidebar-toggle"
+        aria-controls="doc-sidebar"
+        aria-expanded="false"
+        data-sidebar-toggle
+      >
+        <span>{t.nav.contents}</span>
+        <span class="chev" aria-hidden="true">▾</span>
+      </button>
+      <aside id="doc-sidebar" data-sidebar>
         <nav>
           {sidebar.map((section) => (
             <div class="section">
@@ -44,9 +69,29 @@ const current = Astro.url.pathname;
       <h1>{title}</h1>
       {banner && <img src={banner} alt="" class="page-banner" />}
       <slot />
+      {next_page && (
+        <div class="page-next-wrap">
+          <a href={next_page.href} class="page-next" rel="next">
+            <span class="page-next-label">{t.nav.next}</span>
+            <span class="page-next-title">{next_page.label}</span>
+            <span class="page-next-arrow" aria-hidden="true">→</span>
+          </a>
+        </div>
+      )}
     </main>
   </div>
 </Base>
+
+<script>
+  const sidebar_toggle = document.querySelector<HTMLButtonElement>("[data-sidebar-toggle]");
+  const sidebar_el = document.querySelector<HTMLElement>("[data-sidebar]");
+
+  sidebar_toggle?.addEventListener("click", () => {
+    if (!sidebar_el) return;
+    const is_open = sidebar_el.classList.toggle("open");
+    sidebar_toggle.setAttribute("aria-expanded", is_open ? "true" : "false");
+  });
+</script>
 
 <style>
   .layout {
@@ -98,6 +143,7 @@ const current = Astro.url.pathname;
 
   main {
     flex: 1;
+    min-width: 0;
     padding: 2.5rem 3rem;
     max-width: 820px;
   }
@@ -109,7 +155,120 @@ const current = Astro.url.pathname;
     border-radius: 8px;
   }
 
+  .page-next-wrap {
+    clear: both;
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 3rem;
+  }
+
+  .page-next {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.75rem 1.1rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-raised);
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.95rem;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+  }
+
+  .page-next:hover {
+    border-color: var(--accent);
+    background: var(--bg-surface);
+    color: var(--accent-bright);
+    text-decoration: none;
+  }
+
+  .page-next-label {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .page-next-title {
+    font-weight: 600;
+  }
+
+  .page-next-arrow {
+    margin-left: 0.15rem;
+  }
+
+  .sidebar-toggle {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    padding: 0.85rem 1rem;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    transition: color 0.15s;
+  }
+
+  .sidebar-toggle:hover {
+    color: var(--accent);
+  }
+
+  .sidebar-toggle .chev {
+    transition: transform 0.2s;
+  }
+
+  .sidebar-toggle[aria-expanded="true"] .chev {
+    transform: rotate(180deg);
+  }
+
   @media (max-width: 720px) {
+    .layout {
+      flex-direction: column;
+      min-height: auto;
+    }
+
+    .sidebar-toggle {
+      display: flex;
+    }
+
+    aside {
+      width: 100%;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1rem 1rem;
+      display: none;
+    }
+
+    aside.open {
+      display: block;
+    }
+
+    main {
+      padding: 1.5rem 1rem;
+      max-width: 100%;
+    }
+
+    main h1 {
+      font-size: 1.6rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+    }
+
+    main :global(h2) {
+      font-size: 1.2rem;
+      margin: 1.5rem 0 0.5rem;
+    }
+
+    main :global(h3) {
+      font-size: 1rem;
+    }
+
     .page-banner {
       float: none;
       width: 100%;

@@ -1,0 +1,87 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Resistência à Propriedade">
+  <p>
+    Em 2022, o Twitter foi adquirido por uma única pessoa e transformado, em poucas semanas, em algo
+    irreconhecível. As comunidades que tinham construído ali a sua presença não tinham voto, nem
+    veto, nem saída que não significasse começar tudo do zero. Tudo o que tinham construído estava
+    em terreno que não lhes pertencia.
+  </p>
+  <p>
+    Este é o problema da propriedade. Qualquer plataforma centralizada, por mais bem intencionada
+    que seja na sua fundação, é um alvo de aquisição. Os seus valores ficam dependentes da sua
+    propriedade. A sua comunidade fica refém de quem detiver as chaves.
+  </p>
+
+  <h2>Protocolos versus plataformas</h2>
+  <p>
+    A solução é arquitetural: construir um protocolo, não uma plataforma. Ninguém é dono do e-mail.
+    Nenhum bilionário ou governo pode adquirir a web. São padrões abertos, implementados por muitos
+    atores independentes, governados por nenhuma entidade única. Qualquer pessoa os pode
+    implementar. Qualquer pessoa pode operar um servidor. Nenhum ponto único de falha os pode
+    derrubar.
+  </p>
+  <p>
+    O Hashiverse é desenhado segundo o mesmo princípio. É um protocolo aberto. O código-fonte é
+    público. Qualquer pessoa pode operar um servidor, e operar um servidor dá-te igual posição na
+    rede — não há nós privilegiados. Qualquer pessoa pode construir um cliente. A rede não tem sede,
+    nem empresa-mãe, nem conselho de administração.
+  </p>
+
+  <h2>Tornar a captura cara</h2>
+  <p>
+    O código aberto, por si só, não chega. Um ator bem financiado podia tentar dominar a rede ao
+    operar uma grande proporção dos seus nós, moldando a topologia de pares a seu favor. O
+    Hashiverse torna isto caro de uma forma específica: a identidade de um servidor exige uma
+    proof-of-work significativa — algumas horas de computação por servidor. Lançar milhões de
+    servidores para dominar o anel da DHT não é apenas caro em hardware; é caro em tempo, com o
+    requisito de trabalho dimensionado para ser resistente à paralelização.
+  </p>
+  <p>
+    O anel DHT Kademlia distribui os dados pelos servidores mais próximos por distância de hash. Um
+    atacante coordenado teria de controlar uma grande fração do anel para censurar ou manipular
+    conteúdo de forma significativa — e cada servidor nessa posição teve de ganhar o seu lugar
+    através de computação que não pode ser falsificada.
+  </p>
+  <p>
+    Há uma segunda camada de proteção que se acumula com o tempo. Cada vez que um cliente pede a um
+    servidor que faça algo — procurar publicações, guardar uma publicação, responder a uma consulta —
+    o cliente faz primeiro uma pequena proof-of-work em nome do servidor e submete-a. O servidor
+    acumula estas contribuições de todos os clientes que alguma vez o usaram. Quanto melhor for a
+    sua proof-of-work acumulada, mais forte é a sua posição perante os pares no anel Kademlia. Um
+    servidor que esteja em funcionamento há meses e tenha servido milhares de utilizadores construiu
+    uma reputação que um servidor falso recém-criado simplesmente não consegue replicar. Os
+    servidores recém-chegados, por contraste, não têm reputação acumulada e têm de fazer mais
+    trabalho para serem levados a sério pelos seus pares. O próprio tempo torna-se uma defesa:
+    quanto mais tempo a rede estiver em funcionamento, mais alto o nível que um potencial atacante
+    tem de superar para competir com nós estabelecidos e de confiança.
+  </p>
+
+  <h2>Resiliência pós-quântica</h2>
+  <p>
+    A resistência à propriedade inclui a resistência a ameaças tecnológicas futuras. A base
+    criptográfica de qualquer sistema de identidade construído sobre assinaturas de curva elíptica
+    clássicas (como Ed25519) será quebrável por computadores quânticos suficientemente avançados.
+    Se isso acontecer numa plataforma centralizada, o operador atualiza o sistema e migra os
+    utilizadores. Num protocolo descentralizado, não há nenhum operador para o fazer.
+  </p>
+  <p>
+    O Hashiverse aborda isto de forma proativa. Cada identidade incorpora compromissos com duas
+    chaves pós-quânticas — ML-DSA (Dilithium) e FN-DSA (Falcon) — a par da chave clássica Ed25519.
+    O hash de identidade é calculado a partir das três, por isso a própria identidade já está
+    vinculada a chaves pós-quânticas mesmo antes de os computadores quânticos serem uma ameaça
+    realista. Quando chegar a hora de migrar, o caminho de atualização já está integrado.
+  </p>
+
+  <h2>Uma governação que não existe</h2>
+  <p>
+    A camada final de resistência à propriedade é a ausência de uma estrutura de governação que
+    possa ser capturada. Não há nenhuma fundação para desfinanciar, nenhuma organização sem fins
+    lucrativos para infiltrar, nenhuma empresa para adquirir. A especificação do protocolo está no
+    código open-source. Operar um servidor faz de ti parte da rede. A comunidade decide
+    coletivamente, através dos clientes que usa e dos servidores que opera, o aspeto da rede. Isto
+    é mais lento e mais confuso do que a governação descendente — e essa é a questão.
+  </p>
+</LoreDoc>

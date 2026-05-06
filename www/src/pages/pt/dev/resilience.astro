@@ -1,0 +1,312 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+---
+
+<DevDoc title="Resiliência e Auto-recuperação">
+    <p>
+        Uma rede descentralizada é tão durável quanto a sua capacidade de recuperar de falhas
+        parciais. Os servidores ficam offline. Novos servidores entram e precisam de fazer o
+        bootstrap dos seus dados. As partições de rede causam divergência. O Hashiverse aborda
+        isto através de protocolos de auto-recuperação que operam sem qualquer coordenador central
+        — conduzidos por clientes e servidores que detetam inconsistência e a reparam.
+    </p>
+
+    <h2>Sharding e distribuição de carga</h2>
+    <p>
+        As redes sociais seguem leis de potência. Um pequeno número de utilizadores e hashtags
+        atrai a vasta maioria dos seguidores e gera a maioria das publicações. Numa DHT ingénua,
+        isto significaria que um pequeno número de nós suportaria a maioria da carga — tornando-se
+        em gargalos de desempenho e em alvos de DDoS de alto valor em virtude do conteúdo que
+        alojam. O Hashiverse aborda isto ao nível do modelo de dados, através de sharding baseado
+        em tempo e frequência.
+    </p>
+
+    <h3>Chaves de balde baseadas em épocas</h3>
+    <p>
+        O conteúdo de um utilizador ou hashtag não é guardado sob uma única chave DHT fixa. A chave
+        é uma função do ID público do utilizador (ou texto do hashtag) <em>e</em> de uma época
+        temporal. Isto significa que a localização DHT das publicações de um utilizador desloca-se
+        ao longo do tempo, espalhando a responsabilidade de alojar o seu conteúdo por nós
+        diferentes em épocas diferentes.
+    </p>
+    <p>
+        Para utilizadores e hashtags de alto volume, o espaço de chaves é ainda mais subdividido:
+        quanto mais ocupada uma identidade for em termos de volume de publicações, mais granular
+        se torna a subdivisão dos baldes. O conteúdo de um publicador prolífico é dividido por
+        mais baldes, mais pequenos — cada um alojado por uma região diferente do anel DHT. Isto
+        está capturado no tipo <code>BucketLocation</code>, que codifica em conjunto a identidade,
+        a época e a granularidade do balde.
+    </p>
+    <p>
+        O resultado é que nenhum nó se torna permanentemente responsável pelo tráfego de um
+        utilizador-poder, e nenhum nó se torna num alvo estável para um ataque DDoS visando
+        silenciar uma conta ou hashtag específico.
+    </p>
+    <p>
+        <strong>Origem:</strong> <a href={`${g.lib}/src/tools/buckets.rs`}><code>buckets.rs</code></a> —
+        <code>BucketLocation</code>
+    </p>
+
+    <h2>Caching guiado pela procura</h2>
+    <p>
+        Para além da auto-recuperação (que repara dados em falta a posteriori), o Hashiverse
+        implementa caching guiado pela procura para reduzir a carga sobre os servidores DHT mais
+        próximos para baldes populares. Servidores intermediários colocam em cache bundles de
+        publicações e bundles de feedback em nome dos nós mais próximos do conteúdo, servindo os
+        clientes diretamente e terminando o passeio Kademlia mais cedo. A cache expande para fora
+        sob procura sustentada e contrai automaticamente quando o interesse cai — totalmente
+        autorregulada, sem coordenação necessária.
+    </p>
+
+    <h3>Mecanismo de token por limiar de hits</h3>
+    <p>
+        Cada servidor mantém uma <strong>cache de bundles</strong> e uma <strong>cache de
+        feedback</strong> (uma cache ponderada Moka por tipo). Em cada pedido recebido de
+        <code>GetPostBundleV1</code> ou <code>GetPostBundleFeedbackV1</code>, o servidor incrementa
+        um contador de hits para essa localização de balde. Assim que o contador atinge o limiar
+        (atualmente 10 hits dentro da janela de inatividade), o servidor emite um
+        <code>CacheRequestTokenV1</code> — um token de curta duração assinado pelo servidor e com
+        âmbito limitado a essa localização de balde.
+    </p>
+    <p>
+        O cliente recolhe quaisquer tokens emitidos durante o seu passeio Kademlia. Após obter e
+        verificar com sucesso o bundle de um servidor responsável, carrega assincronamente o
+        bundle para cada servidor que emitiu um token, via <code>CachePostBundleV1</code> /
+        <code>CachePostBundleFeedbackV1</code>. O servidor valida o token (assinatura, expiração,
+        correspondência de localização), faz parsing do bundle e guarda-o na cache em memória. Os
+        clientes seguintes que passem por esse servidor recebem o bundle em cache diretamente, sem
+        continuarem o passeio para dentro.
+    </p>
+    <p>
+        Uma cache de desduplicação em voo (chaveada por location ID, com TTL correspondente ao
+        tempo de vida do token) impede o servidor de emitir tokens duplicados a vários
+        caminhantes concorrentes para o mesmo balde.
+    </p>
+    <p>
+        <strong>Origem:</strong> <a href={`${g.serverLib}/src/server/post_bundle_caching.rs`}><code>post_bundle_caching.rs</code></a>,
+        <a href={`${g.serverLib}/src/server/post_bundle_feedback_caching.rs`}><code>post_bundle_feedback_caching.rs</code></a>
+    </p>
+
+    <h3>Baldes vivos vs. selados</h3>
+    <p>
+        A cache distingue entre dados vivos e selados:
+    </p>
+    <ul>
+        <li>
+            <strong>Baldes vivos</strong> (época atual, ainda a aceitar publicações) — cada bundle
+            em cache transporta uma expiração absoluta de <em>tempo de servidor + 5 minutos</em>.
+            Os bundles são servidos apenas enquanto frescos; entradas obsoletas são saltadas na
+            leitura sem serem evicted, preservando o histórico de contagem de hits da localização
+            para que o limiar possa ser atingido de novo rapidamente quando chegar conteúdo novo.
+        </li>
+        <li>
+            <strong>Baldes selados</strong> (época encerrada, sem novas publicações) — os bundles
+            em cache não têm expiração individual. São evicted apenas pelo time-to-idle ao nível
+            da localização (60 segundos sem pedidos), ou pelo limite de capacidade em bytes do
+            Moka. Enquanto um balde selado se mantiver "quente", a sua cópia em cache persiste
+            indefinidamente.
+        </li>
+    </ul>
+
+    <h3>Raio de descoberta do lado do cliente</h3>
+    <p>
+        Para tirar proveito da cache em expansão, cada cliente mantém por balde um
+        <strong>raio de descoberta</strong>: a distância XOR ao servidor mais distante que
+        devolveu com sucesso um bundle no passeio anterior. No passeio seguinte, o
+        <code>PeerIterator</code> salta servidores mais próximos do que este raio e começa a
+        consultar a partir da fronteira para fora — indo diretamente até onde a cache foi
+        encontrada da última vez, contornando totalmente os servidores responsáveis (mais
+        interiores).
+    </p>
+    <p>
+        O raio é atualizado após cada passeio para a distância XOR do respondente positivo mais
+        distante. Se as camadas externas da cache tiverem entretanto expirado e nenhum servidor na
+        fronteira responder, o passeio recorre ao próximo par mais próximo e o raio contrai
+        naturalmente para refletir a profundidade atual da cache. O raio é mantido numa cache de
+        time-to-idle, por isso baldes que não tenham sido visitados há algum tempo começam de novo
+        a partir dos servidores responsáveis no acesso seguinte.
+    </p>
+
+    <h3>Eviction da cache e capacidade</h3>
+    <p>
+        Ambas as caches são ponderadas pelo tamanho real do bundle em bytes, suportadas pela
+        política de admissão W-TinyLFU do Moka. Entradas placeholder (localizações que foram
+        consultadas mas ainda não povoadas com um bundle) usam um peso fixo pequeno, para
+        participarem no esboço de frequência sem consumirem capacidade real. Quando a marca de
+        água alta de bytes é atingida, as localizações menos usadas em frequência são as primeiras
+        a ser evicted. Cada localização tem ainda um time-to-idle de 60 segundos: uma localização
+        que deixe de receber pedidos é evicted silenciosamente, repondo o seu contador de hits e
+        contraindo o raio efetivo da cache.
+    </p>
+    <p>
+        A cache de bundles guarda até um número configurável de originadores por localização
+        (atualmente 5). Se chegar um novo originador quando o limite por localização estiver
+        cheio, o bundle a expirar mais cedo é substituído. Bundles selados (sem expiração) são
+        tratados como sendo os últimos a expirar e só são deslocados por outros bundles selados.
+    </p>
+    <p>
+        <strong>Origem:</strong> <a href={`${g.serverLib}/src/server/post_bundle_caching_shared.rs`}><code>post_bundle_caching_shared.rs</code></a>,
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a> — <code>SERVER_POST_BUNDLE_CACHE_MAX_BYTES</code> et al.
+    </p>
+
+    <h2>Auto-recuperação de bundles de publicações</h2>
+    <p>
+        Quando um cliente vai buscar publicações para um balde, consulta vários servidores e
+        recolhe as suas respostas. Depois compara: que servidor tem publicações que outro servidor
+        não tem? Para cada par dador-alvo em que o dador tem publicações que faltam ao alvo, o
+        cliente organiza uma auto-recuperação em duas fases:
+    </p>
+    <ol>
+        <li>
+            <strong>Fase de claim</strong>: O cliente pergunta ao servidor-alvo de quais das
+            publicações do dador é que precisa, usando um pedido
+            <code>HealPostBundleClaimV1</code>. O servidor declara quais os IDs de publicações que
+            lhe faltam.
+        </li>
+        <li>
+            <strong>Fase de commit</strong>: O cliente (ou o dador, agindo como proxy) envia esses
+            bytes específicos das publicações para o alvo via
+            <code>HealPostBundleCommitV1</code>.
+        </li>
+    </ol>
+    <p>
+        Isto corre em tarefas em segundo plano lançadas após a obtenção primária do cliente
+        terminar. O utilizador vê o seu conteúdo sem esperar pela auto-recuperação; a rede
+        repara-se em paralelo.
+    </p>
+    <p>
+        <strong>Origem:</strong> <a href={`${g.lib}/src/client/post_bundle/post_bundle_healing.rs`}><code>post_bundle_healing.rs</code></a>,
+        <a href={`${g.integrationTests}/tests/test_healing_post_bundles.rs`}><code>test_healing_post_bundles.rs</code></a>
+    </p>
+
+    <h2>Auto-recuperação de feedback</h2>
+    <p>
+        Os sinais de feedback — gostos, denúncias, não-gostos — também divergem entre servidores à
+        medida que se propagam pela rede. Uma denúncia pode chegar ao servidor A mas não ao
+        servidor B. A auto-recuperação de feedback é tratada separadamente da auto-recuperação de
+        publicações porque o feedback tem uma forma de dados diferente (o registo
+        <code>EncodedPostFeedbackV1</code> de 50 bytes) e uma regra de merge diferente.
+    </p>
+    <p>
+        A regra de merge para feedback é: para cada par (post_id, feedback_type), manter o sinal
+        com a PoW mais alta entre todos os servidores. O cliente, depois de recolher feedback de
+        vários servidores, calcula o máximo global e identifica os servidores que têm sinais mais
+        fracos do que o máximo global. Em seguida, envia os sinais mais fortes para esses
+        servidores via <code>HealPostBundleFeedbackV1</code>.
+    </p>
+    <p>
+        Esta é uma auto-recuperação numa única fase (sem passo de claim): o registo de feedback é
+        suficientemente pequeno para que enviá-lo incondicionalmente seja mais barato do que a
+        ida e volta de pedir primeiro.
+    </p>
+    <p>
+        <strong>Origem:</strong> <a href={`${g.lib}/src/client/post_bundle/post_bundle_feedback_healing.rs`}><code>post_bundle_feedback_healing.rs</code></a>,
+        <a href={`${g.integrationTests}/tests/test_healing_post_bundle_feedbacks.rs`}><code>test_healing_post_bundle_feedbacks.rs</code></a>
+    </p>
+
+    <h2>Resistência a DDoS</h2>
+    <p>
+        O Hashiverse tem quatro camadas de proteção contra DDoS que intercetam ataques em pontos
+        progressivamente mais cedo no ciclo de vida da ligação, desde a filtragem de pacotes ao
+        nível do kernel até à limitação de taxa ao nível da aplicação.
+    </p>
+
+    <h3>Camada de kernel: blacklist com ipset</h3>
+    <p>
+        Para ataques sustentados ou graves, o servidor escala para descarte de pacotes ao nível do
+        kernel via o <code>ipset</code> do Linux. IPs em blacklist são adicionados a um hash set
+        com um timeout de cinco minutos; o iptables (ou nftables) descarta os pacotes que
+        correspondem antes de chegarem à camada de aplicação, eliminando até o custo de aceitar e
+        rejeitar a ligação TCP.
+    </p>
+    <pre><code>ipset create hashiverse_ddos_blacklist hash:ip timeout 300</code></pre>
+    <p>
+        O servidor em Rust adiciona IPs a este set usando chamadas não-bloqueantes
+        <code>Command::new("ipset")</code> — a operação do kernel não bloqueia o tratamento de
+        pedidos. Isto requer <code>CAP_NET_ADMIN</code> ou root em produção, gerido via Linux
+        Ambient Capabilities.
+    </p>
+
+    <h3>Pré-TLS: limite de ligações e limite de slots por IP</h3>
+    <p>
+        Cada nova ligação TCP é verificada <em>antes</em> de o handshake TLS começar. Duas
+        proteções correm neste ponto:
+    </p>
+    <ul>
+        <li>
+            <strong>Limite global de ligações</strong> — um semáforo limita o número total de
+            ligações TCP simultâneas em voo. Se o limite for atingido, a socket é fechada
+            imediatamente; nenhum recurso de handshake é consumido.
+        </li>
+        <li>
+            <strong>Limite de ligações por IP</strong> — um contador separado em memória limita
+            quantas ligações concorrentes um único IP pode manter. Isto impede que um endereço
+            monopolize todos os slots disponíveis. IPs já na lista de banimento ao nível da
+            aplicação também são rejeitados aqui.
+        </li>
+    </ul>
+    <p>
+        Ambas as verificações disparam antes de <code>TlsAcceptor::accept</code> ser chamado, por
+        isso uma inundação de novas ligações de um único IP não consome CPU em negociação TLS. O
+        servidor é deliberadamente apenas IPv4 por agora; o suporte para IPv6 requer rastreamento
+        ao nível do prefixo (/64) para ser eficaz, o que ainda não está implementado.
+    </p>
+
+    <h3>Timeout do handshake TLS</h3>
+    <p>
+        Uma vez que uma ligação passa as proteções pré-TLS, o handshake TLS é envolvido num
+        timeout duro. Um cliente que envie um ClientHello mas nunca complete o handshake — uma
+        ligação lenta clássica ao nível TLS — é descartado após um número fixo de segundos, e a
+        sua pontuação de pedidos defeituosos é incrementada, movendo-o em direção ao banimento ao
+        nível da aplicação.
+    </p>
+
+    <h3>Defesa contra Slow Loris: timeouts de leitura de cabeçalhos e corpo</h3>
+    <p>
+        Após um handshake TLS bem-sucedido, dois timeouts adicionais protegem contra ataques de
+        manutenção de ligações ao nível HTTP:
+    </p>
+    <ul>
+        <li>
+            <strong>Timeout de leitura de cabeçalhos</strong> — se um cliente HTTP/1.1 não tiver
+            terminado de enviar os seus cabeçalhos de pedido dentro da janela permitida, a ligação
+            é descartada. Esta é a defesa principal contra os ataques Slow Loris clássicos, em que
+            um atacante abre muitas ligações e envia cabeçalhos byte a byte para manter slots
+            abertos indefinidamente.
+        </li>
+        <li>
+            <strong>Timeout de leitura do corpo</strong> — um timeout separado cobre o corpo do
+            pedido. Defende contra variantes ao nível do corpo, em que os cabeçalhos chegam
+            depressa mas o corpo é enviado a passo de caracol. Combinado com um tamanho máximo
+            explícito do corpo, isto limita tanto o tempo como a memória consumidos por pedido.
+        </li>
+    </ul>
+
+    <h3>Camada de aplicação: cache de reputação de IPs</h3>
+    <p>
+        Os pedidos que passam por todos os pontos acima são rastreados por endereço IP usando uma
+        cache em memória <strong>Moka</strong>. IPs que excedam o limiar de taxa de pedidos dentro
+        de uma janela deslizante recebem uma resposta de erro RPC do Hashiverse e acumulam uma
+        pontuação de pedidos defeituosos. Assim que a pontuação cruza um limiar, o IP é promovido
+        para a blacklist do ipset, descendo para a camada de kernel para futuras ligações.
+    </p>
+    <p>
+        <strong>Origem:</strong> <a href={`${g.serverLib}/src/network/transport/`}><code>hashiverse-server-lib/src/network/transport/</code></a>,
+        <a href={`${g.lib}/src/tools/config.rs`}><code>config.rs</code></a>
+    </p>
+
+    <h2>Abstração TimeProvider</h2>
+    <p>
+        A trait <code>TimeProvider</code> abstrai sobre o tempo real, permitindo o
+        <code>ScaledTimeProvider</code> — um relógio de simulação acelerado no tempo, usado em
+        testes. Os testes de integração que verificam comportamento de auto-recuperação ao longo
+        de janelas de tempo que normalmente demorariam horas podem correr em segundos, escalando
+        o tempo. É assim que a suite de testes de integração consegue verificar o ciclo de vida
+        completo da auto-recuperação — incluindo a expiração de conteúdo antigo — sem atrasos de
+        relógio de parede.
+    </p>
+    <p>
+        <strong>Origem:</strong> <a href={`${g.lib}/src/tools/time_provider/`}><code>hashiverse-lib/src/tools/time_provider/</code></a>
+    </p>
+</DevDoc>

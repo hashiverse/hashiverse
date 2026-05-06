@@ -1,0 +1,164 @@
+---
+import LoreDoc from '../../../layouts/LoreDoc.astro';
+---
+
+<LoreDoc title="Como o Hashiverse se Compara">
+  <p>
+    As redes sociais não são um jogo de soma zero. Cada projeto que tenta construir uma melhor
+    praça pública — seja centralizado ou descentralizado, corporativo ou comunitário — está a
+    fazer um trabalho que importa. As pessoas por trás do X, Bluesky, Mastodon e Nostr estão cada
+    uma a tentar resolver problemas reais, e cada uma delas fez progressos que merecem respeito.
+  </p>
+  <p>
+    Mas os problemas são estruturais, e a estrutura é onde vivem as diferenças. O poder mais
+    perigoso que qualquer plataforma de redes sociais pode exercer não é o tipo barulhento — banir
+    contas, remover publicações — mas o tipo silencioso: a moderação de conteúdo subtil, seletiva e
+    invisível. Quando um punhado de pessoas pode decidir que ideias são amplificadas e quais são
+    silenciosamente suprimidas, sem que ninguém saiba que aconteceu, detêm a capacidade de
+    remodelar a opinião pública à escala civilizacional. Não através de argumento ou persuasão,
+    mas através de curadoria silenciosa. Isto não é um risco hipotético. É o modo de funcionamento
+    predefinido de todas as plataformas que controlam o seu próprio algoritmo de feed e o seu
+    pipeline de moderação.
+  </p>
+  <p>
+    A questão não é qual a plataforma com as melhores funcionalidades hoje — as funcionalidades
+    mudam. A questão é: qual é a arquitetura que torna <em>impossível</em> a um pequeno grupo de
+    pessoas filtrar silenciosamente o que o resto de nós vê? Que design garante que nenhum
+    proprietário futuro, nenhum governo futuro, nenhum modelo de negócio futuro pode comprometer
+    a soberania das pessoas que usam a rede?
+  </p>
+  <p>
+    É este o padrão pelo qual o Hashiverse se rege. Não melhor — <em>estruturalmente diferente</em>.
+  </p>
+
+  <h2>Twitter/X, Threads e plataformas centralizadas</h2>
+  <p>
+    O Twitter/X e o Threads são as duas maiores plataformas centralizadas de microblogging. O
+    Twitter/X provou que a publicação pública de formato curto podia tornar-se o modo dominante
+    do discurso cívico, das notícias de última hora e do comentário cultural. O Threads, apoiado
+    pelos milhares de milhões de utilizadores existentes da Meta, demonstrou que um novo
+    participante podia atingir uma escala enorme quase de um dia para o outro. Ambos são feitos
+    impressionantes, e ambos moldaram a forma como o mundo comunica.
+  </p>
+  <p>
+    Mas ambos são empresas, possuídas por indivíduos, responsáveis perante acionistas. O
+    proprietário pode mudar o algoritmo, mudar as regras, mudar o sistema de verificação, mudar o
+    carácter inteiro da plataforma — e a comunidade que construiu ali a sua presença não tem
+    recurso estrutural. Mais criticamente, o proprietário controla o que vês. O algoritmo decide
+    que publicações são amplificadas e quais são silenciosamente sepultadas — e essas decisões são
+    opacas. Uma publicação pode ser shadow-limited, ter o seu posicionamento reduzido ou ser
+    excluída da pesquisa sem que o autor ou o seu público alguma vez o saibam. Esta é a forma mais
+    potente de moderação de conteúdo: o tipo que ninguém consegue detetar, exercido por quem detém
+    as chaves do algoritmo. O X e o Threads diferem em estilo e cultura, mas o problema estrutural
+    é idêntico — um pequeno número de pessoas dentro de uma empresa privada faz silenciosamente a
+    curadoria da conversa pública.
+  </p>
+  <p>
+    O Hashiverse não pode ser adquirido porque não há nada para adquirir. Não há empresa, nem
+    conselho, nem frota de servidores controlada por uma única entidade. Não há algoritmo a decidir
+    o que vês — o teu cliente procura publicações diretamente na rede distribuída, e o que lês é o
+    que foi publicado, sem ser filtrado nem ordenado por qualquer intermediário. A tua identidade é
+    um par de chaves criptográficas no teu dispositivo — não uma linha numa base de dados de
+    outra pessoa. As tuas publicações são assinadas por ti, guardadas de forma redundante em nós
+    independentes e cifradas, para que mesmo os servidores que as detêm não as consigam ler. Nenhum
+    proprietário pode suspender a tua conta, porque ninguém a emitiu. Ninguém pode silenciosamente
+    decidir que a tua voz não se ouve.
+  </p>
+
+  <h2>Bluesky</h2>
+  <p>
+    O Bluesky merece crédito por pegar na ideia de redes sociais descentralizadas e lançar um
+    produto que as pessoas realmente querem usar. O AT Protocol introduz conceitos bem pensados —
+    identidade portátil através de DIDs, repositórios de dados federados e moderação composta
+    através de serviços de etiquetagem. O Bluesky provou que descentralização e boa UX não são
+    mutuamente exclusivas.
+  </p>
+  <p>
+    A preocupação estrutural é que a descentralização do Bluesky, hoje, é em grande medida
+    teórica. A empresa Bluesky PBC opera o relay dominante, a app view dominante e o cliente
+    dominante. O AT Protocol permite a qualquer pessoa operar um Personal Data Server, mas, na
+    prática, a rede ainda flui através de infraestrutura controlada por uma única organização. Os
+    DIDs fornecem identidade portátil, mas o método DID em uso generalizado (did:plc) baseia-se
+    num diretório PLC centralizado que o Bluesky opera. E quem controla o relay e a app view
+    controla o conteúdo que é descobrível. O sistema de etiquetagem de moderação do Bluesky é
+    composto em teoria, mas as etiquetas predefinidas — aplicadas pela empresa — são o que a
+    maioria dos utilizadores vê. Decisões subtis sobre o que é etiquetado, despromovido ou
+    filtrado ao nível do relay acontecem silenciosamente, dentro de infraestrutura que uma
+    organização opera.
+  </p>
+  <p>
+    O Hashiverse não tem relay, nem app view, nem diretório centralizado. A DHT Kademlia
+    distribui o armazenamento de dados por todos os servidores participantes com base na distância
+    de hash — não há infraestrutura privilegiada da qual depender ou que possa ser capturada.
+    Nenhum intermediário decide o que é descobrível e o que não é. A identidade é derivada
+    diretamente das tuas chaves criptográficas, sem necessidade de diretório externo. A
+    descentralização não é um objetivo futuro; é a arquitetura inicial — e com ela, a
+    impossibilidade de curadoria invisível.
+  </p>
+
+  <h2>Mastodon</h2>
+  <p>
+    O Mastodon é o projeto que provou que as redes sociais federadas conseguem funcionar à escala.
+    Trouxe o conceito de fediverso a milhões de utilizadores e demonstrou que as comunidades se
+    podiam autogovernar através de instâncias operadas independentemente. O protocolo ActivityPub
+    que popularizou é um padrão aberto do W3C, e a cultura de propriedade comunitária que o
+    Mastodon fomentou é algo a que todo o movimento de descentralização deve uma dívida.
+  </p>
+  <p>
+    O modelo de federação, no entanto, introduz as suas próprias pressões de centralização. Um
+    pequeno número de instâncias grandes (mastodon.social à cabeça) aloja uma quota
+    desproporcionada de utilizadores. A tua identidade está ligada ao teu servidor de instância —
+    se a tua instância encerrar, perdes o teu nome de utilizador e os teus seguidores. Os
+    administradores das instâncias têm acesso total às tuas publicações e mensagens diretas em
+    texto-claro. Migrar entre instâncias é possível mas com perdas: ficas com a lista de
+    seguidores mas perdes o teu histórico de publicações. E cada administrador de instância é um
+    porteiro com poder unilateral para moderar — para bloquear, filtrar ou desfederar
+    silenciosamente — segundo o seu próprio critério. Para a maioria dos utilizadores
+    concentrados em algumas instâncias grandes, isto significa que um pequeno número de
+    administradores molda silenciosamente o conteúdo que está acessível. A moderação é bem
+    intencionada, mas é opaca, e o poder não tem contrapesos.
+  </p>
+  <p>
+    No Hashiverse, a tua identidade não está ligada a nenhum servidor. É um par de chaves
+    criptográficas que tu controlas. Podes interagir com qualquer servidor da rede sem criar uma
+    conta nele. As tuas publicações estão cifradas em repouso — os operadores dos servidores não
+    as conseguem ler e, portanto, não as podem filtrar seletivamente. Se um servidor ficar
+    offline, a DHT Kademlia garante que os teus dados são replicados em outros nós. Não há
+    instância da qual migrar, porque não há instância à qual pertencer — e nenhum administrador
+    que possa silenciosamente decidir que as tuas publicações não devem ser vistas.
+  </p>
+
+  <h2>Nostr</h2>
+  <p>
+    O Nostr é o mais próximo do Hashiverse em filosofia, e o projeto que mais diretamente
+    demonstrou que a identidade criptográfica e a distribuição baseada em relays podiam ser
+    suficientemente simples para uma adoção real. O seu design é elegantemente minimalista —
+    eventos assinados por chaves, publicados em relays, obtidos por clientes. O Nostr provou que
+    não é necessário um protocolo complexo para construir uma rede resistente à censura, e a sua
+    comunidade construiu um ecossistema impressionante de clientes e ferramentas num período
+    notavelmente curto.
+  </p>
+  <p>
+    As áreas em que o Hashiverse diverge são específicas e deliberadas. Os relays do Nostr são de
+    adesão voluntária: escolhes para que relays publicar e, se esses relays ficarem offline, o
+    teu conteúdo pode ficar indisponível. Não há nenhuma garantia ao nível do protocolo de que os
+    teus dados serão replicados ou de que sobreviverão à falha de um relay. Os eventos do Nostr
+    são guardados em texto-claro nos relays — os operadores dos relays podem ler tudo, e os
+    metadados (quem publica, quando, com que frequência) são totalmente visíveis. Um relay que
+    consiga ler o teu conteúdo também o pode recusar seletivamente — e, como os utilizadores
+    normalmente publicam apenas para alguns relays, um pequeno número de operadores de relay
+    pode silenciosamente moldar o que se propaga pela rede sem que ninguém repare nas lacunas. A
+    base criptográfica é secp256k1 (a curva do Bitcoin), que não fornece um caminho para a
+    resistência pós-quântica.
+  </p>
+  <p>
+    A DHT Kademlia do Hashiverse fornece replicação de dados ao nível do protocolo — as tuas
+    publicações são guardadas nos nós mais próximos por distância de hash, e a rede recupera-se
+    ativamente quando os nós ficam offline. As publicações são cifradas em repouso, por isso os
+    servidores não conseguem ler o conteúdo que armazenam. A identidade é construída sobre três
+    esquemas de assinatura em simultâneo — Ed25519 para hoje, ML-DSA e FN-DSA para o futuro
+    pós-quântico — com os três incorporados no hash de identidade desde o primeiro dia. E o
+    sistema de proof-of-work que governa a identidade dos servidores e os pedidos RPC cria um
+    custo económico aos ataques de Sybil que o modelo de relay do Nostr não impõe.
+  </p>
+</LoreDoc>

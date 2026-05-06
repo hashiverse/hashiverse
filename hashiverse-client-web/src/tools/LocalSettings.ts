@@ -17,6 +17,8 @@ export const LOCAL_SETTINGS_KEY_LANGUAGE = "language";
 export const LOCAL_SETTINGS_KEY_LAST_LOGIN_KEY = "last_login_key";
 export const LOCAL_SETTINGS_KEY_BOOTSTRAP = "bootstrap";
 export const LOCAL_SETTINGS_KEY_DRAFT_POST = "hashiverse.draft_post";
+export const LOCAL_SETTINGS_KEY_POST_LOGIN_RETURN = "post_login_return";
+export const LOCAL_SETTINGS_KEY_PREFERRED_DOMAIN = "preferred_domain";
 
 function open_db(): Promise<IDBDatabase> {
 	return new Promise((resolve, reject) => {

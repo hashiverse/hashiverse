@@ -1,0 +1,99 @@
+---
+import DevDoc from '../../../layouts/DevDoc.astro';
+import { github as g } from '../../../github';
+
+const code_light = `<style>
+.hv-share-light{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#fff;color:#0d0a2e;border:1px solid #e5e7eb;border-radius:999px;font:600 14px system-ui,sans-serif;text-decoration:none;transition:background .15s,border-color .15s}
+.hv-share-light:hover{background:#f3f4f6;border-color:#c026d3}
+.hv-share-light:focus-visible{outline:2px solid #5fdcff;outline-offset:2px}
+.hv-share-light .hv-hash{font-size:18px;line-height:1;color:#c026d3}
+</style>
+<a class="hv-share-light" href="https://app.hashiverse.com/#/share?text=YOUR_TEXT&url=YOUR_URL" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>`;
+
+const code_dark = `<style>
+.hv-share-dark{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#0d0a2e;color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:999px;font:600 14px system-ui,sans-serif;text-decoration:none;transition:background .15s,border-color .15s}
+.hv-share-dark:hover{background:#1a1850;border-color:#5fdcff}
+.hv-share-dark:focus-visible{outline:2px solid #5fdcff;outline-offset:2px}
+.hv-share-dark .hv-hash{font-size:18px;line-height:1;color:#5fdcff}
+</style>
+<a class="hv-share-dark" href="https://app.hashiverse.com/#/share?text=YOUR_TEXT&url=YOUR_URL" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>`;
+
+const code_python = `from hashiverse_client import HashiverseClient
+
+client = HashiverseClient.create_from_keyphrase(
+    key_phrase="my secret keyphrase",
+    data_dir="~/.hashiverse",
+)
+client.post("Hello from Python! #hashiverse-python")`;
+---
+
+<DevDoc title="Getting Started">
+  <p>
+    The easiest ways to post to Hashiverse without writing much code. Pick the one that fits.
+  </p>
+
+  <h2>Share buttons on your website</h2>
+  <p>
+    Drop a button on your blog or site that opens a Hashiverse compose draft pre-filled
+    with a link and text. The button's <code>href</code> points directly to the Hashiverse app:
+  </p>
+  <pre><code>https://app.hashiverse.com/#/share?text=YOUR_TEXT&amp;url=YOUR_URL</code></pre>
+  <p>
+    Both query parameters are optional and should be URL-encoded. Two starter button styles below — each snippet is fully self-contained:
+    paste it as-is and the button works. Replace <code>YOUR_TEXT</code> and <code>YOUR_URL</code> with the link and message you want pre-filled.
+  </p>
+
+  <h3>Variants</h3>
+
+  <style>
+    .share-preview-row{padding:16px;border-radius:8px;margin:8px 0;text-align:center}
+    .share-preview-row.share-preview-light{background:#fafafa;color:#222}
+    .share-preview-row.share-preview-dark{background:#0d0a2e;color:#fff}
+    .share-preview-row .share-preview-label{font:12px system-ui,sans-serif;display:inline-block;margin-bottom:8px}
+    .share-preview-row .hv-share-light,.share-preview-row .hv-share-dark{margin:4px}
+    .hv-share-light{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#fff;color:#0d0a2e;border:1px solid #e5e7eb;border-radius:999px;font:600 14px system-ui,sans-serif;text-decoration:none;transition:background .15s,border-color .15s}
+    .hv-share-light:hover{background:#f3f4f6;border-color:#c026d3}
+    .hv-share-light:focus-visible{outline:2px solid #5fdcff;outline-offset:2px}
+    .hv-share-light .hv-hash{font-size:18px;line-height:1;color:#c026d3}
+    .hv-share-dark{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#0d0a2e;color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:999px;font:600 14px system-ui,sans-serif;text-decoration:none;transition:background .15s,border-color .15s}
+    .hv-share-dark:hover{background:#1a1850;border-color:#5fdcff}
+    .hv-share-dark:focus-visible{outline:2px solid #5fdcff;outline-offset:2px}
+    .hv-share-dark .hv-hash{font-size:18px;line-height:1;color:#5fdcff}
+  </style>
+
+  <div class="share-preview-row share-preview-light">
+    <span class="share-preview-label">On a light background:</span><br/>
+    <a class="hv-share-light" href="https://app.hashiverse.com/#/share?text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
+    <a class="hv-share-dark" href="https://app.hashiverse.com/#/share?text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
+  </div>
+  <div class="share-preview-row share-preview-dark">
+    <span class="share-preview-label">On a dark background:</span><br/>
+    <a class="hv-share-light" href="https://app.hashiverse.com/#/share?text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
+    <a class="hv-share-dark" href="https://app.hashiverse.com/#/share?text=Check%20this%20out&url=https%3A%2F%2Fexample.com%2Farticle" target="_blank" rel="noopener"><span class="hv-hash">＃</span>Share on Hashiverse</a>
+  </div>
+
+  <p>
+    These are starters — your own visual language usually fits better. Just keep the <code>href</code> contract and the button will work.
+  </p>
+
+  <h3>Light variant</h3>
+  <pre><code>{code_light}</code></pre>
+
+  <h3>Dark variant</h3>
+  <pre><code>{code_dark}</code></pre>
+
+  <h2>Posting from Python</h2>
+  <p>Install the Python client from PyPI:</p>
+  <pre><code>pip install hashiverse-client</code></pre>
+  <p>Then post in five lines:</p>
+  <pre><code>{code_python}</code></pre>
+  <p>
+    See the <a href={g.python}>full Python client</a> on GitHub for advanced features —
+    timeline reads, hashtag streams, key management, and reconnecting from a stored key.
+  </p>
+
+  <h2>Command line client</h2>
+  <p>
+    <em>Coming soon.</em> A standalone CLI for posting and querying Hashiverse from your shell is on the roadmap.
+  </p>
+</DevDoc>

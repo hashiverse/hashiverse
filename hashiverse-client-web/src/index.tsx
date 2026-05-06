@@ -7,9 +7,9 @@
 import "./index.css";
 import "@mantine/core/styles.css";
 import { ActionIcon, createTheme, MantineProvider, Tooltip } from "@mantine/core";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { HashRouter, Route, Routes } from "react-router";
+import { HashRouter, Route, Routes, useNavigate } from "react-router";
 import type { HashiverseClientWasmProxy } from "./Hashiverse.ts";
 import { Hashiverse } from "./Hashiverse.ts";
 import i18n from "./i18n/i18n.ts";
@@ -21,8 +21,10 @@ import { ConfigTab } from "./tabs/config/ConfigTab.tsx";
 import { ErrorTab } from "./tabs/ErrorTab.tsx";
 import { HashtagsGuardTab } from "./tabs/hashtags/HashtagsGuardTab.tsx";
 import { HomeTab } from "./tabs/home/HomeTab.tsx";
+import { HASHIVERSE_DOMAINS } from "./tabs/login/domains.ts";
 import { LoginTab } from "./tabs/login/LoginTab.tsx";
 import { PeopleGuardTab } from "./tabs/people/PeopleGuardTab.tsx";
+import { ShareTab } from "./tabs/share/ShareTab.tsx";
 import { HashtagTimelineTab } from "./tabs/timeline/HashtagTimelineTab.tsx";
 import { MeMentionedTimelineTab } from "./tabs/timeline/MeMentionedTimelineTab.tsx";
 import { MeTimelineTab } from "./tabs/timeline/MeTimelineTab.tsx";
@@ -31,10 +33,11 @@ import { PostSequelTimelineTab } from "./tabs/timeline/PostSequelTimelineTab.tsx
 import { PostTimelineTab } from "./tabs/timeline/PostTimelineTab.tsx";
 import { UserMentionedTimelineTab } from "./tabs/timeline/UserMentionedTimelineTab.tsx";
 import { UserTimelineTab } from "./tabs/timeline/UserTimelineTab.tsx";
-import { local_settings_delete, local_settings_get, local_settings_set } from "./tools/LocalSettings.ts";
+import { LOCAL_SETTINGS_KEY_POST_LOGIN_RETURN, LOCAL_SETTINGS_KEY_PREFERRED_DOMAIN, local_settings_delete, local_settings_get, local_settings_set } from "./tools/LocalSettings.ts";
 import { register_bio } from "./tools/MentionStore.ts";
 import { NeedsLoggedIn } from "./tools/NeedsLoggedIn.tsx";
-import { ShareTargetHandler } from "./tools/ShareTargetHandler.tsx";
+import type { UserSettingsCache } from "./tools/UserSettingsCache.ts";
+import { useKeyboardInsetBottomCssVariable } from "./tools/useKeyboardInsetBottomCssVariable.ts";
 
 const theme = createTheme({
 	components: {
@@ -54,42 +57,80 @@ const theme = createTheme({
 
 interface AppProps {
 	initial_hashiverse: HashiverseClientWasmProxy;
+	initial_settings: UserSettings;
 }
 
 import { LOCAL_SETTINGS_KEY_LANGUAGE, LOCAL_SETTINGS_KEY_LAST_LOGIN_KEY } from "./tools/LocalSettings.ts";
-import { useUserSettingsCache } from "./tools/UserSettingsCache.ts";
+import { fetch_user_settings, type UserSettings, useUserSettingsCache } from "./tools/UserSettingsCache.ts";
 
-const App: React.FC<AppProps> = ({ initial_hashiverse }) => {
+interface PostLoginReturnerProps {
+	user_settings_cache: UserSettingsCache;
+}
+
+// Watches for a logged-out → logged-in transition and, if a return URL was
+// stashed by a route that bounced the user to /login, navigates back to it.
+// Only fires on transitions, so an initial saved-key auto-login does not
+// resurface stale pending shares from a previous session.
+const PostLoginReturner: React.FC<PostLoginReturnerProps> = ({ user_settings_cache }) => {
+	const navigate = useNavigate();
+	const prev_logged_in_ref = React.useRef<boolean>(user_settings_cache.is_logged_in);
+
+	useEffect(() => {
+		const prev = prev_logged_in_ref.current;
+		prev_logged_in_ref.current = user_settings_cache.is_logged_in;
+		if (prev || !user_settings_cache.is_logged_in) return;
+
+		local_settings_get(LOCAL_SETTINGS_KEY_POST_LOGIN_RETURN)
+			.then((url) => {
+				if (!url) return;
+				local_settings_delete(LOCAL_SETTINGS_KEY_POST_LOGIN_RETURN).catch(console.error);
+				navigate(url);
+			})
+			.catch(console.error);
+	}, [user_settings_cache.is_logged_in, navigate]);
+
+	return null;
+};
+
+const App: React.FC<AppProps> = ({ initial_hashiverse, initial_settings }) => {
+	useKeyboardInsetBottomCssVariable();
 	const [hashiverse, set_hashiverse] = useState<HashiverseClientWasmProxy>(initial_hashiverse);
-	const user_settings_cache = useUserSettingsCache(hashiverse);
+	const user_settings_cache = useUserSettingsCache(hashiverse, initial_settings);
 
-	const on_login = useCallback((new_hv: HashiverseClientWasmProxy) => {
-		new_hv
-			.get_client_id()
-			.then((id) => local_settings_set(LOCAL_SETTINGS_KEY_LAST_LOGIN_KEY, id as string))
-			.catch(() => {});
-		set_hashiverse((prev) => {
-			prev.dispose().catch(() => {});
-			return new_hv;
-		});
-	}, []);
-
-	const on_logout = useCallback(() => {
-		user_settings_cache.reset();
-		local_settings_delete(LOCAL_SETTINGS_KEY_LAST_LOGIN_KEY).catch(() => {});
-		Hashiverse.create_from_keyphrase("").then((new_hv) => {
+	const on_login = useCallback(
+		async (new_hv: HashiverseClientWasmProxy) => {
+			const [_, new_settings] = await Promise.all([
+				new_hv
+					.get_client_id()
+					.then((id) => local_settings_set(LOCAL_SETTINGS_KEY_LAST_LOGIN_KEY, id as string))
+					.catch(() => {}),
+				fetch_user_settings(new_hv),
+			]);
 			set_hashiverse((prev) => {
 				prev.dispose().catch(() => {});
 				return new_hv;
 			});
+			user_settings_cache.replace(new_settings);
+		},
+		[user_settings_cache],
+	);
+
+	const on_logout = useCallback(async () => {
+		local_settings_delete(LOCAL_SETTINGS_KEY_LAST_LOGIN_KEY).catch(() => {});
+		const new_hv = await Hashiverse.create_from_keyphrase("");
+		const new_settings = await fetch_user_settings(new_hv);
+		set_hashiverse((prev) => {
+			prev.dispose().catch(() => {});
+			return new_hv;
 		});
+		user_settings_cache.replace(new_settings);
 	}, [user_settings_cache]);
 
 	return (
 		<div className="App FullColumnChildAndParent">
 			<HashRouter>
 				<ComposeDialog hashiverse={hashiverse} user_settings_cache={user_settings_cache} />
-				<ShareTargetHandler />
+				<PostLoginReturner user_settings_cache={user_settings_cache} />
 				<Routes>
 					<Route path="/" element={<HomeTab hashiverse={hashiverse} />} />
 					<Route
@@ -125,6 +166,7 @@ const App: React.FC<AppProps> = ({ initial_hashiverse }) => {
 					<Route path="/post_sequels/:post_id/:bucket_location" element={<PostSequelTimelineTab hashiverse={hashiverse} user_settings_cache={user_settings_cache} />} />
 					<Route path="/post_embed/:post_id/:bucket_location" element={<PostEmbedTab hashiverse={hashiverse} user_settings_cache={user_settings_cache} />} />
 					<Route path="/login" element={<LoginTab hashiverse={hashiverse} on_login={on_login} on_logout={on_logout} user_settings_cache={user_settings_cache} />} />
+					<Route path="/share" element={<ShareTab user_settings_cache={user_settings_cache} />} />
 					<Route path="/config" element={<ConfigTab hashiverse={hashiverse} on_login={on_login} on_logout={on_logout} user_settings_cache={user_settings_cache} />} />
 					<Route path="*" element={<ErrorTab />} />
 				</Routes>
@@ -132,6 +174,41 @@ const App: React.FC<AppProps> = ({ initial_hashiverse }) => {
 		</div>
 	);
 };
+
+// On a fresh page load, check for a "preferred domain" autoredirect rule.
+//
+// If we just got auto-redirected here (autoredirected=1 in the search), wipe
+// any preferred-domain entry on this origin so we can't bounce the user back
+// somewhere on a subsequent visit, and strip the marker from the URL.
+//
+// Otherwise, if the user has saved a preferred domain that isn't this one,
+// substitute the hostname and redirect, keeping path/search/hash intact.
+async function maybe_consume_or_auto_redirect(): Promise<boolean> {
+	const search_params = new URLSearchParams(window.location.search);
+
+	if (search_params.get("autoredirected") === "1") {
+		await local_settings_delete(LOCAL_SETTINGS_KEY_PREFERRED_DOMAIN).catch(console.error);
+		search_params.delete("autoredirected");
+		const new_search = search_params.toString();
+		const new_url = `${window.location.pathname}${new_search ? `?${new_search}` : ""}${window.location.hash}`;
+		history.replaceState(null, "", new_url);
+		return false;
+	}
+
+	const preferred = await local_settings_get(LOCAL_SETTINGS_KEY_PREFERRED_DOMAIN);
+	if (!preferred) return false;
+	if (preferred === window.location.hostname) return false;
+	if (!(HASHIVERSE_DOMAINS as readonly string[]).includes(preferred)) return false;
+
+	const sep = window.location.search ? "&" : "?";
+	const url = `https://${preferred}${window.location.pathname}${window.location.search}${sep}autoredirected=1${window.location.hash}`;
+	window.location.replace(url);
+	return true;
+}
+
+if (await maybe_consume_or_auto_redirect()) {
+	await new Promise(() => {});
+}
 
 const stored_language = await local_settings_get(LOCAL_SETTINGS_KEY_LANGUAGE);
 if (stored_language && stored_language !== i18n.language) {
@@ -169,6 +246,8 @@ if (saved_key) {
 	console.log("Starting as guest");
 }
 
+const initial_settings = await fetch_user_settings(hashiverse);
+
 hashiverse
 	.get_all_bios()
 	.then((bios) => {
@@ -185,7 +264,7 @@ createRoot(root).render(
 	<React.StrictMode>
 		<MantineProvider defaultColorScheme="dark" theme={theme}>
 			<PrereleaseBanner />
-			<App initial_hashiverse={hashiverse} />
+			<App initial_hashiverse={hashiverse} initial_settings={initial_settings} />
 		</MantineProvider>
 	</React.StrictMode>,
 );
