@@ -9,6 +9,7 @@
 		"build": "tsc --noEmit && rsbuild build",
 		"preview": "rsbuild preview",
 		"check": "biome check --write",
+		"check:ci": "biome ci .",
 		"format": "biome format --write",
 		"docs": "typedoc"
 	},

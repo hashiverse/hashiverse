@@ -23,13 +23,13 @@ jobs:
       run:
         working-directory: hashiverse-rust/hashiverse-client-python
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "hashiverse-rust"
           workspaces: hashiverse-rust -> target
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Create venv and install dependencies

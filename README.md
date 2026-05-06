@@ -23,6 +23,11 @@ Live it right now at https://www.hashiverse.com
 - [![check-translations-www](https://github.com/hashiverse/hashiverse/actions/workflows/check-translations-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/check-translations-www.yml) — red means a developer should run the translation prompt: `node www/translations/check-translations.mjs` and feed the JSON output into a Claude Code session.
 - [![check-translations-app](https://github.com/hashiverse/hashiverse/actions/workflows/check-translations-app.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/check-translations-app.yml) — red means a developer should run the translation prompt: `node hashiverse-client-web/translations/check-translations.mjs` and feed the JSON output into a Claude Code session.
 
+## Checks
+
+- [![check-hashiverse-client-web](https://github.com/hashiverse/hashiverse/actions/workflows/check-hashiverse-client-web.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/check-hashiverse-client-web.yml) — biome lint, TypeScript type-check, and rsbuild production build for `hashiverse-client-web/`.
+- [![check-www](https://github.com/hashiverse/hashiverse/actions/workflows/check-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/check-www.yml) — Astro production build for `www/`.
+
 ## Tests
 
 - [![test-hashiverse-lib-default](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-lib-default.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-lib-default.yml)
