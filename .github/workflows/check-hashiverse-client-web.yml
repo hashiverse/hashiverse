@@ -1,0 +1,60 @@
+name: check-hashiverse-client-web
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "hashiverse-client-web/**"
+      - "hashiverse-rust/hashiverse-client-wasm/**"
+      - "hashiverse-rust/hashiverse-lib/**"
+      - ".github/workflows/check-hashiverse-client-web.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "hashiverse-client-web/**"
+      - "hashiverse-rust/hashiverse-client-wasm/**"
+      - "hashiverse-rust/hashiverse-lib/**"
+      - ".github/workflows/check-hashiverse-client-web.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust-wasm"
+          workspaces: hashiverse-rust -> target
+
+      - uses: jetli/wasm-pack-action@v0.4.0
+
+      - name: Build WASM client
+        working-directory: hashiverse-rust
+        run: wasm-pack build hashiverse-client-wasm --release --target bundler
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: hashiverse-client-web/package-lock.json
+
+      - name: Install packages
+        working-directory: hashiverse-client-web
+        run: npm install
+
+      - name: Biome CI check
+        working-directory: hashiverse-client-web
+        run: npm run check:ci
+
+      - name: Build
+        working-directory: hashiverse-client-web
+        run: npm run build
