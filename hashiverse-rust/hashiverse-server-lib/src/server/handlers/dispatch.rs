@@ -1165,7 +1165,7 @@ impl HashiverseServer {
             .no_proxy()
             .build()?;
 
-        const URL_FETCH_MAX_BODY_BYTES: usize = 512 * 1024;
+        const URL_FETCH_MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
         let mut http_response = http_client.get(&request.url).send().await?;
 
         // Reject early if Content-Length already exceeds the limit — before reading any body bytes.
