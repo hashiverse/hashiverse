@@ -57,10 +57,10 @@ impl HashiverseClientWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn create_from_stored_key(key_public: String) -> Result<Self, JsValue> {
+    pub async fn create_from_stored_key(client_id_hex: String) -> Result<Self, JsValue> {
         wasm_try!({
             let key_locker_manager = WasmKeyLockerManager::new().await?;
-            let key_locker = key_locker_manager.switch(key_public).await?;
+            let key_locker = key_locker_manager.switch(client_id_hex).await?;
             Self::create_from_xxx(true, key_locker).await?
         })
     }
@@ -212,6 +212,24 @@ impl HashiverseClientWasm {
                     avatar: meta_post_public.avatar.value.unwrap_or_default(),
                 })
                 .collect()
+        })
+    }
+
+    #[wasm_bindgen]
+    pub async fn get_all_known_peers_v1(&self) -> Result<Vec<PeerInfoV1>, JsValue> {
+        wasm_try!({
+            self.hashiverse_client.get_all_known_peers().await
+                .into_iter()
+                .map(|peer| PeerInfoV1 {
+                    peer_id_hex: peer.id.to_hex_str(),
+                    address: peer.address,
+                    version: peer.version,
+                    timestamp_millis: peer.timestamp.0,
+                    pow_initial: peer.pow_initial.pow.0,
+                    pow_current_day: peer.pow_current_day.pow.0,
+                    pow_current_month: peer.pow_current_month.pow.0,
+                })
+                .collect::<Vec<_>>()
         })
     }
 
@@ -534,4 +552,16 @@ pub struct TrendingHashtag {
 #[tsify(into_wasm_abi)]
 pub struct TrendingHashtagsFetchResponse {
     pub trending_hashtags: Vec<TrendingHashtag>,
+}
+
+#[derive(Tsify, Serialize, Deserialize)]
+#[tsify(into_wasm_abi)]
+pub struct PeerInfoV1 {
+    pub peer_id_hex: String,
+    pub address: String,
+    pub version: String,
+    pub timestamp_millis: i64,
+    pub pow_initial: u8,
+    pub pow_current_day: u8,
+    pub pow_current_month: u8,
 }

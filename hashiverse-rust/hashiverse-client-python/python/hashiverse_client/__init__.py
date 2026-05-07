@@ -6,6 +6,7 @@ from hashiverse_client._native import (
     UrlPreview,
     TrendingHashtag,
     TimelineResponse,
+    init_logging,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "UrlPreview",
     "TrendingHashtag",
     "TimelineResponse",
+    "init_logging",
 ]

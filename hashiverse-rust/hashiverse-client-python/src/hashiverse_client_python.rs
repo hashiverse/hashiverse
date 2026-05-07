@@ -18,7 +18,30 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use bytes::Bytes;
 use tokio::runtime::Runtime;
+use crate::HashiverseError;
 use crate::py_try::anyhow_to_py;
+
+// ---------------------------------------------------------------------------
+// Logging bridge (Rust `log` → Python `logging`)
+// ---------------------------------------------------------------------------
+
+/// Bridge Rust `log` records to Python's `logging` module.
+///
+/// Process-wide, one-shot. Call this once from Python after configuring
+/// `logging.basicConfig`. Subsequent calls return the underlying
+/// `SetLoggerError` as a `HashiverseError` — that's by design: a second call
+/// indicates either a double-init or a logger fight, both of which should
+/// surface immediately rather than be silently swallowed.
+///
+/// Logger names on the Python side are the Rust target (e.g.
+/// `hashiverse_lib::client::peer_tracker`), so Python-side level filtering
+/// applies normally via the root logger or per-logger configuration.
+#[pyfunction]
+pub fn init_logging() -> PyResult<()> {
+    pyo3_log::try_init()
+        .map_err(|e| HashiverseError::new_err(format!("init_logging failed: {e}")))?;
+    Ok(())
+}
 
 // ---------------------------------------------------------------------------
 // Data classes
@@ -214,10 +237,10 @@ impl HashiverseClientPython {
     }
 
     #[staticmethod]
-    #[pyo3(name = "create_from_stored_key", signature = (key_public, data_dir, passphrase="", bootstrap_addresses=None))]
+    #[pyo3(name = "create_from_stored_key", signature = (client_id_hex, data_dir, passphrase="", bootstrap_addresses=None))]
     fn create_from_stored_key(
         py: Python<'_>,
-        key_public: String,
+        client_id_hex: String,
         data_dir: String,
         passphrase: &str,
         bootstrap_addresses: Option<Vec<String>>,
@@ -234,7 +257,7 @@ impl HashiverseClientPython {
             std::fs::create_dir_all(&data_dir)?;
 
             let key_locker_manager = DiskKeyLockerManager::with_data_dir(data_dir.clone(), passphrase.to_string())?;
-            let key_locker: Arc<DiskKeyLocker> = runtime.block_on(key_locker_manager.switch(key_public))?;
+            let key_locker: Arc<DiskKeyLocker> = runtime.block_on(key_locker_manager.switch(client_id_hex))?;
 
             Self::create_from_xxx(runtime, data_dir, key_locker_manager, key_locker, bootstrap_addresses, true)
         })
