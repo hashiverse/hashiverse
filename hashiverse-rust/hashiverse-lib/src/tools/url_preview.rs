@@ -23,21 +23,38 @@ pub struct UrlPreviewData {
 pub fn extract_url_preview(html: &str) -> UrlPreviewData {
     let document = Html::parse_document(html);
 
-    let og_title = select_meta_content(&document, "meta[property='og:title']");
-    let og_description = select_meta_content(&document, "meta[property='og:description']");
-    let og_image = select_meta_content(&document, "meta[property='og:image']");
-    let og_url = select_meta_content(&document, "meta[property='og:url']");
+    let title = first_non_empty([
+        select_meta_content(&document, "meta[property='og:title']"),
+        select_meta_content(&document, "meta[name='twitter:title']"),
+        select_title(&document),
+    ])
+    .unwrap_or_default();
 
-    let title = og_title.or_else(|| select_title(&document)).unwrap_or_default();
-    let description = og_description
-        .or_else(|| select_meta_content(&document, "meta[name='description']"))
-        .unwrap_or_default();
+    let description = first_non_empty([
+        select_meta_content(&document, "meta[property='og:description']"),
+        select_meta_content(&document, "meta[name='twitter:description']"),
+        select_meta_content(&document, "meta[name='description']"),
+    ])
+    .unwrap_or_default();
+
+    let image_url = first_non_empty([
+        select_meta_content(&document, "meta[property='og:image']"),
+        select_meta_content(&document, "meta[name='twitter:image']"),
+        select_meta_content(&document, "meta[name='twitter:image:src']"),
+    ])
+    .unwrap_or_default();
+
+    let canonical_url = first_non_empty([
+        select_meta_content(&document, "meta[property='og:url']"),
+        select_link_href(&document, "link[rel='canonical']"),
+    ])
+    .unwrap_or_default();
 
     UrlPreviewData {
         title,
         description,
-        image_url: og_image.unwrap_or_default(),
-        canonical_url: og_url.unwrap_or_default(),
+        image_url,
+        canonical_url,
     }
 }
 
@@ -46,9 +63,19 @@ fn select_meta_content(document: &Html, selector_str: &str) -> Option<String> {
     document.select(&selector).next()?.value().attr("content").map(|s| s.to_string())
 }
 
+fn select_link_href(document: &Html, selector_str: &str) -> Option<String> {
+    let selector = Selector::parse(selector_str).ok()?;
+    document.select(&selector).next()?.value().attr("href").map(|s| s.to_string())
+}
+
 fn select_title(document: &Html) -> Option<String> {
     let selector = Selector::parse("title").ok()?;
     Some(document.select(&selector).next()?.text().collect::<String>())
+}
+
+// A present-but-empty `content=""` should fall through, not short-circuit.
+fn first_non_empty<I: IntoIterator<Item = Option<String>>>(candidates: I) -> Option<String> {
+    candidates.into_iter().flatten().find(|s| !s.is_empty())
 }
 
 #[cfg(test)]
@@ -136,5 +163,130 @@ mod tests {
 
         let data = extract_url_preview(html);
         assert_eq!(data.title, "OG Title");
+    }
+
+    #[test]
+    fn test_twitter_title_used_when_og_missing() {
+        let html = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>HTML Title</title>
+                <meta name="twitter:title" content="Twitter Title" />
+            </head>
+            <body></body>
+            </html>
+        "#;
+
+        let data = extract_url_preview(html);
+        assert_eq!(data.title, "Twitter Title");
+    }
+
+    #[test]
+    fn test_twitter_description_used_when_og_missing() {
+        let html = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta name="twitter:description" content="Twitter Description" />
+                <meta name="description" content="Plain Description" />
+            </head>
+            <body></body>
+            </html>
+        "#;
+
+        let data = extract_url_preview(html);
+        assert_eq!(data.description, "Twitter Description");
+    }
+
+    #[test]
+    fn test_twitter_image_used_when_og_missing() {
+        let html = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta name="twitter:image" content="https://example.com/twitter.png" />
+            </head>
+            <body></body>
+            </html>
+        "#;
+
+        let data = extract_url_preview(html);
+        assert_eq!(data.image_url, "https://example.com/twitter.png");
+    }
+
+    #[test]
+    fn test_twitter_image_src_fallback() {
+        let html = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta name="twitter:image:src" content="https://example.com/twitter-src.png" />
+            </head>
+            <body></body>
+            </html>
+        "#;
+
+        let data = extract_url_preview(html);
+        assert_eq!(data.image_url, "https://example.com/twitter-src.png");
+    }
+
+    #[test]
+    fn test_canonical_link_used_when_og_url_missing() {
+        let html = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <link rel="canonical" href="https://example.com/canonical-from-link" />
+            </head>
+            <body></body>
+            </html>
+        "#;
+
+        let data = extract_url_preview(html);
+        assert_eq!(data.canonical_url, "https://example.com/canonical-from-link");
+    }
+
+    #[test]
+    fn test_empty_content_falls_through() {
+        let html = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta property="og:title" content="" />
+                <title>Real Title</title>
+            </head>
+            <body></body>
+            </html>
+        "#;
+
+        let data = extract_url_preview(html);
+        assert_eq!(data.title, "Real Title");
+    }
+
+    #[test]
+    fn test_og_still_wins_over_twitter() {
+        let html = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta property="og:title" content="OG Title" />
+                <meta name="twitter:title" content="Twitter Title" />
+                <meta property="og:description" content="OG Description" />
+                <meta name="twitter:description" content="Twitter Description" />
+                <meta property="og:image" content="https://example.com/og.png" />
+                <meta name="twitter:image" content="https://example.com/twitter.png" />
+                <meta property="og:url" content="https://example.com/og-canonical" />
+                <link rel="canonical" href="https://example.com/link-canonical" />
+            </head>
+            <body></body>
+            </html>
+        "#;
+
+        let data = extract_url_preview(html);
+        assert_eq!(data.title, "OG Title");
+        assert_eq!(data.description, "OG Description");
+        assert_eq!(data.image_url, "https://example.com/og.png");
+        assert_eq!(data.canonical_url, "https://example.com/og-canonical");
     }
 }
