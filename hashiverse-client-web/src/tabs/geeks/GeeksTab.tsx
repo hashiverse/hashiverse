@@ -19,9 +19,7 @@ export const GeeksTab: React.FC = () => {
 							<Anchor onClick={() => navigate(subpage.path)} style={{ cursor: "pointer" }}>
 								{subpage.label}
 							</Anchor>
-							<Text>
-								{subpage.description}
-							</Text>
+							<Text>{subpage.description}</Text>
 						</Stack>
 					))}
 				</Stack>
