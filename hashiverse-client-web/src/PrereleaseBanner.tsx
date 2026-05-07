@@ -4,8 +4,8 @@ const prerelease_tag = process.env.PRERELEASE_TAG ?? "";
 
 const banner_style: React.CSSProperties = {
 	position: "fixed",
-	top: "0.75rem",
-	right: "0.75rem",
+	bottom: "0.75rem",
+	left: "0.75rem",
 	zIndex: 9999,
 	background: "#c87820",
 	color: "#221100",
