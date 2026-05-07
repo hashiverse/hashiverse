@@ -502,6 +502,10 @@ impl HashiverseClient {
         }
     }
 
+    pub async fn get_all_known_peers(&self) -> Vec<Peer> {
+        self.peer_tracker.read().await.peers().clone()
+    }
+
     pub async fn fetch_url_preview(&self, url: &str) -> anyhow::Result<FetchUrlPreviewResponseV1> {
         let peer = self.get_random_peer().await?;
 
