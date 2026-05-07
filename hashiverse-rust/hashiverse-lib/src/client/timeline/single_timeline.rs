@@ -73,7 +73,7 @@ impl SingleTimeline {
         self.base_id
     }
 
-    pub async fn get_more_posts(&mut self, time_millis: TimeMillis, max_posts: usize, bucket_durations: &[DurationMillis]) -> anyhow::Result<Vec<(BucketLocation, Bytes)>> {
+    pub async fn get_more_posts(&mut self, time_millis: TimeMillis, max_posts: usize, bucket_durations: &[DurationMillis]) -> anyhow::Result<Vec<(BucketLocation, Bytes, bool)>> {
         let mut encoded_posts = Vec::new();
 
         if TimeMillis::MAX == self.oldest_allowed_post_bundle_time_millis {
@@ -125,9 +125,11 @@ impl SingleTimeline {
                 let mut extraction_start_i = 0;
                 for i in 0..(encoded_post_bundle.header.num_posts as usize) {
                     let extraction_end_i = extraction_start_i + encoded_post_bundle.header.encoded_post_lengths[i];
-                    if self.post_ids_already_seen.insert(encoded_post_bundle.header.encoded_post_ids[i]) {
+                    let encoded_post_id = encoded_post_bundle.header.encoded_post_ids[i];
+                    if self.post_ids_already_seen.insert(encoded_post_id) {
                         let encoded_post = encoded_post_bundle.encoded_posts_bytes.slice(extraction_start_i..extraction_end_i);
-                        encoded_posts.push((bucket_location.clone(), encoded_post));
+                        let healed = encoded_post_bundle.header.encoded_post_healed.contains(&encoded_post_id);
+                        encoded_posts.push((bucket_location.clone(), encoded_post, healed));
                     }
                     extraction_start_i = extraction_end_i;
                 }
@@ -145,7 +147,7 @@ impl SingleTimeline {
         let pen_posts = self.recent_posts_pen.write().await.get_matching_posts(self.bucket_type, &self.base_id, &self.post_ids_already_seen, time_millis);
         for (bucket_location, encoded_post_bytes, post_id) in pen_posts {
             if self.post_ids_already_seen.insert(post_id) {
-                encoded_posts.push((bucket_location, encoded_post_bytes));
+                encoded_posts.push((bucket_location, encoded_post_bytes, false));
             }
         }
 
@@ -347,6 +349,34 @@ pub mod tests {
         assert_eq!(single_timeline.post_count(), 13);
         assert_eq!(single_timeline.oldest_allowed_post_bundle_time_millis(), TimeMillis::from_epoch_offset_str("-3M")?);
         assert_eq!(single_timeline.oldest_processed_post_bundle_time_millis(), TimeMillis::from_epoch_offset_str("-3M")?);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn timeline_healed_flag_is_per_post() -> anyhow::Result<()> {
+        // A bundle marks individual post_ids as healed via header.encoded_post_healed.
+        // get_more_posts must surface that as the third tuple element per post.
+        let id = Id::random();
+        let stub_post_bundle_manager = Arc::new(StubPostBundleManager::default());
+
+        let mut post_bundle = stub_post_bundle_manager.add_random_stub_post_bundle(&id, MILLIS_IN_MONTH, "1D", 5)?;
+        let healed_post_id = post_bundle.header.encoded_post_ids[2];
+        post_bundle.header.encoded_post_healed.insert(healed_post_id);
+        stub_post_bundle_manager.add_stub_post_bundle(&id, MILLIS_IN_MONTH, "1D", &post_bundle)?;
+
+        let mut single_timeline = SingleTimeline::new(BucketType::User, &id, stub_post_bundle_manager, empty_pen());
+        let posts = single_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("1M")?, 20, &BUCKET_DURATIONS[1..]).await?;
+        assert_eq!(posts.len(), 5);
+
+        let healed_count = posts.iter().filter(|(_, _, healed)| *healed).count();
+        assert_eq!(healed_count, 1, "exactly one post in this bundle is marked healed");
+
+        // Pen-only posts (locally-submitted, no bundle yet) must be reported as not healed.
+        // The existing bundle test already covers the bundle case; here just spot-check the
+        // unhealed posts come through with `false`.
+        let unhealed_count = posts.iter().filter(|(_, _, healed)| !*healed).count();
+        assert_eq!(unhealed_count, 4);
 
         Ok(())
     }

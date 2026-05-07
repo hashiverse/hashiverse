@@ -56,6 +56,7 @@ pub struct Post {
     pub bucket_location: String,
     pub post: String,
     pub encoded_post_header_hex: String,
+    pub healed: bool,
 }
 
 #[pymethods]
@@ -165,12 +166,12 @@ impl HashiverseClientPython {
     }
 
     fn post_process_timeline_posts(
-        encoded_posts: Vec<(BucketLocation, EncodedPostV1, Bytes)>,
+        encoded_posts: Vec<(BucketLocation, EncodedPostV1, Bytes, bool)>,
         oldest_processed_time_millis: hashiverse_lib::tools::time::TimeMillis,
     ) -> anyhow::Result<TimelineResponse> {
         let posts = encoded_posts
             .into_iter()
-            .filter_map(|(bucket_location, post, raw_bytes)| {
+            .filter_map(|(bucket_location, post, raw_bytes, healed)| {
                 let client_id = match post.header.client_id() {
                     Ok(client_id) => client_id,
                     Err(e) => {
@@ -192,6 +193,7 @@ impl HashiverseClientPython {
                     bucket_location: bucket_location.to_html_attr(),
                     post: post.post,
                     encoded_post_header_hex,
+                    healed,
                 })
             })
             .collect();
@@ -339,7 +341,7 @@ impl HashiverseClientPython {
         py_try!(py, self.runtime, {
             let bucket_location_parsed = BucketLocation::from_html_attr(&bucket_location)?;
             let post_id_parsed = Id::from_hex_str(&post_id)?;
-            let (bucket_location, post, raw_bytes) = client.get_post(bucket_location_parsed, &post_id_parsed).await?;
+            let (bucket_location, post, raw_bytes, healed) = client.get_post(bucket_location_parsed, &post_id_parsed).await?;
             let client_id = post.header.client_id()?;
             let encoded_post_header_hex = hex::encode(EncodedPostV1::bytes_without_body(raw_bytes)?);
             Post {
@@ -349,6 +351,7 @@ impl HashiverseClientPython {
                 bucket_location: bucket_location.to_html_attr(),
                 post: post.post,
                 encoded_post_header_hex,
+                healed,
             }
         })
     }

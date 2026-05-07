@@ -352,7 +352,7 @@ impl HashiverseClient {
         Ok(())
     }
 
-    pub async fn get_post(&self, bucket_location: BucketLocation, post_id: &Id) -> anyhow::Result<(BucketLocation, EncodedPostV1, Bytes)>
+    pub async fn get_post(&self, bucket_location: BucketLocation, post_id: &Id) -> anyhow::Result<(BucketLocation, EncodedPostV1, Bytes, bool)>
     {
         let post_bundle = self.post_bundle_manager.get_post_bundle(&bucket_location, self.runtime_services.time_provider.current_time_millis()).await?;
 
@@ -362,7 +362,8 @@ impl HashiverseClient {
             if post_bundle.header.encoded_post_ids[i] == *post_id {
                 let post_bytes = post_bundle.encoded_posts_bytes.slice(offset..offset + len);
                 let encoded_post = EncodedPostV1::decode_from_bytes(post_bytes.clone(), &bucket_location.base_id, true, true)?;
-                return Ok((bucket_location, encoded_post, post_bytes));
+                let healed = post_bundle.header.encoded_post_healed.contains(post_id);
+                return Ok((bucket_location, encoded_post, post_bytes, healed));
             }
             offset += len;
         }
@@ -388,14 +389,14 @@ impl HashiverseClient {
     }
 
 
-    async fn post_process_timeline_posts(&self, encoded_posts_bytes: Vec<(BucketLocation, Bytes)>) -> anyhow::Result<Vec<(BucketLocation, EncodedPostV1, Bytes)>> {
+    async fn post_process_timeline_posts(&self, encoded_posts_bytes: Vec<(BucketLocation, Bytes, bool)>) -> anyhow::Result<Vec<(BucketLocation, EncodedPostV1, Bytes, bool)>> {
         let mut encoded_posts = Vec::new();
-        for (bucket_location, encoded_post_bytes) in encoded_posts_bytes {
+        for (bucket_location, encoded_post_bytes, healed) in encoded_posts_bytes {
             let result = try {
                 let encoded_post = EncodedPostV1::decode_from_bytes(encoded_post_bytes.clone(), &bucket_location.base_id, true, true)?;
                 let meta_post = MetaPost::try_parse_meta_post(&encoded_post.post)?;
                 match meta_post {
-                    MetaPost::None => encoded_posts.push((bucket_location, encoded_post, encoded_post_bytes)),
+                    MetaPost::None => encoded_posts.push((bucket_location, encoded_post, encoded_post_bytes, healed)),
                     MetaPost::MetaPostV1(meta_post_v1) => {
                         let post_client_id = encoded_post.header.client_id()?;
                         self.meta_post_manager.process_incoming_meta_post(&meta_post_v1, &post_client_id).await?;
@@ -437,7 +438,7 @@ impl HashiverseClient {
         Ok(single_timeline)
     }
 
-    pub async fn single_timeline_get_more(&self, bucket_type: BucketType, base_id: &Id) -> anyhow::Result<(Vec<(BucketLocation, EncodedPostV1, Bytes)>, TimeMillis)> {
+    pub async fn single_timeline_get_more(&self, bucket_type: BucketType, base_id: &Id) -> anyhow::Result<(Vec<(BucketLocation, EncodedPostV1, Bytes, bool)>, TimeMillis)> {
         trace!("Getting more posts for {}", base_id);
 
         let mut single_timeline = self.single_timeline_lock(bucket_type, base_id).await?;
@@ -474,7 +475,7 @@ impl HashiverseClient {
         Ok(multiple_timeline)
     }
 
-    pub async fn multiple_timeline_get_more(&self, bucket_type: BucketType, base_ids: &Vec<Id>) -> anyhow::Result<(Vec<(BucketLocation, EncodedPostV1, Bytes)>, TimeMillis)> {
+    pub async fn multiple_timeline_get_more(&self, bucket_type: BucketType, base_ids: &Vec<Id>) -> anyhow::Result<(Vec<(BucketLocation, EncodedPostV1, Bytes, bool)>, TimeMillis)> {
         trace!("Getting more posts for base_ids.len()={}", base_ids.len());
 
         let mut multiple_timeline = self.multiple_timeline_lock(bucket_type, base_ids).await?;
@@ -580,7 +581,7 @@ impl HashiverseClient {
                 match encoded_posts {
                     Ok((encoded_posts, _oldest_processed_time_millis)) => {
                         info!("received {} more posts", encoded_posts.len());
-                        for (bucket_location_id, encoded_post, _raw_bytes) in encoded_posts {
+                        for (bucket_location_id, encoded_post, _raw_bytes, _healed) in encoded_posts {
                             info!("post: {} {} {}", bucket_location_id, encoded_post.header.time_millis, encoded_post.post);
                         }
                     }

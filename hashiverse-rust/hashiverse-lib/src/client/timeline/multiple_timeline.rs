@@ -44,7 +44,7 @@ impl MultipleTimeline {
         self.bucket_type
     }
 
-    pub async fn get_more_posts(&mut self, time_millis: TimeMillis, max_posts: usize, max_posts_per_single_timeline: usize, bucket_durations: &[DurationMillis]) -> anyhow::Result<Vec<(BucketLocation, Bytes)>> {
+    pub async fn get_more_posts(&mut self, time_millis: TimeMillis, max_posts: usize, max_posts_per_single_timeline: usize, bucket_durations: &[DurationMillis]) -> anyhow::Result<Vec<(BucketLocation, Bytes, bool)>> {
         let mut encoded_posts_aggregated = Vec::new();
 
         // Work out the priority of the SingleTimelines to poll

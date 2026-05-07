@@ -120,6 +120,7 @@ impl HashiverseClientWasm {
                 bucket_location: bucket_location.to_html_attr(),
                 post: encoded_post.post,
                 encoded_post_header_hex,
+                healed: false,
             }
         })
     }
@@ -149,7 +150,7 @@ impl HashiverseClientWasm {
         wasm_try!({
             let bucket_location = BucketLocation::from_html_attr(&bucket_location)?;
             let post_id = Id::from_hex_str(&post_id)?;
-            let (bucket_location, post, raw_bytes) = self.hashiverse_client.get_post(bucket_location, &post_id).await?;
+            let (bucket_location, post, raw_bytes, healed) = self.hashiverse_client.get_post(bucket_location, &post_id).await?;
             let client_id = post.header.client_id()?;
             let encoded_post_header_hex = hex::encode(EncodedPostV1::bytes_without_body(raw_bytes)?);
             Post {
@@ -159,6 +160,7 @@ impl HashiverseClientWasm {
                 bucket_location: bucket_location.to_html_attr(),
                 post: post.post,
                 encoded_post_header_hex,
+                healed,
             }
         })
     }
@@ -233,12 +235,12 @@ impl HashiverseClientWasm {
         })
     }
 
-    fn post_process_timeline_posts(&self, encoded_posts: Vec<(BucketLocation, EncodedPostV1, Bytes)>, oldest_processed_time_millis: TimeMillis) -> anyhow::Result<SingleTimelineGetMoreV1Response> {
+    fn post_process_timeline_posts(&self, encoded_posts: Vec<(BucketLocation, EncodedPostV1, Bytes, bool)>, oldest_processed_time_millis: TimeMillis) -> anyhow::Result<SingleTimelineGetMoreV1Response> {
         let response = SingleTimelineGetMoreV1Response {
             oldest_processed_time_millis: if oldest_processed_time_millis == TimeMillis::MAX { None } else { Some(oldest_processed_time_millis.0) },
             posts: encoded_posts
                 .into_iter()
-                .filter_map(|(bucket_location, post, raw_bytes)| {
+                .filter_map(|(bucket_location, post, raw_bytes, healed)| {
                     let client_id = match post.header.client_id() {
                         Ok(client_id) => client_id,
                         Err(e) => {
@@ -260,6 +262,7 @@ impl HashiverseClientWasm {
                         bucket_location: bucket_location.to_html_attr(),
                         post: post.post,
                         encoded_post_header_hex,
+                        healed,
                     })
                 })
                 .collect(),
@@ -520,6 +523,7 @@ pub struct Post {
     pub bucket_location: String,
     pub post: String,
     pub encoded_post_header_hex: String, // contains the hex-encoded EncodedPost without the post body
+    pub healed: bool, // true if the bundle header marks this post as healed (re-uploaded after loss); the displayed time may be inaccurate
 }
 
 #[derive(Tsify, Serialize, Deserialize)]

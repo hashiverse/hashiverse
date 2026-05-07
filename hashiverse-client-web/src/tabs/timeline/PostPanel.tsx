@@ -438,7 +438,15 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 							<UserNameControl client_id={post.client_id} nickname={bio?.nickname} tooltip={bio?.status} onClick={() => Tools.navigate_to_user(navigate, post.client_id)} />
 
 							<Box ml="auto" style={{ flex: "0 0 auto", cursor: "pointer" }} onClick={() => Tools.navigate_to_post(navigate, post.post_id, post.bucket_location)}>
-								<RelativeTimeAgo date={post.time_millis} />
+								{post.healed ? (
+									<Tooltip label={t("post.healed_date_warning")} withArrow>
+										<Text component="span" c="yellow.5">
+											<RelativeTimeAgo date={post.time_millis} />
+										</Text>
+									</Tooltip>
+								) : (
+									<RelativeTimeAgo date={post.time_millis} />
+								)}
 							</Box>
 						</Group>
 
