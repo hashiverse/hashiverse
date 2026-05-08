@@ -36,5 +36,12 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // once by the Python consumer after `logging.basicConfig`.
     m.add_function(wrap_pyfunction!(init_logging, m)?)?;
 
+    // HTML-fragment converters — Python composes post bodies from these and
+    // submits the result via HashiverseClient.submit_post.
+    m.add_function(wrap_pyfunction!(convert_text_to_hashiverse_html, m)?)?;
+    m.add_function(wrap_pyfunction!(convert_text_to_hashiverse_html_x_hashtag, m)?)?;
+    m.add_function(wrap_pyfunction!(convert_text_to_hashiverse_html_x_mention, m)?)?;
+    m.add_function(wrap_pyfunction!(convert_text_to_hashiverse_html_x_url_preview, m)?)?;
+
     Ok(())
 }

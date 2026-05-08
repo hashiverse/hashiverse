@@ -44,6 +44,44 @@ pub fn init_logging() -> PyResult<()> {
 }
 
 // ---------------------------------------------------------------------------
+// HTML-fragment converters — Python free functions wrapping plain_text_post.rs.
+//
+// Single source of truth for the canonical hashiverse HTML schema lives in
+// hashiverse-lib. Python callers (e.g. news-agent) compose post bodies by
+// calling these helpers and concatenating the results, then submit via
+// `HashiverseClient.submit_post`.
+
+#[pyfunction]
+pub fn convert_text_to_hashiverse_html(text: &str) -> String {
+    hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html(text)
+}
+
+#[pyfunction]
+pub fn convert_text_to_hashiverse_html_x_hashtag(hashtag: &str) -> String {
+    hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html_x_hashtag(hashtag)
+}
+
+#[pyfunction]
+pub fn convert_text_to_hashiverse_html_x_mention(client_id: &str) -> String {
+    hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html_x_mention(client_id)
+}
+
+#[pyfunction]
+pub fn convert_text_to_hashiverse_html_x_url_preview(
+    title: &str,
+    description: &str,
+    image_url: &str,
+    url: &str,
+) -> String {
+    hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html_x_url_preview(
+        title,
+        description,
+        image_url,
+        url,
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Data classes
 // ---------------------------------------------------------------------------
 
@@ -302,16 +340,15 @@ impl HashiverseClientPython {
     }
 
     // --- Posting ---
+    //
+    // submit_post takes raw hashiverse-flavoured HTML and submits it as-is.
+    // No preprocessing magic in the wrapper — Python callers compose the body
+    // themselves using the convert_text_to_hashiverse_html* free functions
+    // (defined below) for hashtag, mention, URL preview, and full-text
+    // conversion. Single source of truth for the canonical HTML schema lives
+    // in hashiverse-lib's plain_text_post.rs.
 
-    fn post_with_preprocessing(&self, py: Python<'_>, post_text: String) -> PyResult<()> {
-        let client = self.hashiverse_client.clone();
-        py_try!(py, self.runtime, {
-            let post_html = hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html(&post_text);
-            client.submit_post(&post_html).await?;
-        })
-    }
-
-    fn post_without_preprocessing(&self, py: Python<'_>, post_html: String) -> PyResult<()> {
+    fn submit_post(&self, py: Python<'_>, post_html: String) -> PyResult<()> {
         let client = self.hashiverse_client.clone();
         py_try!(py, self.runtime, {
             client.submit_post(&post_html).await?;
