@@ -112,6 +112,10 @@ impl ParallelPowGenerator for WasmParallelPowGenerator {
     fn active_jobs(&self) -> Vec<PowJobStatus> {
         self.tracker.lock().unwrap().snapshot()
     }
+
+    fn tracker(&self) -> &Arc<Mutex<JobTracker>> {
+        &self.tracker
+    }
 }
 
 /// Parse the `salt_hex:pow_u8:hash_hex` result string from `pow_compute_batch`.

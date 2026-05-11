@@ -64,7 +64,13 @@ pub enum PayloadRequestKind {
     CachePostBundleFeedbackV1,
     FetchUrlPreviewV1,
     TrendingHashtagsFetchV1,
+    PeerStatsRequestV1,
 }
+
+/// Number of variants in [`PayloadRequestKind`]. Manually maintained; the
+/// test `test_PAYLOAD_REQUEST_KIND_COUNT_matches_variants` keeps it honest.
+/// Used to size fixed-length per-kind counter arrays (e.g. on the server).
+pub const PAYLOAD_REQUEST_KIND_COUNT: usize = 17;
 
 impl PayloadRequestKind {
     pub fn from_u16(value: u16) -> anyhow::Result<Self> {
@@ -99,6 +105,7 @@ pub enum PayloadResponseKind {
     CachePostBundleFeedbackResponseV1,
     FetchUrlPreviewResponseV1,
     TrendingHashtagsFetchResponseV1,
+    PeerStatsResponseV1,
 }
 
 impl PayloadResponseKind {
@@ -795,6 +802,58 @@ impl TrendingHashtagsFetchResponseV1 {
     }
 }
 
+/// Client → Server: opt-in peer-introspection request.
+///
+/// Empty payload. The corresponding response carries a signed, compressed JSON
+/// document; per-request PoW is gated by `POW_MINIMUM_PER_PEER_STATS` and the
+/// server caches the response for a short window to absorb bursts of well-PoW'd
+/// callers without re-measuring every time.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct PeerStatsRequestV1 {}
+
+impl PeerStatsRequestV1 {
+    pub fn to_bytes(&self) -> anyhow::Result<Bytes> {
+        json::struct_to_bytes(self)
+    }
+
+    pub fn from_bytes(bytes: &Bytes) -> anyhow::Result<Self> {
+        json::bytes_to_struct(bytes)
+    }
+}
+
+/// Server → Client: signed peer-introspection response.
+///
+/// `json_compressed` is an lz4-compressed JSON object (the stats document).
+/// `signature` covers `timestamp.encode_be() || json_compressed` using the
+/// server's Ed25519 signing key — clients that re-share the response amongst
+/// themselves verify against the bytes as transmitted, so no canonical-JSON
+/// dance is required.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct PeerStatsResponseV1 {
+    pub peer: Peer,
+    pub timestamp: TimeMillis,
+    pub json_compressed: Bytes,
+    pub signature: Signature,
+}
+
+impl PeerStatsResponseV1 {
+    /// The exact byte sequence that `signature` covers.
+    pub fn signing_input(timestamp: TimeMillis, json_compressed: &[u8]) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(crate::tools::time::TIME_MILLIS_BYTES + json_compressed.len());
+        buf.extend_from_slice(timestamp.encode_be().as_ref());
+        buf.extend_from_slice(json_compressed);
+        buf
+    }
+
+    pub fn to_bytes(&self) -> anyhow::Result<Bytes> {
+        json::struct_to_bytes(self)
+    }
+
+    pub fn from_bytes(bytes: &Bytes) -> anyhow::Result<Self> {
+        json::bytes_to_struct(bytes)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::protocol::payload::payload::{GetPostBundleResponseV1, HealPostBundleClaimResponseV1, HealPostBundleClaimTokenV1, HealPostBundleClaimV1, HealPostBundleCommitResponseV1, HealPostBundleCommitV1, SubmitPostClaimTokenV1, SubmitPostCommitTokenV1};
@@ -814,7 +873,7 @@ mod tests {
     async fn test_to_from_GetPostBundleResponseV1() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
         let mut encoded_posts_ids = Vec::new();
@@ -845,9 +904,9 @@ mod tests {
 
         let peers_nearer = {
             vec![
-                ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?.to_peer(&time_provider)?,
-                ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?.to_peer(&time_provider)?,
-                ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?.to_peer(&time_provider)?,
+                ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?.to_peer(&time_provider)?,
+                ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?.to_peer(&time_provider)?,
+                ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?.to_peer(&time_provider)?,
             ]
         };
 
@@ -868,7 +927,7 @@ mod tests {
 
     async fn make_signed_header(time_provider: &RealTimeProvider) -> anyhow::Result<(EncodedPostBundleHeaderV1, ServerId)> {
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(time_provider, config::SERVER_KEY_POW_MIN, true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", time_provider, config::SERVER_KEY_POW_MIN, true, &pow_generator).await?;
         let peer = server_id.to_peer(time_provider)?;
         let num_posts: u8 = 4;
         let mut header = EncodedPostBundleHeaderV1 {
@@ -896,7 +955,7 @@ mod tests {
     async fn test_SubmitPostClaimTokenV1_verify() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
         let token = SubmitPostClaimTokenV1::new(peer, make_bucket_location()?, Id::random(), &server_id.keys.signature_key);
@@ -909,7 +968,7 @@ mod tests {
     async fn test_SubmitPostCommitTokenV1_verify() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
         let token = SubmitPostCommitTokenV1::new(peer, make_bucket_location()?, Id::random(), &server_id.keys.signature_key);
@@ -1023,7 +1082,7 @@ mod tests {
 
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         let bucket_location = make_bucket_location()?;
         let expires_at = time_provider.current_time_millis() + MILLIS_IN_MINUTE;
@@ -1042,7 +1101,7 @@ mod tests {
 
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         let bucket_location = make_bucket_location()?;
         let expires_at = time_provider.current_time_millis() + MILLIS_IN_MINUTE;
@@ -1074,7 +1133,7 @@ mod tests {
 
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         let bucket_location = make_bucket_location()?;
         let expires_at = time_provider.current_time_millis() + MILLIS_IN_MINUTE;
@@ -1097,7 +1156,7 @@ mod tests {
 
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         let bucket_location = make_bucket_location()?;
         let expires_at = time_provider.current_time_millis() + MILLIS_IN_MINUTE;
@@ -1371,5 +1430,52 @@ mod tests {
                 let _ = HealPostBundleCommitV1::from_bytes(&mut bytes);
             });
         }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_PAYLOAD_REQUEST_KIND_COUNT_matches_variants() {
+        use crate::protocol::payload::payload::{PayloadRequestKind, PAYLOAD_REQUEST_KIND_COUNT};
+        let last_variant = PayloadRequestKind::from_u16((PAYLOAD_REQUEST_KIND_COUNT - 1) as u16)
+            .expect("PAYLOAD_REQUEST_KIND_COUNT - 1 must decode to a valid variant");
+        assert_eq!(last_variant, PayloadRequestKind::PeerStatsRequestV1, "last variant changed; bump PAYLOAD_REQUEST_KIND_COUNT");
+        assert!(PayloadRequestKind::from_u16(PAYLOAD_REQUEST_KIND_COUNT as u16).is_err(), "PAYLOAD_REQUEST_KIND_COUNT must equal the variant count");
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_to_from_PeerStatsRequestV1() -> anyhow::Result<()> {
+        use crate::protocol::payload::payload::PeerStatsRequestV1;
+        let request = PeerStatsRequestV1 {};
+        let encoded = request.to_bytes()?;
+        let decoded = PeerStatsRequestV1::from_bytes(&encoded)?;
+        assert_eq!(decoded, request);
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn test_to_from_PeerStatsResponseV1() -> anyhow::Result<()> {
+        use crate::protocol::payload::payload::PeerStatsResponseV1;
+        use crate::tools::compression;
+
+        let time_provider = RealTimeProvider::default();
+        let pow_generator = StubParallelPowGenerator::new();
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
+        let peer = server_id.to_peer(&time_provider)?;
+
+        let doc = serde_json::json!({ "requests": { "PingV1": 7 }, "system": { "memory_total_bytes": 1234 } });
+        let json_bytes = serde_json::to_vec(&doc)?;
+        let json_compressed = compression::compress_for_speed(&json_bytes)?.to_bytes();
+
+        let timestamp = time_provider.current_time_millis();
+        let signing_input = PeerStatsResponseV1::signing_input(timestamp, &json_compressed);
+        let signature = crate::tools::signing::sign(&server_id.keys.signature_key, &signing_input);
+
+        let response = PeerStatsResponseV1 { peer, timestamp, json_compressed, signature };
+        let encoded = response.to_bytes()?;
+        let decoded = PeerStatsResponseV1::from_bytes(&encoded)?;
+        assert_eq!(decoded, response);
+        Ok(())
     }
 }

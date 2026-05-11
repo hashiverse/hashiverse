@@ -325,7 +325,7 @@ mod tests {
     async fn get_random_ingredients() -> anyhow::Result<(ServerId, Peer)> {
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(0), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
 
         let mut peer = server_id.to_peer(&time_provider)?;
         peer.pow_current_day = PeerPow::random();

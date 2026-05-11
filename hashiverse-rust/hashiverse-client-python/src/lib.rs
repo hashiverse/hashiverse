@@ -3,6 +3,7 @@ pub mod py_try;
 pub mod hashiverse_client_python;
 
 use pyo3::prelude::*;
+use pyo3::wrap_pyfunction;
 use hashiverse_client_python::*;
 
 // ---------------------------------------------------------------------------
@@ -30,6 +31,17 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Register the HashiverseClientPython under its Python-facing name
     m.add("HashiverseClient", m.py().get_type::<HashiverseClientPython>())?;
+
+    // Bridge Rust `log` records to Python's `logging`. Process-wide; called
+    // once by the Python consumer after `logging.basicConfig`.
+    m.add_function(wrap_pyfunction!(init_logging, m)?)?;
+
+    // HTML-fragment converters — Python composes post bodies from these and
+    // submits the result via HashiverseClient.submit_post.
+    m.add_function(wrap_pyfunction!(convert_text_to_hashiverse_html, m)?)?;
+    m.add_function(wrap_pyfunction!(convert_text_to_hashiverse_html_x_hashtag, m)?)?;
+    m.add_function(wrap_pyfunction!(convert_text_to_hashiverse_html_x_mention, m)?)?;
+    m.add_function(wrap_pyfunction!(convert_text_to_hashiverse_html_x_url_preview, m)?)?;
 
     Ok(())
 }

@@ -51,6 +51,8 @@ serde = { version = "1.0.228" }
 ouroboros = "0.18.5"
 moka = { version = "0.12", features = ["sync"] }
 hickory-resolver = { version = "0.25", features = ["https-ring", "dnssec-ring", "webpki-roots"] }
+sysinfo = { version = "0.36", default-features = false, features = ["system", "disk"] }
+serde_json = { version = "1.0.145" }
 
 [dev-dependencies]
 hashiverse-lib = { path = "../hashiverse-lib", features = ["generic-tests"] }

@@ -28,8 +28,8 @@ use hashiverse_lib::anyhow_assert_eq;
 use hashiverse_lib::protocol::payload::payload::{
     AnnounceResponseV1, AnnounceV1, BootstrapResponseV1, CachePostBundleFeedbackResponseV1, CachePostBundleFeedbackV1, CachePostBundleResponseV1, CachePostBundleV1, ErrorResponseV1, FetchUrlPreviewResponseV1, FetchUrlPreviewV1,
     GetPostBundleFeedbackResponseV1, GetPostBundleFeedbackV1, GetPostBundleResponseV1, GetPostBundleV1, HealPostBundleClaimResponseV1, HealPostBundleClaimTokenV1, HealPostBundleClaimV1, HealPostBundleCommitResponseV1, HealPostBundleCommitV1,
-    HealPostBundleFeedbackResponseV1, HealPostBundleFeedbackV1, PayloadRequestKind, PayloadResponseKind, PingResponseV1, SubmitPostClaimResponseV1, SubmitPostClaimTokenV1, SubmitPostClaimV1, SubmitPostCommitResponseV1, SubmitPostCommitTokenV1,
-    SubmitPostCommitV1, SubmitPostFeedbackResponseV1, SubmitPostFeedbackV1, TrendingHashtagV1, TrendingHashtagsFetchResponseV1, TrendingHashtagsFetchV1,
+    HealPostBundleFeedbackResponseV1, HealPostBundleFeedbackV1, PayloadRequestKind, PayloadResponseKind, PingResponseV1, PeerStatsRequestV1, PeerStatsResponseV1, SubmitPostClaimResponseV1, SubmitPostClaimTokenV1, SubmitPostClaimV1,
+    SubmitPostCommitResponseV1, SubmitPostCommitTokenV1, SubmitPostCommitV1, SubmitPostFeedbackResponseV1, SubmitPostFeedbackV1, TrendingHashtagV1, TrendingHashtagsFetchResponseV1, TrendingHashtagsFetchV1,
 };
 use hashiverse_lib::protocol::peer::PeerPow;
 use hashiverse_lib::protocol::posting::amplification::get_minimum_post_pow;
@@ -43,10 +43,13 @@ use hashiverse_lib::tools::time::{TimeMillis, MILLIS_IN_SECOND};
 use hashiverse_lib::tools::hyper_log_log::HyperLogLog;
 use hashiverse_lib::tools::types::{Id, Signature};
 use hashiverse_lib::tools::{hashing, url_preview};
-use hashiverse_lib::tools::{config, json, BytesGatherer};
+use hashiverse_lib::tools::{compression, config, json, signing, BytesGatherer};
 use hashiverse_lib::transport::transport::IncomingRequest;
 use log::{info, trace, warn};
 use std::collections::HashSet;
+use std::sync::atomic::Ordering;
+
+use crate::server::stats::{environment_stats_subtree, kademlia_stats_subtree, request_counts_subtree, system_stats_subtree};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -139,6 +142,11 @@ impl HashiverseServer {
         // Decode the envelope
         let rpc_request_packet_rx = RpcRequestPacketRx::decode(&current_time_millis, &self.server_id.keys.verification_key_bytes, &self.server_id.keys.pq_commitment_bytes, incoming.bytes.clone())?;
         // trace!("payload_request_kind={}", rpc_request_packet_rx.payload_request_kind);
+
+        // Count this inbound request. After decoding (so malformed traffic doesn't
+        // pollute the totals) but before the per-handler PoW check (so failed-PoW
+        // attempts still show up — adversarial load is the load we'd want to see).
+        self.request_counters[rpc_request_packet_rx.payload_request_kind.clone() as usize].fetch_add(1, Ordering::Relaxed);
 
         // Check that we have not seen this salt recently (stops replay attacks)
         {
@@ -279,6 +287,7 @@ impl HashiverseServer {
             PayloadRequestKind::CachePostBundleFeedbackV1 => { self.dispatch_network_payload_x_CachePostBundleFeedbackV1(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await? }
             PayloadRequestKind::FetchUrlPreviewV1 => self.dispatch_network_payload_x_FetchUrlPreviewV1(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await?,
             PayloadRequestKind::TrendingHashtagsFetchV1 => self.dispatch_network_payload_x_TrendingHashtagsFetchV1(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await?,
+            PayloadRequestKind::PeerStatsRequestV1 => self.dispatch_network_payload_x_PeerStatsRequestV1(cancellation_token, pow, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await?,
         };
 
         Ok((compress_response, payload_response_kind, payload))
@@ -1165,7 +1174,7 @@ impl HashiverseServer {
             .no_proxy()
             .build()?;
 
-        const URL_FETCH_MAX_BODY_BYTES: usize = 512 * 1024;
+        const URL_FETCH_MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
         let mut http_response = http_client.get(&request.url).send().await?;
 
         // Reject early if Content-Length already exceeds the limit — before reading any body bytes.
@@ -1254,6 +1263,61 @@ impl HashiverseServer {
         top_up_trending_hashtags_with_fallback(&mut response.trending_hashtags, request.limit, TRENDING_HASHTAGS_FALLBACK);
 
         Ok((PayloadResponseKind::TrendingHashtagsFetchResponseV1, BytesGatherer::from_bytes(response.to_bytes()?)))
+    }
+
+    #[allow(non_snake_case)]
+    async fn dispatch_network_payload_x_PeerStatsRequestV1(&self, _cancellation_token: CancellationToken, pow: Option<PeerPow>, payload_request_kind: PayloadRequestKind, bytes: Bytes) -> anyhow::Result<(PayloadResponseKind, BytesGatherer)> {
+        anyhow_assert_eq!(&PayloadRequestKind::PeerStatsRequestV1, &payload_request_kind);
+
+        let _request = PeerStatsRequestV1::from_bytes(&bytes)?;
+
+        let pow = pow.ok_or_else(|| anyhow::anyhow!("pow required for PeerStatsRequestV1"))?;
+        if pow.pow < config::POW_MINIMUM_PER_PEER_STATS {
+            anyhow::bail!("Insufficient pow for PeerStatsRequestV1: {} < {}", pow.pow, config::POW_MINIMUM_PER_PEER_STATS);
+        }
+
+        let time_millis = self.runtime_services.time_provider.current_time_millis();
+
+        // Cache check — hand back the same signed blob within the TTL so callers
+        // re-sharing it operate on a single canonical byte sequence per minute.
+        let cached_response = {
+            let cache = self.peer_stats_response_cache.lock();
+            match cache.as_ref() {
+                Some((cached_time, cached_response)) if (time_millis - *cached_time) < MILLIS_IN_SECOND.const_mul(60) => Some(cached_response.clone()),
+                _ => None,
+            }
+        };
+
+        let response = match cached_response {
+            Some(cached) => cached,
+            None => {
+                let doc = serde_json::json!({
+                    "version":     env!("CARGO_PKG_VERSION"),
+                    "requests":    request_counts_subtree(&self.request_counters),
+                    "system":      system_stats_subtree(),
+                    "kademlia":    kademlia_stats_subtree(&self.kademlia.read()),
+                    "environment": environment_stats_subtree(&self.environment),
+                });
+
+                let json_bytes = serde_json::to_vec(&doc)?;
+                let json_compressed = compression::compress_for_speed(&json_bytes)?.to_bytes();
+
+                let signing_input = PeerStatsResponseV1::signing_input(time_millis, &json_compressed);
+                let signature = signing::sign(&self.server_id.keys.signature_key, &signing_input);
+
+                let response = PeerStatsResponseV1 {
+                    peer: self.peer_self.read().clone(),
+                    timestamp: time_millis,
+                    json_compressed,
+                    signature,
+                };
+
+                *self.peer_stats_response_cache.lock() = Some((time_millis, response.clone()));
+                response
+            }
+        };
+
+        Ok((PayloadResponseKind::PeerStatsResponseV1, BytesGatherer::from_bytes(response.to_bytes()?)))
     }
 }
 
@@ -1356,6 +1420,189 @@ mod tests {
         let mut trending_hashtags: Vec<TrendingHashtagV1> = vec![];
         top_up_trending_hashtags_with_fallback(&mut trending_hashtags, 10, &["#hashiverse", "#news"]);
         assert_eq!(trending_hashtags.len(), 2, "should stop at the end of the fallback list, not pad further");
+    }
+
+    mod peer_stats {
+        use super::*;
+        use crate::environment::mem_environment_store::MemEnvironmentFactory;
+        use crate::environment::environment::EnvironmentFactory;
+        use crate::server::args::Args;
+        use crate::server::hashiverse_server::HashiverseServer;
+        use hashiverse_lib::protocol::payload::payload::{PAYLOAD_REQUEST_KIND_COUNT, PeerStatsRequestV1, PeerStatsResponseV1};
+        use hashiverse_lib::protocol::peer::PeerPow;
+        use hashiverse_lib::tools::compression;
+        use hashiverse_lib::tools::parallel_pow_generator::StubParallelPowGenerator;
+        use hashiverse_lib::tools::runtime_services::RuntimeServices;
+        use hashiverse_lib::tools::time::TimeMillis;
+        use hashiverse_lib::tools::time_provider::time_provider::RealTimeProvider;
+        use hashiverse_lib::tools::types::{Pow, VerificationKey};
+        use hashiverse_lib::transport::mem_transport::MemTransportFactory;
+        use std::sync::Arc;
+        use std::sync::atomic::Ordering;
+
+        async fn make_server() -> anyhow::Result<Arc<HashiverseServer>> {
+            let time_provider = Arc::new(RealTimeProvider::default());
+            let transport_factory = MemTransportFactory::default();
+            let pow_generator = Arc::new(StubParallelPowGenerator::new());
+            let runtime_services = Arc::new(RuntimeServices { time_provider, transport_factory, pow_generator });
+            let environment_factory = Arc::new(MemEnvironmentFactory::new(""));
+            let args = Args::default_for_testing();
+            HashiverseServer::new(runtime_services, environment_factory, args).await
+        }
+
+        /// Build a synthetic PeerPow with the requested pow value. The handler under
+        /// test only checks the threshold against `config::POW_MINIMUM_PER_PEER_STATS`
+        /// and does not re-verify the underlying PoW computation, so this is enough.
+        fn synthetic_pow(pow: Pow) -> PeerPow {
+            let mut peer_pow = PeerPow::zero();
+            peer_pow.pow = pow;
+            peer_pow
+        }
+
+        fn empty_request_bytes() -> Bytes {
+            PeerStatsRequestV1 {}.to_bytes().expect("PeerStatsRequestV1 must serialise")
+        }
+
+        fn decode_doc(response: &PeerStatsResponseV1) -> serde_json::Value {
+            let bytes = compression::decompress(&response.json_compressed).expect("decompress doc").to_bytes();
+            serde_json::from_slice(&bytes).expect("doc must be valid JSON")
+        }
+
+        #[tokio::test]
+        async fn rejects_insufficient_pow() {
+            let server = make_server().await.expect("server must start");
+            let result = server
+                .dispatch_network_payload_x_PeerStatsRequestV1(
+                    CancellationToken::new(),
+                    Some(synthetic_pow(Pow(config::POW_MINIMUM_PER_PEER_STATS.0.saturating_sub(1)))),
+                    PayloadRequestKind::PeerStatsRequestV1,
+                    empty_request_bytes(),
+                )
+                .await;
+            assert!(result.is_err(), "expected insufficient PoW to be rejected");
+        }
+
+        #[tokio::test]
+        async fn returns_response_with_expected_top_level_keys() {
+            let server = make_server().await.expect("server must start");
+            let (response_kind, gatherer) = server
+                .dispatch_network_payload_x_PeerStatsRequestV1(
+                    CancellationToken::new(),
+                    Some(synthetic_pow(config::POW_MINIMUM_PER_PEER_STATS)),
+                    PayloadRequestKind::PeerStatsRequestV1,
+                    empty_request_bytes(),
+                )
+                .await
+                .expect("handler must succeed at threshold pow");
+            assert_eq!(response_kind, PayloadResponseKind::PeerStatsResponseV1);
+
+            let response_bytes = gatherer.to_bytes();
+            let response = PeerStatsResponseV1::from_bytes(&response_bytes).expect("response must decode");
+            let doc = decode_doc(&response);
+
+            assert!(doc.get("version").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false), "version must be a non-empty string");
+            assert_eq!(doc["version"].as_str().unwrap(), env!("CARGO_PKG_VERSION"));
+            assert!(doc.get("requests").is_some(), "requests subtree missing");
+            assert!(doc.get("system").is_some(), "system subtree missing");
+            assert!(doc.get("kademlia").is_some(), "kademlia subtree missing");
+            assert!(doc.get("environment").is_some(), "environment subtree missing");
+
+            for key in ["memory_total_bytes", "memory_free_bytes", "disk_total_bytes", "disk_free_bytes", "load_1m", "load_5m", "load_15m"] {
+                assert!(doc["system"].get(key).map(|v| v.is_number()).unwrap_or(false), "system.{key} must be a number");
+            }
+            for key in ["post_bundle_count", "post_bundle_feedback_count", "post_bundle_total_bytes"] {
+                assert!(doc["environment"].get(key).map(|v| v.is_number()).unwrap_or(false), "environment.{key} must be a number");
+            }
+        }
+
+        #[tokio::test]
+        async fn counters_reflect_recorded_dispatches() {
+            let server = make_server().await.expect("server must start");
+
+            // Simulate inbound PingV1 dispatches by bumping the same counter the
+            // wrap_and_dispatch path bumps. This avoids the full RPC envelope dance
+            // while exercising the read path used by the stats handler.
+            for _ in 0..7 {
+                server.request_counters[PayloadRequestKind::PingV1 as usize].fetch_add(1, Ordering::Relaxed);
+            }
+
+            let (_, gatherer) = server
+                .dispatch_network_payload_x_PeerStatsRequestV1(
+                    CancellationToken::new(),
+                    Some(synthetic_pow(config::POW_MINIMUM_PER_PEER_STATS)),
+                    PayloadRequestKind::PeerStatsRequestV1,
+                    empty_request_bytes(),
+                )
+                .await
+                .expect("handler must succeed");
+            let response = PeerStatsResponseV1::from_bytes(&gatherer.to_bytes()).expect("response must decode");
+            let doc = decode_doc(&response);
+            assert_eq!(doc["requests"]["PingV1"].as_u64(), Some(7));
+        }
+
+        #[tokio::test]
+        async fn cache_returns_byte_identical_response_within_ttl() {
+            let server = make_server().await.expect("server must start");
+            let pow = synthetic_pow(config::POW_MINIMUM_PER_PEER_STATS);
+
+            let (_, gatherer_a) = server
+                .dispatch_network_payload_x_PeerStatsRequestV1(CancellationToken::new(), Some(pow.clone()), PayloadRequestKind::PeerStatsRequestV1, empty_request_bytes())
+                .await
+                .expect("first call must succeed");
+            let bytes_a = gatherer_a.to_bytes();
+
+            // Mutate a counter between calls; if the cache hands back a freshly
+            // built response we'd see the new count, but the cached blob predates it.
+            server.request_counters[PayloadRequestKind::PingV1 as usize].fetch_add(99, Ordering::Relaxed);
+
+            let (_, gatherer_b) = server
+                .dispatch_network_payload_x_PeerStatsRequestV1(CancellationToken::new(), Some(pow), PayloadRequestKind::PeerStatsRequestV1, empty_request_bytes())
+                .await
+                .expect("second call must succeed");
+            let bytes_b = gatherer_b.to_bytes();
+
+            assert_eq!(bytes_a, bytes_b, "cached response should be byte-identical across the TTL");
+        }
+
+        #[tokio::test]
+        async fn signature_verifies_and_fails_on_tamper() {
+            let server = make_server().await.expect("server must start");
+            let (_, gatherer) = server
+                .dispatch_network_payload_x_PeerStatsRequestV1(
+                    CancellationToken::new(),
+                    Some(synthetic_pow(config::POW_MINIMUM_PER_PEER_STATS)),
+                    PayloadRequestKind::PeerStatsRequestV1,
+                    empty_request_bytes(),
+                )
+                .await
+                .expect("handler must succeed");
+            let response = PeerStatsResponseV1::from_bytes(&gatherer.to_bytes()).expect("response must decode");
+
+            let verification_key = VerificationKey::from_bytes(&response.peer.verification_key_bytes).expect("verification key must decode");
+            let signing_input = PeerStatsResponseV1::signing_input(response.timestamp, &response.json_compressed);
+            signing::verify(&verification_key, &response.signature, &signing_input).expect("signature must verify against transmitted bytes");
+
+            // Mutate one byte of the compressed JSON: verification must fail.
+            let mut tampered = response.json_compressed.to_vec();
+            let tamper_index = tampered.len() / 2;
+            tampered[tamper_index] ^= 0xff;
+            let tampered_signing_input = PeerStatsResponseV1::signing_input(response.timestamp, &tampered);
+            assert!(signing::verify(&verification_key, &response.signature, &tampered_signing_input).is_err(), "verification must fail when json_compressed is tampered");
+
+            // Mutate the timestamp: verification must also fail.
+            let bumped_signing_input = PeerStatsResponseV1::signing_input(TimeMillis(response.timestamp.0 + 1), &response.json_compressed);
+            assert!(signing::verify(&verification_key, &response.signature, &bumped_signing_input).is_err(), "verification must fail when timestamp is mutated");
+        }
+
+        #[test]
+        fn request_counts_subtree_covers_every_variant() {
+            // Belt-and-braces guard for PAYLOAD_REQUEST_KIND_COUNT staying in lockstep
+            // with the enum at the server-stats layer.
+            let counters: [std::sync::atomic::AtomicU64; PAYLOAD_REQUEST_KIND_COUNT] = std::array::from_fn(|_| std::sync::atomic::AtomicU64::new(0));
+            let subtree = request_counts_subtree(&counters);
+            let map = subtree.as_object().expect("request_counts subtree must be an object");
+            assert_eq!(map.len(), PAYLOAD_REQUEST_KIND_COUNT);
+        }
     }
 }
 

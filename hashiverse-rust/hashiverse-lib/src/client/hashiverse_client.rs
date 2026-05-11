@@ -44,7 +44,10 @@ use crate::anyhow_assert_eq;
 use crate::client::post_bundle::live_post_bundle_feedback_manager::LivePostBundleFeedbackManager;
 use crate::client::post_bundle::post_bundle_feedback_manager::PostBundleFeedbackManager;
 use crate::client::timeline::multiple_timeline::MultipleTimeline;
-use crate::protocol::payload::payload::{FetchUrlPreviewResponseV1, FetchUrlPreviewV1, PayloadRequestKind, PayloadResponseKind, SubmitPostCommitTokenV1, TrendingHashtagsFetchResponseV1, TrendingHashtagsFetchV1};
+use crate::protocol::payload::payload::{FetchUrlPreviewResponseV1, FetchUrlPreviewV1, PayloadRequestKind, PayloadResponseKind, PeerStatsRequestV1, PeerStatsResponseV1, SubmitPostCommitTokenV1, TrendingHashtagsFetchResponseV1, TrendingHashtagsFetchV1};
+use crate::tools::compression;
+use crate::tools::signing;
+use crate::tools::types::VerificationKey;
 use crate::protocol::peer::Peer;
 use crate::protocol::rpc;
 use crate::tools::config::CLIENT_FEEDBACK_POW_NUMERAIRE;
@@ -129,6 +132,10 @@ impl HashiverseClient {
 
     pub fn client_id(&self) -> &ClientId {
         &self.client_id
+    }
+
+    pub fn active_pow_jobs(&self) -> Vec<crate::tools::parallel_pow_generator::PowJobStatus> {
+        self.runtime_services.pow_generator.active_jobs()
     }
 
     pub async fn client_storage_reset(&self) -> anyhow::Result<()> {
@@ -352,7 +359,7 @@ impl HashiverseClient {
         Ok(())
     }
 
-    pub async fn get_post(&self, bucket_location: BucketLocation, post_id: &Id) -> anyhow::Result<(BucketLocation, EncodedPostV1, Bytes)>
+    pub async fn get_post(&self, bucket_location: BucketLocation, post_id: &Id) -> anyhow::Result<(BucketLocation, EncodedPostV1, Bytes, bool)>
     {
         let post_bundle = self.post_bundle_manager.get_post_bundle(&bucket_location, self.runtime_services.time_provider.current_time_millis()).await?;
 
@@ -362,7 +369,8 @@ impl HashiverseClient {
             if post_bundle.header.encoded_post_ids[i] == *post_id {
                 let post_bytes = post_bundle.encoded_posts_bytes.slice(offset..offset + len);
                 let encoded_post = EncodedPostV1::decode_from_bytes(post_bytes.clone(), &bucket_location.base_id, true, true)?;
-                return Ok((bucket_location, encoded_post, post_bytes));
+                let healed = post_bundle.header.encoded_post_healed.contains(post_id);
+                return Ok((bucket_location, encoded_post, post_bytes, healed));
             }
             offset += len;
         }
@@ -388,14 +396,14 @@ impl HashiverseClient {
     }
 
 
-    async fn post_process_timeline_posts(&self, encoded_posts_bytes: Vec<(BucketLocation, Bytes)>) -> anyhow::Result<Vec<(BucketLocation, EncodedPostV1, Bytes)>> {
+    async fn post_process_timeline_posts(&self, encoded_posts_bytes: Vec<(BucketLocation, Bytes, bool)>) -> anyhow::Result<Vec<(BucketLocation, EncodedPostV1, Bytes, bool)>> {
         let mut encoded_posts = Vec::new();
-        for (bucket_location, encoded_post_bytes) in encoded_posts_bytes {
+        for (bucket_location, encoded_post_bytes, healed) in encoded_posts_bytes {
             let result = try {
                 let encoded_post = EncodedPostV1::decode_from_bytes(encoded_post_bytes.clone(), &bucket_location.base_id, true, true)?;
                 let meta_post = MetaPost::try_parse_meta_post(&encoded_post.post)?;
                 match meta_post {
-                    MetaPost::None => encoded_posts.push((bucket_location, encoded_post, encoded_post_bytes)),
+                    MetaPost::None => encoded_posts.push((bucket_location, encoded_post, encoded_post_bytes, healed)),
                     MetaPost::MetaPostV1(meta_post_v1) => {
                         let post_client_id = encoded_post.header.client_id()?;
                         self.meta_post_manager.process_incoming_meta_post(&meta_post_v1, &post_client_id).await?;
@@ -437,7 +445,7 @@ impl HashiverseClient {
         Ok(single_timeline)
     }
 
-    pub async fn single_timeline_get_more(&self, bucket_type: BucketType, base_id: &Id) -> anyhow::Result<(Vec<(BucketLocation, EncodedPostV1, Bytes)>, TimeMillis)> {
+    pub async fn single_timeline_get_more(&self, bucket_type: BucketType, base_id: &Id) -> anyhow::Result<(Vec<(BucketLocation, EncodedPostV1, Bytes, bool)>, TimeMillis)> {
         trace!("Getting more posts for {}", base_id);
 
         let mut single_timeline = self.single_timeline_lock(bucket_type, base_id).await?;
@@ -474,7 +482,7 @@ impl HashiverseClient {
         Ok(multiple_timeline)
     }
 
-    pub async fn multiple_timeline_get_more(&self, bucket_type: BucketType, base_ids: &Vec<Id>) -> anyhow::Result<(Vec<(BucketLocation, EncodedPostV1, Bytes)>, TimeMillis)> {
+    pub async fn multiple_timeline_get_more(&self, bucket_type: BucketType, base_ids: &Vec<Id>) -> anyhow::Result<(Vec<(BucketLocation, EncodedPostV1, Bytes, bool)>, TimeMillis)> {
         trace!("Getting more posts for base_ids.len()={}", base_ids.len());
 
         let mut multiple_timeline = self.multiple_timeline_lock(bucket_type, base_ids).await?;
@@ -502,6 +510,10 @@ impl HashiverseClient {
         }
     }
 
+    pub async fn get_all_known_peers(&self) -> Vec<Peer> {
+        self.peer_tracker.read().await.peers().clone()
+    }
+
     pub async fn fetch_url_preview(&self, url: &str) -> anyhow::Result<FetchUrlPreviewResponseV1> {
         let peer = self.get_random_peer().await?;
 
@@ -519,6 +531,43 @@ impl HashiverseClient {
 
         anyhow::ensure!(response.response_request_kind == PayloadResponseKind::FetchUrlPreviewResponseV1, "unexpected response kind: {}", response.response_request_kind);
         FetchUrlPreviewResponseV1::from_bytes(&response.bytes)
+    }
+
+    /// Issue a `PeerStatsRequestV1` to the peer identified by `peer_id` and return
+    /// the verified, decompressed stats document.
+    ///
+    /// The signature is verified against the response's own `peer` field — callers
+    /// receive either a verified `serde_json::Value` or an error. The doc's schema
+    /// is open-ended; the server decides what fields to include and at what nesting.
+    pub async fn fetch_peer_stats(&self, peer_id: &Id) -> anyhow::Result<serde_json::Value> {
+        let peer = {
+            let peer_tracker = self.peer_tracker.read().await;
+            peer_tracker.peers().iter().find(|peer| &peer.id == peer_id).cloned()
+        };
+        let peer = peer.ok_or_else(|| anyhow::anyhow!("peer not known to this client: {}", peer_id))?;
+
+        let payload = PeerStatsRequestV1 {}.to_bytes()?;
+        let sponsor_id = self.client_id.id;
+
+        let response = rpc::rpc::rpc_server_known_with_requisite_pow(
+            &self.runtime_services,
+            &sponsor_id,
+            &peer,
+            PayloadRequestKind::PeerStatsRequestV1,
+            payload,
+            crate::tools::config::POW_MINIMUM_PER_PEER_STATS,
+        ).await?;
+
+        anyhow::ensure!(response.response_request_kind == PayloadResponseKind::PeerStatsResponseV1, "unexpected response kind: {}", response.response_request_kind);
+        let response = PeerStatsResponseV1::from_bytes(&response.bytes)?;
+
+        let verification_key = VerificationKey::from_bytes(&response.peer.verification_key_bytes)?;
+        let signing_input = PeerStatsResponseV1::signing_input(response.timestamp, &response.json_compressed);
+        signing::verify(&verification_key, &response.signature, &signing_input)?;
+
+        let json_bytes = compression::decompress(&response.json_compressed)?.to_bytes();
+        let doc: serde_json::Value = serde_json::from_slice(&json_bytes)?;
+        Ok(doc)
     }
 
     pub async fn fetch_trending_hashtags(&self, limit: u16) -> anyhow::Result<TrendingHashtagsFetchResponseV1> {
@@ -576,7 +625,7 @@ impl HashiverseClient {
                 match encoded_posts {
                     Ok((encoded_posts, _oldest_processed_time_millis)) => {
                         info!("received {} more posts", encoded_posts.len());
-                        for (bucket_location_id, encoded_post, _raw_bytes) in encoded_posts {
+                        for (bucket_location_id, encoded_post, _raw_bytes, _healed) in encoded_posts {
                             info!("post: {} {} {}", bucket_location_id, encoded_post.header.time_millis, encoded_post.post);
                         }
                     }

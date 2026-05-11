@@ -77,7 +77,8 @@ impl RpcRequestPacketTx {
         let pow_content_hash: Hash = hashing::hash(payload_compressed.as_ref());
 
         // Do some proof of work on behalf of the destination server, sponsored by the caller
-        let (pow_timestamp, pow_salt, _, _) = ServerId::pow_generate(time_provider, pow_minimum_per_rpc, pow_sponsor_id, destination_verification_key_bytes, destination_pq_commitment_bytes, &pow_content_hash, pow_generator).await?;
+        let pow_label = format!("rpc:{}", payload_request_kind);
+        let (pow_timestamp, pow_salt, _, _) = ServerId::pow_generate(&pow_label, time_provider, pow_minimum_per_rpc, pow_sponsor_id, destination_verification_key_bytes, destination_pq_commitment_bytes, &pow_content_hash, pow_generator).await?;
 
         // Write the header
         let mut bytes_mut = BytesMut::with_capacity(size_of::<u8>() + size_of::<u8>() + size_of::<u16>() + ID_BYTES + TIME_MILLIS_BYTES + HASH_BYTES + SALT_BYTES + size_of::<u32>() + payload_compressed.len());

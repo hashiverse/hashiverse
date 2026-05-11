@@ -189,6 +189,23 @@ impl Environment {
         self.post_bundle_current_size_bytes.load(Ordering::Relaxed)
     }
 
+    /// Total on-disk bytes occupied by stored post bundles, as tracked by the
+    /// quota counter. Exposed for the server-stats RPC.
+    pub fn post_bundle_total_bytes(&self) -> usize {
+        self.post_bundle_current_size_bytes()
+    }
+
+    /// Number of post bundles currently in the store.
+    pub fn post_bundle_count(&self) -> anyhow::Result<usize> {
+        self.environment_store.post_bundle_count()
+    }
+
+    /// Number of distinct (location, post, feedback_type) feedback entries currently
+    /// in the store.
+    pub fn post_bundle_feedback_count(&self) -> anyhow::Result<usize> {
+        self.environment_store.post_bundle_feedback_count()
+    }
+
     pub async fn do_maintenance(self: &Arc<Self>, cancellation_token: &CancellationToken, time_millis: TimeMillis) -> anyhow::Result<()> {
         // log::trace!("do_maintenance");
 

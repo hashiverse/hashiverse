@@ -56,31 +56,31 @@ impl KeyLockerManager<MemKeyLocker> for MemKeyLockerManager {
     async fn create(&self, key_phrase: String) -> anyhow::Result<Arc<MemKeyLocker>> {
         let keys = Keys::from_phrase(&key_phrase)?;
         let client_id = ClientId::new(keys.verification_key_bytes, keys.pq_commitment_bytes)?;
-        let key_public = client_id.id_hex();
+        let client_id_hex = client_id.id_hex();
 
         let kml = Arc::new(MemKeyLocker { keys, client_id });
 
         let mut buckets = self.buckets.write();
-        buckets.insert(key_public, kml.clone());
+        buckets.insert(client_id_hex, kml.clone());
 
         Ok(kml)
     }
 
-    async fn switch(&self, key_public: String) -> anyhow::Result<Arc<MemKeyLocker>> {
+    async fn switch(&self, client_id_hex: String) -> anyhow::Result<Arc<MemKeyLocker>> {
         let buckets = self.buckets.read();
-        let kml = buckets.get(&key_public);
+        let kml = buckets.get(&client_id_hex);
         match kml {
             Some(kml) => Ok(kml.clone()),
-            None => Err(anyhow!("Unknown key_public {}", key_public)),
+            None => Err(anyhow!("Unknown key_public {}", client_id_hex)),
         }
     }
 
-    async fn delete(&self, key_public: String) -> anyhow::Result<()> {
+    async fn delete(&self, client_id_hex: String) -> anyhow::Result<()> {
         let mut buckets = self.buckets.write();
-        let kml = buckets.remove(&key_public);
+        let kml = buckets.remove(&client_id_hex);
         match kml {
             Some(_kml) => Ok(()),
-            None => Err(anyhow!("Unknown key_public {}", key_public)),
+            None => Err(anyhow!("Unknown key_public {}", client_id_hex)),
         }
     }
 

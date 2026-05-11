@@ -62,6 +62,7 @@ impl ServerId {
 
     // Generates the initial pow hash for a server.
     pub async fn pow_generate(
+        label: &str,
         time_provider: &dyn TimeProvider,
         pow_min: Pow,
         sponsor_id: &Id,
@@ -74,7 +75,7 @@ impl ServerId {
         let timestamp_be = timestamp.encode_be();
         let datas = [sponsor_id.as_ref(), verification_key.as_ref(), pq_commitment_bytes.as_ref(), timestamp_be.as_ref(), content_hash.as_ref()];
         let data_hash = pow::pow_compute_data_hash(&datas);
-        let (salt, pow, pow_hash) = pow_generator.generate("server_id", pow_min, data_hash).await?;
+        let (salt, pow, pow_hash) = pow_generator.generate(label, pow_min, data_hash).await?;
         Ok((timestamp, salt, pow, pow_hash))
     }
 
@@ -82,11 +83,11 @@ impl ServerId {
         pow::pow_measure(&[sponsor_id.as_ref(), verification_key.as_ref(), pqcommitment_bytes.as_ref(), timestamp_be.as_ref(), content_hash.as_ref()], salt)
     }
 
-    pub async fn new(time_provider: &dyn TimeProvider, pow_min: Pow, skip_pq_commitment_bytes: bool, pow_generator: &dyn ParallelPowGenerator) -> anyhow::Result<Self> {
+    pub async fn new(label: &str, time_provider: &dyn TimeProvider, pow_min: Pow, skip_pq_commitment_bytes: bool, pow_generator: &dyn ParallelPowGenerator) -> anyhow::Result<Self> {
         let sponsor_id = Id::random();
         let keys = Keys::from_rnd(skip_pq_commitment_bytes)?;
         let hash = Hash::random();
-        let (timestamp, salt, pow, pow_hash) = ServerId::pow_generate(time_provider, pow_min, &sponsor_id, &keys.verification_key_bytes, &keys.pq_commitment_bytes, &hash, pow_generator).await?;
+        let (timestamp, salt, pow, pow_hash) = ServerId::pow_generate(label, time_provider, pow_min, &sponsor_id, &keys.verification_key_bytes, &keys.pq_commitment_bytes, &hash, pow_generator).await?;
         let id = ServerId::server_pow_hash_to_id(pow_hash)?;
 
         Ok(ServerId {
@@ -259,7 +260,7 @@ mod tests {
         let pow_generator = StubParallelPowGenerator::new();
         const POW_MAX: u8 = 2 * 8;
         for pow_min in 0..POW_MAX {
-            let server_id = ServerId::new(&time_provider, Pow(pow_min), true, &pow_generator).await?;
+            let server_id = ServerId::new("own_pow", &time_provider, Pow(pow_min), true, &pow_generator).await?;
             assert!(server_id.pow >= Pow(pow_min));
         }
 
@@ -270,7 +271,7 @@ mod tests {
     async fn server_id_encode_decode_verify() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(8), false, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(8), false, &pow_generator).await?;
         let encoded = server_id.encode()?;
         let decoded = ServerId::decode(&encoded)?;
         decoded.verify()?;
@@ -281,7 +282,7 @@ mod tests {
     async fn server_id_encode_decode_reversibility() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(8), false, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(8), false, &pow_generator).await?;
 
         let server_id_encoded = server_id.encode()?;
         let server_id2 = ServerId::decode(&server_id_encoded)?;

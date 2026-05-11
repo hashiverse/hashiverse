@@ -186,14 +186,14 @@ impl KeyLockerManager<WasmKeyLocker> for WasmKeyLockerManager {
         Ok(wasm_key_locker)
     }
 
-    async fn switch(&self, key_public: String) -> anyhow::Result<Arc<WasmKeyLocker>> {
-        let key_public_js = JsString::from(key_public);
+    async fn switch(&self, client_id_hex: String) -> anyhow::Result<Arc<WasmKeyLocker>> {
+        let client_id_hex_js = JsString::from(client_id_hex);
 
         let database = get_database().await?;
         let transaction = database.transaction(STORE_NAME).with_mode(TransactionMode::Readonly).build().with_js_context(|| "transaction")?;
         let object_store = transaction.object_store(STORE_NAME).with_js_context(|| "object_store")?;
 
-        let js_value: Option<JsValue> = object_store.get(&key_public_js).await.with_js_context(|| "get")?;
+        let js_value: Option<JsValue> = object_store.get(&client_id_hex_js).await.with_js_context(|| "get")?;
         if let Some(js_value) = js_value {
             let verification_key_js = Reflect::get(&js_value, &"verification_key".into()).with_js_context(|| "get")?;
             let pq_commitment_js = Reflect::get(&js_value, &"pq_commitment".into()).with_js_context(|| "get")?;
@@ -213,14 +213,14 @@ impl KeyLockerManager<WasmKeyLocker> for WasmKeyLockerManager {
         Err(anyhow!("Key not found"))
     }
 
-    async fn delete(&self, key_public: String) -> anyhow::Result<()> {
-        let key_public_js = JsString::from(key_public);
+    async fn delete(&self, client_id_hex: String) -> anyhow::Result<()> {
+        let client_id_hex_js = JsString::from(client_id_hex);
 
         let database = get_database().await?;
         let transaction = database.transaction(STORE_NAME).with_mode(TransactionMode::Readwrite).build().with_js_context(|| "transaction")?;
         let object_store = transaction.object_store(STORE_NAME).with_js_context(|| "object_store")?;
 
-        object_store.delete(&key_public_js).await.with_js_context(|| "delete")?;
+        object_store.delete(&client_id_hex_js).await.with_js_context(|| "delete")?;
         transaction.commit().await.with_js_context(|| "commit")?;
 
         Ok(())

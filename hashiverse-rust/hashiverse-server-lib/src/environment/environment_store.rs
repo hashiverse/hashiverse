@@ -27,6 +27,7 @@ use hashiverse_lib::protocol::posting::encoded_post_feedback::EncodedPostFeedbac
 
 pub trait EnvironmentStore: Sync + Send {
     fn post_bundle_count(&self) -> anyhow::Result<usize>;
+    fn post_bundle_feedback_count(&self) -> anyhow::Result<usize>;
     fn post_bundle_metadata_get(&self, location_id: &Id) -> anyhow::Result<Option<PostBundleMetadata>>;
     fn post_bundle_metadata_put(&self, location_id: &Id, post_bundle_metadata: &PostBundleMetadata) -> anyhow::Result<()>;
     fn post_bundle_bytes_get(&self, location_id: &Id) -> anyhow::Result<Option<Bytes>>;

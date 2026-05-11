@@ -19,6 +19,10 @@ import { ComposeDialog } from "./tabs/compose/ComposeDialog.tsx";
 import { ComposeTab } from "./tabs/compose/ComposeTab.tsx";
 import { ConfigTab } from "./tabs/config/ConfigTab.tsx";
 import { ErrorTab } from "./tabs/ErrorTab.tsx";
+import { GeeksPeerStatsTab } from "./tabs/geeks/GeeksPeerStatsTab.tsx";
+import { GeeksPeersTab } from "./tabs/geeks/GeeksPeersTab.tsx";
+import { GeeksPowJobsTab } from "./tabs/geeks/GeeksPowJobsTab.tsx";
+import { GeeksTab } from "./tabs/geeks/GeeksTab.tsx";
 import { HashtagsGuardTab } from "./tabs/hashtags/HashtagsGuardTab.tsx";
 import { HomeTab } from "./tabs/home/HomeTab.tsx";
 import { HASHIVERSE_DOMAINS } from "./tabs/login/domains.ts";
@@ -168,6 +172,10 @@ const App: React.FC<AppProps> = ({ initial_hashiverse, initial_settings }) => {
 					<Route path="/login" element={<LoginTab hashiverse={hashiverse} on_login={on_login} on_logout={on_logout} user_settings_cache={user_settings_cache} />} />
 					<Route path="/share" element={<ShareTab user_settings_cache={user_settings_cache} />} />
 					<Route path="/config" element={<ConfigTab hashiverse={hashiverse} on_login={on_login} on_logout={on_logout} user_settings_cache={user_settings_cache} />} />
+					<Route path="/geeks" element={<GeeksTab />} />
+					<Route path="/geeks/peers" element={<GeeksPeersTab hashiverse={hashiverse} />} />
+					<Route path="/geeks/peer-stats/:peer_id_hex" element={<GeeksPeerStatsTab hashiverse={hashiverse} />} />
+					<Route path="/geeks/pow-jobs" element={<GeeksPowJobsTab hashiverse={hashiverse} />} />
 					<Route path="*" element={<ErrorTab />} />
 				</Routes>
 			</HashRouter>

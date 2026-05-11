@@ -64,8 +64,8 @@ pub trait KeyLockerManager<TKeyLocker: KeyLocker> {
     async fn new() -> anyhow::Result<Arc<Self>>;
     async fn list(&self) -> anyhow::Result<Vec<String>>;
     async fn create(&self, key_phrase: String) -> anyhow::Result<Arc<TKeyLocker>>;
-    async fn switch(&self, key_public: String) -> anyhow::Result<Arc<TKeyLocker>>;
-    async fn delete(&self, key_public: String) -> anyhow::Result<()>;
+    async fn switch(&self, client_id: String) -> anyhow::Result<Arc<TKeyLocker>>;
+    async fn delete(&self, client_id: String) -> anyhow::Result<()>;
     async fn reset(&self) -> anyhow::Result<()>;
 }
 
@@ -89,10 +89,10 @@ pub mod tests {
             assert_eq!(2, key_locker_manager.list().await?.len());
 
             // Locate key
-            let public_key_1 = key_locker_1.client_id().id.to_hex_str();
-            let public_key_2 = key_locker_2.client_id().id.to_hex_str();
-            assert_eq!(key_locker_1.client_id(), key_locker_manager.switch(public_key_1).await?.client_id());
-            assert_eq!(key_locker_2.client_id(), key_locker_manager.switch(public_key_2).await?.client_id());
+            let client_id_1 = key_locker_1.client_id().id.to_hex_str();
+            let client_id_2 = key_locker_2.client_id().id.to_hex_str();
+            assert_eq!(key_locker_1.client_id(), key_locker_manager.switch(client_id_1).await?.client_id());
+            assert_eq!(key_locker_2.client_id(), key_locker_manager.switch(client_id_2).await?.client_id());
 
             // End clean
             key_locker_manager.reset().await?;
@@ -112,13 +112,13 @@ pub mod tests {
             // Create a guest key (empty keyphrase) and a real key
             let _guest_key_locker = key_locker_manager.create("".to_string()).await?;
             let real_key_locker = key_locker_manager.create("real_keyphrase".to_string()).await?;
-            let real_public_key = real_key_locker.client_id().id.to_hex_str();
+            let real_client_id = real_key_locker.client_id().id.to_hex_str();
 
             // list() should only return the real key, not the guest
-            let listed_keys = key_locker_manager.list().await?;
-            assert_eq!(listed_keys.len(), 1, "list() should return exactly 1 key, got {}", listed_keys.len());
-            assert_eq!(listed_keys[0], real_public_key);
-            assert!(!listed_keys.contains(&GUEST_CLIENT_ID.to_string()), "list() must not return the guest client ID");
+            let listed_client_ids = key_locker_manager.list().await?;
+            assert_eq!(listed_client_ids.len(), 1, "list() should return exactly 1 key, got {}", listed_client_ids.len());
+            assert_eq!(listed_client_ids[0], real_client_id);
+            assert!(!listed_client_ids.contains(&GUEST_CLIENT_ID.to_string()), "list() must not return the guest client ID");
 
             key_locker_manager.reset().await?;
         };

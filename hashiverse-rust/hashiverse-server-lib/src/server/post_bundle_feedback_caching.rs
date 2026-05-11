@@ -157,7 +157,7 @@ mod tests {
     async fn make_test_server_and_peer() -> anyhow::Result<(ServerId, Peer)> {
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(0), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         Ok((server_id, peer))
     }

@@ -101,54 +101,54 @@ impl KeyLockerManager<DiskKeyLocker> for DiskKeyLockerManager {
     async fn create(&self, key_phrase: String) -> anyhow::Result<Arc<DiskKeyLocker>> {
         let keys = Keys::from_phrase(&key_phrase)?;
         let client_id = ClientId::new(keys.verification_key_bytes, keys.pq_commitment_bytes)?;
-        let key_public_hex = client_id.id_hex();
+        let client_id_hex = client_id.id_hex();
 
         // Persist the key to disk
         let persistence_data = keys.to_persistence(&self.passphrase)?;
-        let key_file_path = self.key_file_path(&key_public_hex);
+        let key_file_path = self.key_file_path(&client_id_hex);
         std::fs::write(&key_file_path, persistence_data)?;
 
         let native_key_locker = Arc::new(DiskKeyLocker { keys, client_id });
 
         let mut loaded_keys = self.loaded_keys.write();
-        loaded_keys.insert(key_public_hex, native_key_locker.clone());
+        loaded_keys.insert(client_id_hex, native_key_locker.clone());
 
         Ok(native_key_locker)
     }
 
-    async fn switch(&self, key_public: String) -> anyhow::Result<Arc<DiskKeyLocker>> {
+    async fn switch(&self, client_id_hex: String) -> anyhow::Result<Arc<DiskKeyLocker>> {
         // Check if already loaded in memory
         {
             let loaded_keys = self.loaded_keys.read();
-            if let Some(native_key_locker) = loaded_keys.get(&key_public) {
+            if let Some(native_key_locker) = loaded_keys.get(&client_id_hex) {
                 return Ok(native_key_locker.clone());
             }
         }
 
         // Load from disk
-        let key_file_path = self.key_file_path(&key_public);
+        let key_file_path = self.key_file_path(&client_id_hex);
         let persistence_data = std::fs::read_to_string(&key_file_path)
-            .map_err(|_| anyhow!("Key file not found for {}", key_public))?;
+            .map_err(|_| anyhow!("Key file not found for {}", client_id_hex))?;
         let keys = Keys::from_persistence(&self.passphrase, &persistence_data)?;
         let client_id = ClientId::new(keys.verification_key_bytes, keys.pq_commitment_bytes)?;
 
         let native_key_locker = Arc::new(DiskKeyLocker { keys, client_id });
 
         let mut loaded_keys = self.loaded_keys.write();
-        loaded_keys.insert(key_public, native_key_locker.clone());
+        loaded_keys.insert(client_id_hex, native_key_locker.clone());
 
         Ok(native_key_locker)
     }
 
-    async fn delete(&self, key_public: String) -> anyhow::Result<()> {
+    async fn delete(&self, client_id_hex: String) -> anyhow::Result<()> {
         // Remove from memory
         {
             let mut loaded_keys = self.loaded_keys.write();
-            loaded_keys.remove(&key_public);
+            loaded_keys.remove(&client_id_hex);
         }
 
         // Remove from disk
-        let key_file_path = self.key_file_path(&key_public);
+        let key_file_path = self.key_file_path(&client_id_hex);
         if key_file_path.exists() {
             std::fs::remove_file(&key_file_path)?;
         }

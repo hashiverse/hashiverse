@@ -103,15 +103,34 @@ pub trait ParallelPowGenerator: Send + Sync {
     /// Run up to `iteration_limit` hash attempts and return the best `(Salt, Pow, Hash)` found.
     /// Exits early if `pow >= pow_min` is achieved.
     ///
-    /// `label` is a human-readable job name for observability (e.g. `"rpc"`, `"feedback"`).
+    /// `label` is a human-readable job name for observability (e.g. `"rpc:AnnounceV1"`, `"feedback"`).
     /// `data_hash` must be pre-computed via `pow_compute_data_hash` before calling.
+    ///
+    /// Note: this method does NOT register the job with the tracker. Use it only from inside
+    /// `generate_loop` (which manages its own tracker entry across batches). Direct callers
+    /// that want their single-batch search to show up in `active_jobs()` should use
+    /// [`Self::generate_best_effort_tracked`] instead.
     async fn generate_best_effort(&self, label: &str, iteration_limit: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)>;
 
     /// Loop `generate_best_effort` in batches until `pow >= pow_min` is achieved.
     async fn generate(&self, label: &str, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)>;
 
-    /// Snapshot of all concurrently in-flight `generate` calls.
+    /// Snapshot of all concurrently in-flight tracked jobs.
     fn active_jobs(&self) -> Vec<PowJobStatus>;
+
+    /// Accessor for the impl's `JobTracker`. Exists so the default `generate_best_effort_tracked`
+    /// implementation can register the job without each impl having to duplicate the wrapping.
+    fn tracker(&self) -> &Arc<Mutex<JobTracker>>;
+
+    /// `generate_best_effort` plus tracker registration for the duration of the call.
+    /// Use this when a single-batch PoW is run directly (i.e. not inside `generate_loop`),
+    /// otherwise the job is invisible to `active_jobs()`.
+    async fn generate_best_effort_tracked(&self, label: &str, iteration_limit: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
+        let job_id = self.tracker().lock().unwrap().add(label, pow_min);
+        let result = self.generate_best_effort(label, iteration_limit, pow_min, data_hash).await;
+        self.tracker().lock().unwrap().remove(job_id);
+        result
+    }
 }
 
 /// Shared loop logic for `generate`: repeatedly calls `generate_best_effort` in
@@ -179,6 +198,10 @@ impl ParallelPowGenerator for StubParallelPowGenerator {
     fn active_jobs(&self) -> Vec<PowJobStatus> {
         self.tracker.lock().unwrap().snapshot()
     }
+
+    fn tracker(&self) -> &Arc<Mutex<JobTracker>> {
+        &self.tracker
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -243,14 +266,49 @@ impl ParallelPowGenerator for NativeParallelPowGenerator {
     fn active_jobs(&self) -> Vec<PowJobStatus> {
         self.tracker.lock().unwrap().snapshot()
     }
+
+    fn tracker(&self) -> &Arc<Mutex<JobTracker>> {
+        &self.tracker
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::tools::parallel_pow_generator::{ParallelPowGenerator, StubParallelPowGenerator};
+    use crate::tools::parallel_pow_generator::{JobTracker, ParallelPowGenerator, StubParallelPowGenerator};
     use crate::tools::pow::pow_compute_data_hash;
     use crate::tools::tools;
     use crate::tools::types::Pow;
+
+    #[test]
+    fn job_tracker_round_trip() {
+        let mut tracker = JobTracker::default();
+        assert!(tracker.snapshot().is_empty());
+
+        let job_a = tracker.add("rpc", Pow(18));
+        let job_b = tracker.add("post", Pow(22));
+
+        tracker.update(job_a, Pow(7));
+        tracker.update(job_b, Pow(13));
+        tracker.update(99999, Pow(255)); // unknown job_id is silently ignored
+
+        let mut snapshot = tracker.snapshot();
+        snapshot.sort_by(|a, b| a.label.cmp(&b.label));
+        assert_eq!(snapshot.len(), 2);
+        assert_eq!(snapshot[0].label, "post");
+        assert_eq!(snapshot[0].pow_min, Pow(22));
+        assert_eq!(snapshot[0].best_pow_so_far, Pow(13));
+        assert_eq!(snapshot[1].label, "rpc");
+        assert_eq!(snapshot[1].pow_min, Pow(18));
+        assert_eq!(snapshot[1].best_pow_so_far, Pow(7));
+
+        tracker.remove(job_a);
+        let remaining = tracker.snapshot();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].label, "post");
+
+        tracker.remove(job_b);
+        assert!(tracker.snapshot().is_empty());
+    }
 
     #[tokio::test]
     async fn stub_generates_valid_pow() -> anyhow::Result<()> {

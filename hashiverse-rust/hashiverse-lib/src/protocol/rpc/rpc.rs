@@ -196,7 +196,7 @@ mod tests {
         let pow_min = Pow(12);
         let pow_minimum_per_rpc = Pow(12);
 
-        let server_id = ServerId::new(runtime_services.time_provider.as_ref(), pow_min, true, runtime_services.pow_generator.as_ref()).await?;
+        let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), pow_min, true, runtime_services.pow_generator.as_ref()).await?;
         trace!("server_id.pow={}", server_id.pow);
         let payload_request_kind = PayloadRequestKind::AnnounceV1;
         let mut payload_request = [0u8; 1024];
@@ -255,7 +255,7 @@ mod tests {
         let pow_min_for_server_id = Pow(12);
         let pow_min_for_rpc = Pow(12);
 
-        let server_id = ServerId::new(&time_provider, pow_min_for_server_id, true, pow_generator.as_ref()).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, pow_min_for_server_id, true, pow_generator.as_ref()).await?;
         let payload_request_kind = PayloadRequestKind::AnnounceV1;
         let mut payload_request = [0u8; 1024];
         tools::random_fill_bytes(&mut payload_request);

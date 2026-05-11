@@ -57,10 +57,10 @@ impl HashiverseClientWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn create_from_stored_key(key_public: String) -> Result<Self, JsValue> {
+    pub async fn create_from_stored_key(client_id_hex: String) -> Result<Self, JsValue> {
         wasm_try!({
             let key_locker_manager = WasmKeyLockerManager::new().await?;
-            let key_locker = key_locker_manager.switch(key_public).await?;
+            let key_locker = key_locker_manager.switch(client_id_hex).await?;
             Self::create_from_xxx(true, key_locker).await?
         })
     }
@@ -120,6 +120,7 @@ impl HashiverseClientWasm {
                 bucket_location: bucket_location.to_html_attr(),
                 post: encoded_post.post,
                 encoded_post_header_hex,
+                healed: false,
             }
         })
     }
@@ -149,7 +150,7 @@ impl HashiverseClientWasm {
         wasm_try!({
             let bucket_location = BucketLocation::from_html_attr(&bucket_location)?;
             let post_id = Id::from_hex_str(&post_id)?;
-            let (bucket_location, post, raw_bytes) = self.hashiverse_client.get_post(bucket_location, &post_id).await?;
+            let (bucket_location, post, raw_bytes, healed) = self.hashiverse_client.get_post(bucket_location, &post_id).await?;
             let client_id = post.header.client_id()?;
             let encoded_post_header_hex = hex::encode(EncodedPostV1::bytes_without_body(raw_bytes)?);
             Post {
@@ -159,6 +160,7 @@ impl HashiverseClientWasm {
                 bucket_location: bucket_location.to_html_attr(),
                 post: post.post,
                 encoded_post_header_hex,
+                healed,
             }
         })
     }
@@ -215,12 +217,54 @@ impl HashiverseClientWasm {
         })
     }
 
-    fn post_process_timeline_posts(&self, encoded_posts: Vec<(BucketLocation, EncodedPostV1, Bytes)>, oldest_processed_time_millis: TimeMillis) -> anyhow::Result<SingleTimelineGetMoreV1Response> {
+    #[wasm_bindgen]
+    pub async fn get_all_known_peers_v1(&self) -> Result<Vec<PeerInfoV1>, JsValue> {
+        wasm_try!({
+            self.hashiverse_client.get_all_known_peers().await
+                .into_iter()
+                .map(|peer| PeerInfoV1 {
+                    peer_id_hex: peer.id.to_hex_str(),
+                    address: peer.address,
+                    version: peer.version,
+                    timestamp_millis: peer.timestamp.0,
+                    pow_initial: peer.pow_initial.pow.0,
+                    pow_current_day: peer.pow_current_day.pow.0,
+                    pow_current_month: peer.pow_current_month.pow.0,
+                })
+                .collect::<Vec<_>>()
+        })
+    }
+
+    #[wasm_bindgen]
+    pub async fn get_peer_stats_v1(&self, peer_id_hex: String) -> Result<JsValue, JsValue> {
+        wasm_try!({
+            let peer_id = Id::from_hex_str(&peer_id_hex)?;
+            let doc = self.hashiverse_client.fetch_peer_stats(&peer_id).await?;
+            let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
+            doc.serialize(&serializer).map_err(|e| anyhow!("serde_wasm_bindgen error: {}", e))?
+        })
+    }
+
+    #[wasm_bindgen]
+    pub async fn get_active_pow_jobs_v1(&self) -> Result<Vec<PowJobStatusV1>, JsValue> {
+        wasm_try!({
+            self.hashiverse_client.active_pow_jobs()
+                .into_iter()
+                .map(|job| PowJobStatusV1 {
+                    label: job.label,
+                    pow_min: job.pow_min.0,
+                    best_pow_so_far: job.best_pow_so_far.0,
+                })
+                .collect::<Vec<_>>()
+        })
+    }
+
+    fn post_process_timeline_posts(&self, encoded_posts: Vec<(BucketLocation, EncodedPostV1, Bytes, bool)>, oldest_processed_time_millis: TimeMillis) -> anyhow::Result<SingleTimelineGetMoreV1Response> {
         let response = SingleTimelineGetMoreV1Response {
             oldest_processed_time_millis: if oldest_processed_time_millis == TimeMillis::MAX { None } else { Some(oldest_processed_time_millis.0) },
             posts: encoded_posts
                 .into_iter()
-                .filter_map(|(bucket_location, post, raw_bytes)| {
+                .filter_map(|(bucket_location, post, raw_bytes, healed)| {
                     let client_id = match post.header.client_id() {
                         Ok(client_id) => client_id,
                         Err(e) => {
@@ -242,6 +286,7 @@ impl HashiverseClientWasm {
                         bucket_location: bucket_location.to_html_attr(),
                         post: post.post,
                         encoded_post_header_hex,
+                        healed,
                     })
                 })
                 .collect(),
@@ -502,6 +547,7 @@ pub struct Post {
     pub bucket_location: String,
     pub post: String,
     pub encoded_post_header_hex: String, // contains the hex-encoded EncodedPost without the post body
+    pub healed: bool, // true if the bundle header marks this post as healed (re-uploaded after loss); the displayed time may be inaccurate
 }
 
 #[derive(Tsify, Serialize, Deserialize)]
@@ -534,4 +580,24 @@ pub struct TrendingHashtag {
 #[tsify(into_wasm_abi)]
 pub struct TrendingHashtagsFetchResponse {
     pub trending_hashtags: Vec<TrendingHashtag>,
+}
+
+#[derive(Tsify, Serialize, Deserialize)]
+#[tsify(into_wasm_abi)]
+pub struct PeerInfoV1 {
+    pub peer_id_hex: String,
+    pub address: String,
+    pub version: String,
+    pub timestamp_millis: i64,
+    pub pow_initial: u8,
+    pub pow_current_day: u8,
+    pub pow_current_month: u8,
+}
+
+#[derive(Tsify, Serialize, Deserialize)]
+#[tsify(into_wasm_abi)]
+pub struct PowJobStatusV1 {
+    pub label: String,
+    pub pow_min: u8,
+    pub best_pow_so_far: u8,
 }

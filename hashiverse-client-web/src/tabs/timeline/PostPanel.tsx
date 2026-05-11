@@ -50,6 +50,7 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 	const is_own_post = post.client_id === user_settings_cache.own_client_id;
 	const is_author_followed = user_settings_cache.followed_client_ids.has(post.client_id);
 	const effective_blur_images = blur_images && !is_own_post && !(user_settings_cache.skip_warnings_for_followed && is_author_followed);
+	const [is_post_unblurred, set_is_post_unblurred] = useState(false);
 
 	const get_clicked_element = useCallback((e: React.MouseEvent<HTMLDivElement>, selector: string): HTMLElement | null => {
 		const target = e.target as HTMLElement | null;
@@ -63,12 +64,12 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 
 	const on_content_click = useCallback(
 		(e: React.MouseEvent<HTMLDivElement>) => {
-			// Unblur image on tap
-			if (effective_blur_images) {
+			// Unblur all images in this post on first tap of any blurred image
+			if (effective_blur_images && !is_post_unblurred) {
 				const target = e.target as HTMLElement;
 				if (target.tagName === "IMG" && !target.classList.contains("unblur-image")) {
 					e.preventDefault();
-					target.classList.add("unblur-image");
+					set_is_post_unblurred(true);
 					return;
 				}
 			}
@@ -119,7 +120,7 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 				}
 			}
 		},
-		[get_clicked_element, navigate, effective_blur_images],
+		[get_clicked_element, navigate, effective_blur_images, is_post_unblurred],
 	);
 
 	const sanitized_html = useMemo(() => {
@@ -131,7 +132,7 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 	const [is_expanded, set_is_expanded] = useState(false);
 	const [is_overflowing, set_is_overflowing] = useState(false);
 
-	const POST_CONTENT_MAX_HEIGHT = 400;
+	const POST_CONTENT_MAX_HEIGHT = 480;
 
 	useLayoutEffect(() => {
 		const el = content_ref.current;
@@ -176,6 +177,12 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 				});
 			} catch {}
 		});
+
+		if (is_post_unblurred) {
+			el.querySelectorAll<HTMLImageElement>("img").forEach((img) => {
+				img.classList.add("unblur-image");
+			});
+		}
 
 		set_is_overflowing(el.scrollHeight > POST_CONTENT_MAX_HEIGHT);
 	});
@@ -431,7 +438,15 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 							<UserNameControl client_id={post.client_id} nickname={bio?.nickname} tooltip={bio?.status} onClick={() => Tools.navigate_to_user(navigate, post.client_id)} />
 
 							<Box ml="auto" style={{ flex: "0 0 auto", cursor: "pointer" }} onClick={() => Tools.navigate_to_post(navigate, post.post_id, post.bucket_location)}>
-								<RelativeTimeAgo date={post.time_millis} />
+								{post.healed ? (
+									<Tooltip label={t("post.healed_date_warning")} withArrow>
+										<Text component="span" c="yellow.5">
+											<RelativeTimeAgo date={post.time_millis} />
+										</Text>
+									</Tooltip>
+								) : (
+									<RelativeTimeAgo date={post.time_millis} />
+								)}
 							</Box>
 						</Group>
 
@@ -557,9 +572,9 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 							type="button"
 							className="PostPanelReadMore"
 							onClick={() => set_is_expanded(!is_expanded)}
-							style={{ background: "none", border: "none", cursor: "pointer", font: "inherit", color: "inherit", width: "100%", padding: 0 }}
+							style={{ border: "none", cursor: "pointer", font: "inherit", color: "inherit", width: "100%" }}
 						>
-							{is_expanded ? t("post.show_less") : t("post.read_more")}
+							{is_expanded ? "▲ " + t("post.show_less") + " ▲" : "▼ " + t("post.read_more") + " ▼"}
 						</button>
 					)}
 				</div>

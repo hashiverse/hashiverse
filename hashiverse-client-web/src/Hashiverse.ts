@@ -16,7 +16,9 @@ import type { HashiverseClientWasm } from "../../hashiverse-rust/hashiverse-clie
 
 export type {
 	Bio,
+	PeerInfoV1,
 	Post,
+	PowJobStatusV1,
 	SingleTimelineGetMoreV1Response,
 	TrendingHashtag,
 	TrendingHashtagsFetchResponse,

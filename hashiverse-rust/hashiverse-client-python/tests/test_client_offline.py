@@ -8,7 +8,14 @@ that don't need a running hashiverse network.
 import tempfile
 import os
 import pytest
-from hashiverse_client import HashiverseClient, HashiverseError
+from hashiverse_client import (
+    HashiverseClient,
+    HashiverseError,
+    convert_text_to_hashiverse_html,
+    convert_text_to_hashiverse_html_x_hashtag,
+    convert_text_to_hashiverse_html_x_mention,
+    convert_text_to_hashiverse_html_x_url_preview,
+)
 
 
 @pytest.fixture
@@ -95,7 +102,7 @@ class TestKeyStorage:
         original_id = original.client_id
 
         restored = HashiverseClient.create_from_stored_key(
-            key_public=original_id,
+            client_id_hex=original_id,
             data_dir=data_dir,
             passphrase="",
             bootstrap_addresses=["127.0.0.1:19999"],
@@ -108,7 +115,7 @@ class TestKeyStorage:
         original_id = original.client_id
 
         restored = HashiverseClient.create_from_stored_key(
-            key_public=original_id,
+            client_id_hex=original_id,
             data_dir=data_dir,
             passphrase="s3cret",
             bootstrap_addresses=["127.0.0.1:19999"],
@@ -138,7 +145,7 @@ class TestKeyStorage:
         fake_hex_id = "ab" * 32  # 64 hex chars, won't match any real key
         with pytest.raises(HashiverseError):
             HashiverseClient.create_from_stored_key(
-                key_public=fake_hex_id,
+                client_id_hex=fake_hex_id,
                 data_dir=data_dir,
                 passphrase="",
                 bootstrap_addresses=["127.0.0.1:19999"],
@@ -176,3 +183,64 @@ class TestAnonymousClient:
     def test_anonymous_client_not_logged_in(self, data_dir):
         client = make_client(data_dir, key_phrase="")
         assert client.logged_in is False
+
+
+# ---------------------------------------------------------------------------
+# Free-function HTML-fragment converters (pure CPU, no client/network).
+#
+# The Rust impls live in hashiverse-lib/src/tools/plain_text_post.rs and have
+# their own thorough unit tests; these tests just verify the Python bindings
+# are wired up and pass strings through correctly.
+# ---------------------------------------------------------------------------
+
+
+class TestConvertHelpers:
+    def test_x_hashtag_returns_canonical_element(self):
+        out = convert_text_to_hashiverse_html_x_hashtag("RuStLang")
+        assert 'hashtag="rustlang"' in out
+        assert '<span class="plugin-hashtag-right">RuStLang</span>' in out
+        assert '<span class="plugin-hashtag-left">#</span>' in out
+
+    def test_x_mention_returns_64hex_element(self):
+        hex_id = "a" * 64
+        out = convert_text_to_hashiverse_html_x_mention(hex_id)
+        assert out == f'<mention client_id="{hex_id}"></mention>'
+
+    def test_x_url_preview_with_image(self):
+        out = convert_text_to_hashiverse_html_x_url_preview(
+            "Title",
+            "Desc",
+            "https://img.example/x.png",
+            "https://example.com/path",
+        )
+        assert '<div class="plugin-urlpreview-card">' in out
+        assert '<div class="plugin-urlpreview-card-image-container">' in out
+        assert (
+            '<img src="https://img.example/x.png" alt="" '
+            'class="plugin-urlpreview-card-image unblur-image">'
+        ) in out
+        assert '<div class="plugin-urlpreview-card-domain">example.com</div>' in out
+        assert (
+            '<a class="plugin-urlpreview-card-title" href="https://example.com/path" '
+            'rel="noopener noreferrer nofollow">Title</a>'
+        ) in out
+        assert '<div class="plugin-urlpreview-card-description">Desc</div>' in out
+
+    def test_x_url_preview_without_image_skips_image_branch(self):
+        out = convert_text_to_hashiverse_html_x_url_preview(
+            "Title",
+            "Desc",
+            "",
+            "https://example.com/",
+        )
+        assert "plugin-urlpreview-card-image-container" not in out
+        assert "<img " not in out
+        # Domain still rendered, just inside card-inner above the title link.
+        assert "example.com" in out
+
+    def test_full_text_handles_hashtag_mention_newline(self):
+        hex_id = "b" * 64
+        out = convert_text_to_hashiverse_html(f"#Rust @{hex_id}\nbye")
+        assert 'hashtag="rust"' in out
+        assert f'<mention client_id="{hex_id}"></mention>' in out
+        assert "<br>" in out

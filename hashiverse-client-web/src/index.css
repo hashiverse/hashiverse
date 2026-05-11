@@ -109,7 +109,7 @@ body {
 	left: 0;
 	right: 0;
 	padding: 30px 0 6px 0;
-	background: linear-gradient(to bottom, transparent, #1a1a1a);
+	background: linear-gradient(to bottom, transparent, #111, #111);
 }
 
 .PostPanelContent {
@@ -118,7 +118,7 @@ body {
 }
 
 .PostPanelContent--collapsed {
-	max-height: 400px;
+	max-height: 480px;
 	overflow: hidden;
 }
 

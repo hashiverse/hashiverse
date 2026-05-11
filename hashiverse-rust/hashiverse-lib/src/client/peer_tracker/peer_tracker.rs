@@ -215,7 +215,7 @@ mod tests {
         {
             // We have to loop because sometimes the diminished pow actually is sufficient by chance
             loop {
-                let server_id = ServerId::new(runtime_services.time_provider.as_ref(), Pow(config::SERVER_KEY_POW_MIN.0 / 2), true, runtime_services.pow_generator.as_ref()).await?;
+                let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), Pow(config::SERVER_KEY_POW_MIN.0 / 2), true, runtime_services.pow_generator.as_ref()).await?;
 
                 // Check that we havent succeeded by statistical mistake
                 if server_id.pow >= config::SERVER_KEY_POW_MIN {
@@ -233,7 +233,7 @@ mod tests {
 
         // Add an individual
         {
-            let server_id = ServerId::new(runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+            let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
             let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
 
             {
@@ -245,7 +245,7 @@ mod tests {
 
         // Cant add individual twice
         {
-            let server_id = ServerId::new(runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+            let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
             let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
 
             {
@@ -262,7 +262,7 @@ mod tests {
 
         // Add an individual, then remove it
         {
-            let server_id = ServerId::new(runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+            let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
             let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
 
             {
@@ -279,7 +279,7 @@ mod tests {
 
         // Remove an unknown individual
         {
-            let server_id = ServerId::new(runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+            let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
             let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
 
             {
@@ -302,7 +302,7 @@ mod tests {
 
         {
             for _ in 0..NUM_PEERS {
-                let server_id = ServerId::new(runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+                let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
                 let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
                 peer_tracker.add_peer(peer)?;
             }
@@ -350,7 +350,7 @@ mod tests {
 
         {
             for _ in 0..NUM_PEERS {
-                let server_id = ServerId::new(runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+                let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
                 let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
                 peer_tracker.add_peer(peer)?;
             }
@@ -378,7 +378,7 @@ mod tests {
 
         {
             for _ in 0..NUM_PEERS {
-                let server_id = ServerId::new(runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+                let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
                 let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
                 peer_tracker.add_peer(peer)?;
             }
@@ -392,7 +392,7 @@ mod tests {
             while let Some(_peer) = peer_iter.next_peer() {
                 count += 1;
                 if 0 == count % 10 {
-                    let server_id = ServerId::new(runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+                    let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
                     let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
                     peer_iter.add_peers(vec![peer]);
                 }
@@ -415,14 +415,14 @@ mod tests {
 
         {
             for _ in 0..NUM_PEERS {
-                let server_id = ServerId::new(runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+                let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
                 let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
                 peer_tracker.add_peer(peer)?;
             }
             assert_eq!(NUM_PEERS, peer_tracker.len());
         }
 
-        let target_server_id = ServerId::new(runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+        let target_server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
         let target_peer = target_server_id.to_peer(runtime_services.time_provider.as_ref())?;
 
         {
@@ -485,7 +485,7 @@ mod tests {
         const NUM_PEERS: usize = 100;
         let mut labs_added: Vec<crate::tools::tools::LeadingAgreementBits> = Vec::new();
         for _ in 0..NUM_PEERS {
-            let server_id = ServerId::new(runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+            let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
             let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
             let lab = crate::tools::tools::leading_agreement_bits_xor(&location_id.0, &peer.id.0);
             labs_added.push(lab);

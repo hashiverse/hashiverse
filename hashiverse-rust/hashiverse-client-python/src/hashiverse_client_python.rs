@@ -18,7 +18,68 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use bytes::Bytes;
 use tokio::runtime::Runtime;
+use crate::HashiverseError;
 use crate::py_try::anyhow_to_py;
+
+// ---------------------------------------------------------------------------
+// Logging bridge (Rust `log` → Python `logging`)
+// ---------------------------------------------------------------------------
+
+/// Bridge Rust `log` records to Python's `logging` module.
+///
+/// Process-wide, one-shot. Call this once from Python after configuring
+/// `logging.basicConfig`. Subsequent calls return the underlying
+/// `SetLoggerError` as a `HashiverseError` — that's by design: a second call
+/// indicates either a double-init or a logger fight, both of which should
+/// surface immediately rather than be silently swallowed.
+///
+/// Logger names on the Python side are the Rust target (e.g.
+/// `hashiverse_lib::client::peer_tracker`), so Python-side level filtering
+/// applies normally via the root logger or per-logger configuration.
+#[pyfunction]
+pub fn init_logging() -> PyResult<()> {
+    pyo3_log::try_init()
+        .map_err(|e| HashiverseError::new_err(format!("init_logging failed: {e}")))?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// HTML-fragment converters — Python free functions wrapping plain_text_post.rs.
+//
+// Single source of truth for the canonical hashiverse HTML schema lives in
+// hashiverse-lib. Python callers (e.g. news-agent) compose post bodies by
+// calling these helpers and concatenating the results, then submit via
+// `HashiverseClient.submit_post`.
+
+#[pyfunction]
+pub fn convert_text_to_hashiverse_html(text: &str) -> String {
+    hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html(text)
+}
+
+#[pyfunction]
+pub fn convert_text_to_hashiverse_html_x_hashtag(hashtag: &str) -> String {
+    hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html_x_hashtag(hashtag)
+}
+
+#[pyfunction]
+pub fn convert_text_to_hashiverse_html_x_mention(client_id: &str) -> String {
+    hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html_x_mention(client_id)
+}
+
+#[pyfunction]
+pub fn convert_text_to_hashiverse_html_x_url_preview(
+    title: &str,
+    description: &str,
+    image_url: &str,
+    url: &str,
+) -> String {
+    hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html_x_url_preview(
+        title,
+        description,
+        image_url,
+        url,
+    )
+}
 
 // ---------------------------------------------------------------------------
 // Data classes
@@ -33,6 +94,7 @@ pub struct Post {
     pub bucket_location: String,
     pub post: String,
     pub encoded_post_header_hex: String,
+    pub healed: bool,
 }
 
 #[pymethods]
@@ -142,12 +204,12 @@ impl HashiverseClientPython {
     }
 
     fn post_process_timeline_posts(
-        encoded_posts: Vec<(BucketLocation, EncodedPostV1, Bytes)>,
+        encoded_posts: Vec<(BucketLocation, EncodedPostV1, Bytes, bool)>,
         oldest_processed_time_millis: hashiverse_lib::tools::time::TimeMillis,
     ) -> anyhow::Result<TimelineResponse> {
         let posts = encoded_posts
             .into_iter()
-            .filter_map(|(bucket_location, post, raw_bytes)| {
+            .filter_map(|(bucket_location, post, raw_bytes, healed)| {
                 let client_id = match post.header.client_id() {
                     Ok(client_id) => client_id,
                     Err(e) => {
@@ -169,6 +231,7 @@ impl HashiverseClientPython {
                     bucket_location: bucket_location.to_html_attr(),
                     post: post.post,
                     encoded_post_header_hex,
+                    healed,
                 })
             })
             .collect();
@@ -214,10 +277,10 @@ impl HashiverseClientPython {
     }
 
     #[staticmethod]
-    #[pyo3(name = "create_from_stored_key", signature = (key_public, data_dir, passphrase="", bootstrap_addresses=None))]
+    #[pyo3(name = "create_from_stored_key", signature = (client_id_hex, data_dir, passphrase="", bootstrap_addresses=None))]
     fn create_from_stored_key(
         py: Python<'_>,
-        key_public: String,
+        client_id_hex: String,
         data_dir: String,
         passphrase: &str,
         bootstrap_addresses: Option<Vec<String>>,
@@ -234,7 +297,7 @@ impl HashiverseClientPython {
             std::fs::create_dir_all(&data_dir)?;
 
             let key_locker_manager = DiskKeyLockerManager::with_data_dir(data_dir.clone(), passphrase.to_string())?;
-            let key_locker: Arc<DiskKeyLocker> = runtime.block_on(key_locker_manager.switch(key_public))?;
+            let key_locker: Arc<DiskKeyLocker> = runtime.block_on(key_locker_manager.switch(client_id_hex))?;
 
             Self::create_from_xxx(runtime, data_dir, key_locker_manager, key_locker, bootstrap_addresses, true)
         })
@@ -277,16 +340,15 @@ impl HashiverseClientPython {
     }
 
     // --- Posting ---
+    //
+    // submit_post takes raw hashiverse-flavoured HTML and submits it as-is.
+    // No preprocessing magic in the wrapper — Python callers compose the body
+    // themselves using the convert_text_to_hashiverse_html* free functions
+    // (defined below) for hashtag, mention, URL preview, and full-text
+    // conversion. Single source of truth for the canonical HTML schema lives
+    // in hashiverse-lib's plain_text_post.rs.
 
-    fn post_with_preprocessing(&self, py: Python<'_>, post_text: String) -> PyResult<()> {
-        let client = self.hashiverse_client.clone();
-        py_try!(py, self.runtime, {
-            let post_html = hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html(&post_text);
-            client.submit_post(&post_html).await?;
-        })
-    }
-
-    fn post_without_preprocessing(&self, py: Python<'_>, post_html: String) -> PyResult<()> {
+    fn submit_post(&self, py: Python<'_>, post_html: String) -> PyResult<()> {
         let client = self.hashiverse_client.clone();
         py_try!(py, self.runtime, {
             client.submit_post(&post_html).await?;
@@ -316,7 +378,7 @@ impl HashiverseClientPython {
         py_try!(py, self.runtime, {
             let bucket_location_parsed = BucketLocation::from_html_attr(&bucket_location)?;
             let post_id_parsed = Id::from_hex_str(&post_id)?;
-            let (bucket_location, post, raw_bytes) = client.get_post(bucket_location_parsed, &post_id_parsed).await?;
+            let (bucket_location, post, raw_bytes, healed) = client.get_post(bucket_location_parsed, &post_id_parsed).await?;
             let client_id = post.header.client_id()?;
             let encoded_post_header_hex = hex::encode(EncodedPostV1::bytes_without_body(raw_bytes)?);
             Post {
@@ -326,6 +388,7 @@ impl HashiverseClientPython {
                 bucket_location: bucket_location.to_html_attr(),
                 post: post.post,
                 encoded_post_header_hex,
+                healed,
             }
         })
     }
