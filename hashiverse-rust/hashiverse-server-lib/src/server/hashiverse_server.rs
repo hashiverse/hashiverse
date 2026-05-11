@@ -75,7 +75,7 @@ impl HashiverseServer {
         let config_server_id = environment.config_get_bytes(CONFIG_SERVER_ID)?;
         let server_id = match config_server_id {
             None => {
-                let server_id = ServerId::new(runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, args.skip_pq_commitment_bytes, runtime_services.pow_generator.as_ref()).await?;
+                let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, args.skip_pq_commitment_bytes, runtime_services.pow_generator.as_ref()).await?;
                 environment.config_put_bytes(CONFIG_SERVER_ID, server_id.encode()?)?;
                 info!("starting new server with server_id={}", server_id);
                 server_id

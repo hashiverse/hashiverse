@@ -83,7 +83,7 @@ impl EncodedPostFeedbackV1 {
 
     pub async fn pow_generate(post_id: &Id, feedback_type: u8, pow_generator: &dyn ParallelPowGenerator) -> anyhow::Result<(Salt, Pow, Hash)> {
         let data_hash = pow::pow_compute_data_hash(&[post_id.as_bytes(), &[feedback_type]]);
-        pow_generator.generate_best_effort("feedback", CLIENT_FEEDBACK_POW_NUMERAIRE, Pow(255), data_hash).await
+        pow_generator.generate_best_effort_tracked("feedback", CLIENT_FEEDBACK_POW_NUMERAIRE, Pow(255), data_hash).await
     }
 
     pub fn pow_verify(&self) -> anyhow::Result<()> {

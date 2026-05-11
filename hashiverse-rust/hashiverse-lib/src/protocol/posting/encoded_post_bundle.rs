@@ -245,7 +245,7 @@ mod tests {
     async fn make_valid_bundle(base_id: Id) -> anyhow::Result<EncodedPostBundleV1> {
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(0), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
         let key_locker_manager = MemKeyLockerManager::new().await?;
@@ -309,7 +309,7 @@ mod tests {
         let base_id = Id::random();
         let mut bundle = make_valid_bundle(base_id).await?;
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
         bundle.header.encoded_post_ids[0] = Id::random(); // wrong post_id
         bundle.header.signature_generate(&server_id.keys.signature_key)?;
         assert!(bundle.verify(&base_id).is_err());
@@ -321,7 +321,7 @@ mod tests {
         let base_id = Id::random();
         let mut bundle = make_valid_bundle(base_id).await?;
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
         bundle.header.encoded_post_lengths[0] += 1; // length doesn't match bytes
         bundle.header.signature_generate(&server_id.keys.signature_key)?;
         assert!(bundle.verify(&base_id).is_err());
@@ -362,7 +362,7 @@ mod tests {
     async fn encoded_post_bundle_v1_to_from_bytes_roundtrip() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(0), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
         let num_posts: u8 = 3;
@@ -407,7 +407,7 @@ mod tests {
     async fn encoded_post_bundle_v1_to_from_bytes_roundtrip_without_body() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(0), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
         let num_posts: u8 = 3;

@@ -814,7 +814,7 @@ mod tests {
     async fn test_to_from_GetPostBundleResponseV1() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
         let mut encoded_posts_ids = Vec::new();
@@ -845,9 +845,9 @@ mod tests {
 
         let peers_nearer = {
             vec![
-                ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?.to_peer(&time_provider)?,
-                ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?.to_peer(&time_provider)?,
-                ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?.to_peer(&time_provider)?,
+                ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?.to_peer(&time_provider)?,
+                ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?.to_peer(&time_provider)?,
+                ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?.to_peer(&time_provider)?,
             ]
         };
 
@@ -868,7 +868,7 @@ mod tests {
 
     async fn make_signed_header(time_provider: &RealTimeProvider) -> anyhow::Result<(EncodedPostBundleHeaderV1, ServerId)> {
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(time_provider, config::SERVER_KEY_POW_MIN, true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", time_provider, config::SERVER_KEY_POW_MIN, true, &pow_generator).await?;
         let peer = server_id.to_peer(time_provider)?;
         let num_posts: u8 = 4;
         let mut header = EncodedPostBundleHeaderV1 {
@@ -896,7 +896,7 @@ mod tests {
     async fn test_SubmitPostClaimTokenV1_verify() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
         let token = SubmitPostClaimTokenV1::new(peer, make_bucket_location()?, Id::random(), &server_id.keys.signature_key);
@@ -909,7 +909,7 @@ mod tests {
     async fn test_SubmitPostCommitTokenV1_verify() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
         let token = SubmitPostCommitTokenV1::new(peer, make_bucket_location()?, Id::random(), &server_id.keys.signature_key);
@@ -1023,7 +1023,7 @@ mod tests {
 
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         let bucket_location = make_bucket_location()?;
         let expires_at = time_provider.current_time_millis() + MILLIS_IN_MINUTE;
@@ -1042,7 +1042,7 @@ mod tests {
 
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         let bucket_location = make_bucket_location()?;
         let expires_at = time_provider.current_time_millis() + MILLIS_IN_MINUTE;
@@ -1074,7 +1074,7 @@ mod tests {
 
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         let bucket_location = make_bucket_location()?;
         let expires_at = time_provider.current_time_millis() + MILLIS_IN_MINUTE;
@@ -1097,7 +1097,7 @@ mod tests {
 
         let time_provider = RealTimeProvider::default();
         let pow_generator = StubParallelPowGenerator::new();
-        let server_id = ServerId::new(&time_provider, Pow(4), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         let bucket_location = make_bucket_location()?;
         let expires_at = time_provider.current_time_millis() + MILLIS_IN_MINUTE;
