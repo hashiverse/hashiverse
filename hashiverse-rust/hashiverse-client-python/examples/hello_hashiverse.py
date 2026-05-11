@@ -30,7 +30,7 @@ print(f"Stored keys: {keys}")
 # Reconnect using the stored key (simulating a restart)
 print("\nReconnecting from stored key...")
 client2 = HashiverseClient.create_from_stored_key(
-    key_public=client.client_id,
+    client_id_hex=client.client_id,
     data_dir=data_dir,
     passphrase="my secret passphrase",  # must match the passphrase used to create the key
     bootstrap_addresses=["127.0.0.1:443"],

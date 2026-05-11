@@ -102,7 +102,7 @@ class TestKeyStorage:
         original_id = original.client_id
 
         restored = HashiverseClient.create_from_stored_key(
-            key_public=original_id,
+            client_id_hex=original_id,
             data_dir=data_dir,
             passphrase="",
             bootstrap_addresses=["127.0.0.1:19999"],
@@ -115,7 +115,7 @@ class TestKeyStorage:
         original_id = original.client_id
 
         restored = HashiverseClient.create_from_stored_key(
-            key_public=original_id,
+            client_id_hex=original_id,
             data_dir=data_dir,
             passphrase="s3cret",
             bootstrap_addresses=["127.0.0.1:19999"],
@@ -145,7 +145,7 @@ class TestKeyStorage:
         fake_hex_id = "ab" * 32  # 64 hex chars, won't match any real key
         with pytest.raises(HashiverseError):
             HashiverseClient.create_from_stored_key(
-                key_public=fake_hex_id,
+                client_id_hex=fake_hex_id,
                 data_dir=data_dir,
                 passphrase="",
                 bootstrap_addresses=["127.0.0.1:19999"],
