@@ -14,3 +14,4 @@ pub mod post_bundle_caching_shared;
 pub mod post_bundle_caching;
 pub mod post_bundle_feedback_caching;
 pub mod args;
+pub mod stats;

@@ -79,6 +79,11 @@ impl EnvironmentStore for MemEnvironmentStore {
         Ok(len)
     }
 
+    fn post_bundle_feedback_count(&self) -> anyhow::Result<usize> {
+        let total: usize = self.post_bundle_feedbacks.read().values().map(|entries| entries.len()).sum();
+        Ok(total)
+    }
+
     fn post_bundle_metadata_get(&self, location_id: &Id) -> anyhow::Result<Option<PostBundleMetadata>> {
         let post_bundle_metadata = self.post_bundle_metadata.read();
         let bytes = post_bundle_metadata.get(location_id);

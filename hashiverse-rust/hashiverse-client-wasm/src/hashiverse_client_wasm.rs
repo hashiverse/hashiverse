@@ -236,6 +236,16 @@ impl HashiverseClientWasm {
     }
 
     #[wasm_bindgen]
+    pub async fn get_peer_stats_v1(&self, peer_id_hex: String) -> Result<JsValue, JsValue> {
+        wasm_try!({
+            let peer_id = Id::from_hex_str(&peer_id_hex)?;
+            let doc = self.hashiverse_client.fetch_peer_stats(&peer_id).await?;
+            let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
+            doc.serialize(&serializer).map_err(|e| anyhow!("serde_wasm_bindgen error: {}", e))?
+        })
+    }
+
+    #[wasm_bindgen]
     pub async fn get_active_pow_jobs_v1(&self) -> Result<Vec<PowJobStatusV1>, JsValue> {
         wasm_try!({
             self.hashiverse_client.active_pow_jobs()

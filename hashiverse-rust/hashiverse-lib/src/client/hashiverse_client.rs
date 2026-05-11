@@ -44,7 +44,10 @@ use crate::anyhow_assert_eq;
 use crate::client::post_bundle::live_post_bundle_feedback_manager::LivePostBundleFeedbackManager;
 use crate::client::post_bundle::post_bundle_feedback_manager::PostBundleFeedbackManager;
 use crate::client::timeline::multiple_timeline::MultipleTimeline;
-use crate::protocol::payload::payload::{FetchUrlPreviewResponseV1, FetchUrlPreviewV1, PayloadRequestKind, PayloadResponseKind, SubmitPostCommitTokenV1, TrendingHashtagsFetchResponseV1, TrendingHashtagsFetchV1};
+use crate::protocol::payload::payload::{FetchUrlPreviewResponseV1, FetchUrlPreviewV1, PayloadRequestKind, PayloadResponseKind, PeerStatsRequestV1, PeerStatsResponseV1, SubmitPostCommitTokenV1, TrendingHashtagsFetchResponseV1, TrendingHashtagsFetchV1};
+use crate::tools::compression;
+use crate::tools::signing;
+use crate::tools::types::VerificationKey;
 use crate::protocol::peer::Peer;
 use crate::protocol::rpc;
 use crate::tools::config::CLIENT_FEEDBACK_POW_NUMERAIRE;
@@ -528,6 +531,43 @@ impl HashiverseClient {
 
         anyhow::ensure!(response.response_request_kind == PayloadResponseKind::FetchUrlPreviewResponseV1, "unexpected response kind: {}", response.response_request_kind);
         FetchUrlPreviewResponseV1::from_bytes(&response.bytes)
+    }
+
+    /// Issue a `PeerStatsRequestV1` to the peer identified by `peer_id` and return
+    /// the verified, decompressed stats document.
+    ///
+    /// The signature is verified against the response's own `peer` field — callers
+    /// receive either a verified `serde_json::Value` or an error. The doc's schema
+    /// is open-ended; the server decides what fields to include and at what nesting.
+    pub async fn fetch_peer_stats(&self, peer_id: &Id) -> anyhow::Result<serde_json::Value> {
+        let peer = {
+            let peer_tracker = self.peer_tracker.read().await;
+            peer_tracker.peers().iter().find(|peer| &peer.id == peer_id).cloned()
+        };
+        let peer = peer.ok_or_else(|| anyhow::anyhow!("peer not known to this client: {}", peer_id))?;
+
+        let payload = PeerStatsRequestV1 {}.to_bytes()?;
+        let sponsor_id = self.client_id.id;
+
+        let response = rpc::rpc::rpc_server_known_with_requisite_pow(
+            &self.runtime_services,
+            &sponsor_id,
+            &peer,
+            PayloadRequestKind::PeerStatsRequestV1,
+            payload,
+            crate::tools::config::POW_MINIMUM_PER_PEER_STATS,
+        ).await?;
+
+        anyhow::ensure!(response.response_request_kind == PayloadResponseKind::PeerStatsResponseV1, "unexpected response kind: {}", response.response_request_kind);
+        let response = PeerStatsResponseV1::from_bytes(&response.bytes)?;
+
+        let verification_key = VerificationKey::from_bytes(&response.peer.verification_key_bytes)?;
+        let signing_input = PeerStatsResponseV1::signing_input(response.timestamp, &response.json_compressed);
+        signing::verify(&verification_key, &response.signature, &signing_input)?;
+
+        let json_bytes = compression::decompress(&response.json_compressed)?.to_bytes();
+        let doc: serde_json::Value = serde_json::from_slice(&json_bytes)?;
+        Ok(doc)
     }
 
     pub async fn fetch_trending_hashtags(&self, limit: u16) -> anyhow::Result<TrendingHashtagsFetchResponseV1> {

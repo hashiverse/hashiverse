@@ -132,6 +132,11 @@ impl EnvironmentStore for DiskEnvironmentStore {
         let len = self.keyspace_post_bundle_last_accessed.len()?;
         Ok(len)
     }
+
+    fn post_bundle_feedback_count(&self) -> anyhow::Result<usize> {
+        let len = self.keyspace_post_bundle_feedback.len()?;
+        Ok(len)
+    }
     fn post_bundle_metadata_get(&self, location_id: &Id) -> anyhow::Result<Option<PostBundleMetadata>> {
         let guard = self.keyspace_post_bundle_metadata.get(location_id)?;
         match guard {

@@ -1,6 +1,7 @@
-import { Button, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
+import { Anchor, Button, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 import type { HashiverseClientWasmProxy, PeerInfoV1 } from "../../Hashiverse.ts";
 import { TabHeader } from "../TabHeader.tsx";
 
@@ -41,6 +42,7 @@ function format_relative(timestamp_millis: number): string {
 }
 
 export const GeeksPeersTab: React.FC<Props> = ({ hashiverse }) => {
+	const navigate = useNavigate();
 	const [peers, set_peers] = useState<PeerInfoV1[] | null>(null);
 	const [error, set_error] = useState<string | null>(null);
 	const [loading, set_loading] = useState(false);
@@ -116,6 +118,7 @@ export const GeeksPeersTab: React.FC<Props> = ({ hashiverse }) => {
 											</Table.Th>
 										);
 									})}
+									<Table.Th />
 								</Table.Tr>
 							</Table.Thead>
 							<Table.Tbody>
@@ -123,9 +126,9 @@ export const GeeksPeersTab: React.FC<Props> = ({ hashiverse }) => {
 									<Table.Tr key={peer.peer_id_hex}>
 										<Table.Td>
 											<Tooltip label={peer.peer_id_hex} withArrow>
-												<Text size="xs" ff="monospace" style={{ cursor: "copy" }} onClick={() => navigator.clipboard?.writeText(peer.peer_id_hex)}>
+												<Anchor size="xs" ff="monospace" onClick={() => navigate(`/geeks/peer-stats/${peer.peer_id_hex}`)} style={{ cursor: "pointer" }}>
 													{peer.peer_id_hex.slice(0, 16)}…
-												</Text>
+												</Anchor>
 											</Tooltip>
 										</Table.Td>
 										<Table.Td>

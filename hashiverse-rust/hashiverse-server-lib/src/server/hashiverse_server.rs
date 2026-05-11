@@ -27,7 +27,7 @@ use crate::server::kademlia::kademlia::Kademlia;
 use crate::server::post_bundle_caching::PostBundleCache;
 use crate::server::post_bundle_feedback_caching::PostBundleFeedbackCache;
 use hashiverse_lib::anyhow_assert_eq;
-use hashiverse_lib::protocol::payload::payload::{AnnounceResponseV1, AnnounceV1, BootstrapResponseV1, BootstrapV1, PayloadRequestKind, PayloadResponseKind};
+use hashiverse_lib::protocol::payload::payload::{AnnounceResponseV1, AnnounceV1, BootstrapResponseV1, BootstrapV1, PayloadRequestKind, PayloadResponseKind, PeerStatsResponseV1, PAYLOAD_REQUEST_KIND_COUNT};
 use hashiverse_lib::protocol::peer::Peer;
 use hashiverse_lib::protocol::rpc;
 use hashiverse_lib::tools::runtime_services::RuntimeServices;
@@ -42,6 +42,7 @@ use log::{error, info, trace, warn};
 use moka::sync::Cache;
 use parking_lot::{Mutex, RwLock};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use bytes::Bytes;
 use tokio::sync::mpsc;
@@ -64,6 +65,14 @@ pub struct HashiverseServer {
     pub post_bundle_feedback_cache: PostBundleFeedbackCache,
     pub trending_hashtags: Cache<String, HyperLogLog>,
     pub trending_hashtags_response_cache: Mutex<Option<(TimeMillis, TrendingHashtagsFetchResponseV1)>>,
+    /// Per-`PayloadRequestKind` running counter of inbound dispatches. Incremented
+    /// after packet decode + replay-guard but before per-handler PoW gates, so
+    /// adversarial load shows up too.
+    pub request_counters: Arc<[AtomicU64; PAYLOAD_REQUEST_KIND_COUNT]>,
+    /// Cached signed stats blob. The `TimeMillis` is the timestamp recorded in
+    /// the cached `PeerStatsResponseV1` itself — the cache hands the response
+    /// back verbatim so clients re-sharing it get a single canonical byte sequence.
+    pub peer_stats_response_cache: Mutex<Option<(TimeMillis, PeerStatsResponseV1)>>,
 }
 
 impl HashiverseServer {
@@ -138,6 +147,8 @@ impl HashiverseServer {
             post_bundle_feedback_cache: PostBundleFeedbackCache::new(config::SERVER_POST_BUNDLE_FEEDBACK_CACHE_MAX_BYTES),
             trending_hashtags: Cache::builder().max_capacity(256).build(),
             trending_hashtags_response_cache: Mutex::new(None),
+            request_counters: Arc::new(std::array::from_fn(|_| AtomicU64::new(0))),
+            peer_stats_response_cache: Mutex::new(None),
         };
 
         Ok(Arc::new(hashiverse_server))
