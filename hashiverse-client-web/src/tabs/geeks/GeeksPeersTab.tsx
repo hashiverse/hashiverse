@@ -118,7 +118,6 @@ export const GeeksPeersTab: React.FC<Props> = ({ hashiverse }) => {
 											</Table.Th>
 										);
 									})}
-									<Table.Th />
 								</Table.Tr>
 							</Table.Thead>
 							<Table.Tbody>
