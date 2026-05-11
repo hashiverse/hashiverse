@@ -18,6 +18,7 @@ export type {
 	Bio,
 	PeerInfoV1,
 	Post,
+	PowJobStatusV1,
 	SingleTimelineGetMoreV1Response,
 	TrendingHashtag,
 	TrendingHashtagsFetchResponse,

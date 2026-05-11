@@ -131,6 +131,10 @@ impl HashiverseClient {
         &self.client_id
     }
 
+    pub fn active_pow_jobs(&self) -> Vec<crate::tools::parallel_pow_generator::PowJobStatus> {
+        self.runtime_services.pow_generator.active_jobs()
+    }
+
     pub async fn client_storage_reset(&self) -> anyhow::Result<()> {
         self.client_storage.reset().await
     }

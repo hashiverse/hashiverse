@@ -247,10 +247,41 @@ impl ParallelPowGenerator for NativeParallelPowGenerator {
 
 #[cfg(test)]
 mod tests {
-    use crate::tools::parallel_pow_generator::{ParallelPowGenerator, StubParallelPowGenerator};
+    use crate::tools::parallel_pow_generator::{JobTracker, ParallelPowGenerator, StubParallelPowGenerator};
     use crate::tools::pow::pow_compute_data_hash;
     use crate::tools::tools;
     use crate::tools::types::Pow;
+
+    #[test]
+    fn job_tracker_round_trip() {
+        let mut tracker = JobTracker::default();
+        assert!(tracker.snapshot().is_empty());
+
+        let job_a = tracker.add("rpc", Pow(18));
+        let job_b = tracker.add("post", Pow(22));
+
+        tracker.update(job_a, Pow(7));
+        tracker.update(job_b, Pow(13));
+        tracker.update(99999, Pow(255)); // unknown job_id is silently ignored
+
+        let mut snapshot = tracker.snapshot();
+        snapshot.sort_by(|a, b| a.label.cmp(&b.label));
+        assert_eq!(snapshot.len(), 2);
+        assert_eq!(snapshot[0].label, "post");
+        assert_eq!(snapshot[0].pow_min, Pow(22));
+        assert_eq!(snapshot[0].best_pow_so_far, Pow(13));
+        assert_eq!(snapshot[1].label, "rpc");
+        assert_eq!(snapshot[1].pow_min, Pow(18));
+        assert_eq!(snapshot[1].best_pow_so_far, Pow(7));
+
+        tracker.remove(job_a);
+        let remaining = tracker.snapshot();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].label, "post");
+
+        tracker.remove(job_b);
+        assert!(tracker.snapshot().is_empty());
+    }
 
     #[tokio::test]
     async fn stub_generates_valid_pow() -> anyhow::Result<()> {

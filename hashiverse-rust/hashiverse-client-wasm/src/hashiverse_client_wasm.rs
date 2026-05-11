@@ -235,6 +235,20 @@ impl HashiverseClientWasm {
         })
     }
 
+    #[wasm_bindgen]
+    pub async fn get_active_pow_jobs_v1(&self) -> Result<Vec<PowJobStatusV1>, JsValue> {
+        wasm_try!({
+            self.hashiverse_client.active_pow_jobs()
+                .into_iter()
+                .map(|job| PowJobStatusV1 {
+                    label: job.label,
+                    pow_min: job.pow_min.0,
+                    best_pow_so_far: job.best_pow_so_far.0,
+                })
+                .collect::<Vec<_>>()
+        })
+    }
+
     fn post_process_timeline_posts(&self, encoded_posts: Vec<(BucketLocation, EncodedPostV1, Bytes, bool)>, oldest_processed_time_millis: TimeMillis) -> anyhow::Result<SingleTimelineGetMoreV1Response> {
         let response = SingleTimelineGetMoreV1Response {
             oldest_processed_time_millis: if oldest_processed_time_millis == TimeMillis::MAX { None } else { Some(oldest_processed_time_millis.0) },
@@ -568,4 +582,12 @@ pub struct PeerInfoV1 {
     pub pow_initial: u8,
     pub pow_current_day: u8,
     pub pow_current_month: u8,
+}
+
+#[derive(Tsify, Serialize, Deserialize)]
+#[tsify(into_wasm_abi)]
+pub struct PowJobStatusV1 {
+    pub label: String,
+    pub pow_min: u8,
+    pub best_pow_so_far: u8,
 }
