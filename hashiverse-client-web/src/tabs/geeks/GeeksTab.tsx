@@ -5,7 +5,7 @@ import { TabHeader } from "../TabHeader.tsx";
 
 const SUBPAGES: { path: string; label: string; description: string }[] = [
 	{ path: "/geeks/peers", label: "Peers", description: "Dump every peer currently tracked by the local PeerTracker." },
-	{ path: "/geeks/pow-jobs", label: "Current PoW jobs", description: "Live view of in-flight proof-of-work jobs from the local PoW generator." },
+	{ path: "/geeks/pow-jobs", label: "Current PoW jobs", description: "Live view of in-flight proof-of-work jobs." },
 ];
 
 export const GeeksTab: React.FC = () => {
