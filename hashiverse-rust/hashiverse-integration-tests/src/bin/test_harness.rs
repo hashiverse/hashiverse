@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
 
     let environment_factory = Arc::new(DiskEnvironmentFactory::new(args.base_path.as_str()));
     let ddos_protection: Arc<dyn DdosProtection> = NoopDdosProtection::default();
-    let bootstrap_provider: Arc<dyn BootstrapProvider> = Arc::new(hashiverse_lib::transport::bootstrap_provider::dnssec_bootstrap_provider::DnssecBootstrapProvider::new());
+    let bootstrap_provider: Arc<dyn BootstrapProvider> = hashiverse_lib::transport::bootstrap_provider::manual_bootstrap_provider::ManualBootstrapProvider::new(vec!["127.0.0.1:443".to_string()]);
     let transport_factory = Arc::new(FullHttpsTransportFactory::new(ddos_protection, bootstrap_provider));
     let pow_generator: Arc<dyn ParallelPowGenerator> = Arc::new(NativeParallelPowGenerator::new());
 
