@@ -1,16 +1,24 @@
 ---
-import Base from './Base.astro';
-import Nav from '../components/Nav.astro';
-import { strings_for } from '../i18n/strings';
+import Base from "./Base.astro";
+import Nav from "../components/Nav.astro";
+import { strings_for } from "../i18n/strings";
+import page_dates from "../generated/page_dates.json";
+import {
+  PUBLISHED_DATE,
+  build_article_schema,
+  build_breadcrumb_list,
+  safe_json_ld,
+} from "../utils/schema";
 
 interface Props {
   title: string;
   description?: string;
   sidebar?: { href: string; label: string; children?: { href: string; label: string }[] }[];
   banner?: string;
+  article_type?: "Article" | "TechArticle";
 }
 
-const { title, description, sidebar = [], banner } = Astro.props;
+const { title, description, sidebar = [], banner, article_type = "TechArticle" } = Astro.props;
 const current = Astro.url.pathname;
 const locale = Astro.currentLocale ?? "en";
 const t = strings_for(locale);
@@ -26,9 +34,51 @@ const current_index = linear_pages.findIndex((p) => normalize_path(p.href) === c
 const next_page = current_index >= 0 && current_index < linear_pages.length - 1
   ? linear_pages[current_index + 1]
   : null;
+
+const page_dates_map = page_dates as Record<string, string>;
+const date_modified = page_dates_map[current_normalized] ?? PUBLISHED_DATE;
+const canonical_href = Astro.site ? new URL(current, Astro.site).href : current;
+
+const effective_description = description ?? t.site.default_description;
+
+const article_schema = build_article_schema({
+  page_type: article_type,
+  headline: title,
+  description: effective_description,
+  locale,
+  url: canonical_href,
+  date_modified,
+});
+
+const section_segment = current_normalized.split("/")[2] ?? "";
+const section_label =
+  section_segment === "lore" ? t.nav.lore :
+  section_segment === "dev" ? t.nav.dev :
+  null;
+const section_href = section_label
+  ? (Astro.site ? new URL(`/${locale}/${section_segment}/`, Astro.site).href : `/${locale}/${section_segment}/`)
+  : null;
+const home_href = Astro.site ? new URL(`/${locale}/`, Astro.site).href : `/${locale}/`;
+
+const breadcrumb_items = [
+  { name: t.site.title_suffix, url: home_href },
+  ...(section_label && section_href ? [{ name: section_label, url: section_href }] : []),
+  { name: title, url: canonical_href },
+];
+const breadcrumb_schema = build_breadcrumb_list(breadcrumb_items);
 ---
 
-<Base title={title} description={description}>
+<Base
+  title={title}
+  description={description}
+  page_type="article"
+  article_published_time={PUBLISHED_DATE}
+  article_modified_time={date_modified}
+>
+  <Fragment slot="head">
+    <script type="application/ld+json" set:html={safe_json_ld(article_schema)} />
+    <script type="application/ld+json" set:html={safe_json_ld(breadcrumb_schema)} />
+  </Fragment>
   <Nav />
   <div class="layout">
     {sidebar.length > 0 && (

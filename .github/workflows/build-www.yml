@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: ./.github/actions/set-cargo-version-from-tag
 
@@ -47,6 +49,7 @@ jobs:
         working-directory: www
         env:
           PUBLIC_PRERELEASE_TAG: ${{ github.event.release.prerelease && github.event.release.tag_name || '' }}
+          PUBLIC_RELEASE_TAG: ${{ github.event.release.tag_name || '' }}
         run: npm run build
 
       # --- TypeScript docs ---
