@@ -1,6 +1,6 @@
 <img align="right" src="www/logo.png" width="150">
 
-# Hashiverse monorepo
+# Hashiverse — your open-source decentralized X/Twitter replacement
 
 Welcome to the Hashiverse!
 
