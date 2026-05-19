@@ -36,7 +36,7 @@ pub struct Keys {
     pub signature_key: SignatureKey,
     pub verification_key: VerificationKey,
     pub verification_key_bytes: VerificationKeyBytes,
-    pub pq_commitment_bytes: PQCommitmentBytes,
+    pub pq_commitment_bytes: PQCommitmentBytes, // For a critique on this, check out https://www.reddit.com/r/cryptography/comments/1thjnaj/critique_of_a_hybrid_identity_scheme_ed25519/
 }
 
 impl Display for Keys {
