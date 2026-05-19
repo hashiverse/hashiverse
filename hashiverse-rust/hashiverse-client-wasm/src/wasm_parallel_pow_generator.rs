@@ -1,4 +1,4 @@
-use hashiverse_lib::tools::parallel_pow_generator::{generate_loop, JobTracker, ParallelPowGenerator, PowJobStatus};
+use hashiverse_lib::tools::pow_generator::pow_generator::{generate_loop, JobTracker, PowGenerator, PowJobStatus};
 use hashiverse_lib::tools::types::{Hash, Pow, Salt};
 use js_sys::{Array, Object, Reflect};
 use log::{info, warn};
@@ -8,7 +8,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{MessageChannel, MessageEvent, Worker};
 
-/// A `ParallelPowGenerator` that distributes PoW work across pre-created Web Workers.
+/// A `PowGenerator` that distributes PoW work across pre-created Web Workers.
 /// The TypeScript side is responsible for spawning and initializing the workers;
 /// this struct simply receives the ready `Worker` handles.
 pub struct WasmParallelPowGenerator {
@@ -33,7 +33,7 @@ impl WasmParallelPowGenerator {
 }
 
 #[async_trait::async_trait]
-impl ParallelPowGenerator for WasmParallelPowGenerator {
+impl PowGenerator for WasmParallelPowGenerator {
     async fn generate_best_effort(&self, _label: &str, iteration_limit: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
         if self.workers.is_empty() {
             anyhow::bail!("No pow workers available");

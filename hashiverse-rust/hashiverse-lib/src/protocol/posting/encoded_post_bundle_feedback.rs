@@ -235,12 +235,12 @@ mod tests {
     use crate::tools::server_id::ServerId;
     use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
     use crate::tools::pow;
-    use crate::tools::parallel_pow_generator::StubParallelPowGenerator;
+    use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
 
     /// Builds a valid single-entry feedback bundle.
     async fn make_valid_bundle() -> anyhow::Result<EncodedPostBundleFeedbackV1> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
@@ -284,7 +284,7 @@ mod tests {
     #[tokio::test]
     async fn test_verify_wrong_feedbacks_hash() -> anyhow::Result<()> {
         let mut bundle = make_valid_bundle().await?;
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
         bundle.header.feedbacks_bytes_hash = hashing::hash(b"wrong");
         bundle.header.signature_generate(&server_id.keys.signature_key); // re-sign so header sig itself is valid
@@ -295,7 +295,7 @@ mod tests {
     #[tokio::test]
     async fn test_verify_partial_entry() -> anyhow::Result<()> {
         let mut bundle = make_valid_bundle().await?;
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
         // Append one extra byte to make the length not a multiple of ENTRY_SIZE
         let mut bytes = bundle.feedbacks_bytes.to_vec();
@@ -310,7 +310,7 @@ mod tests {
     #[tokio::test]
     async fn test_verify_wrong_pow() -> anyhow::Result<()> {
         let mut bundle = make_valid_bundle().await?;
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
         // Flip the last byte of the entry (the pow byte) to an incorrect value
         let mut bytes = bundle.feedbacks_bytes.to_vec();
@@ -326,7 +326,7 @@ mod tests {
     #[tokio::test]
     async fn encoded_post_bundle_header_v1_to_from_bytes_roundtrip() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         let feedbacks_bytes =  Bytes::new();

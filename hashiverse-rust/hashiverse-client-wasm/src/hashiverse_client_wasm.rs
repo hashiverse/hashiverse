@@ -8,7 +8,8 @@ use hashiverse_lib::client::key_locker::key_locker::KeyLockerManager;
 use hashiverse_lib::tools::buckets::{BucketLocation, BucketType};
 use hashiverse_lib::tools::time::TimeMillis;
 use hashiverse_lib::tools::time_provider::time_provider::RealTimeProvider;
-use hashiverse_lib::tools::parallel_pow_generator::{ParallelPowGenerator, StubParallelPowGenerator};
+use hashiverse_lib::tools::pow_generator::pow_generator::PowGenerator;
+use hashiverse_lib::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
 use hashiverse_lib::tools::runtime_services::RuntimeServices;
 use hashiverse_lib::tools::types::Id;
 use log::warn;
@@ -34,11 +35,11 @@ impl HashiverseClientWasm {
         let time_provider: Arc<dyn hashiverse_lib::tools::time_provider::time_provider::TimeProvider> = Arc::new(RealTimeProvider::default());
         let transport_factory: Arc<dyn hashiverse_lib::transport::transport::TransportFactory> = Arc::new(WasmTransportFactory::default());
         let client_storage = WasmClientStorage::new().await?;
-        let pow_generator: Arc<dyn ParallelPowGenerator> = match crate::get_wasm_parallel_pow_generator() {
-            Some(g) => g as Arc<dyn ParallelPowGenerator>,
+        let pow_generator: Arc<dyn PowGenerator> = match crate::get_wasm_parallel_pow_generator() {
+            Some(g) => g as Arc<dyn PowGenerator>,
             None => {
-                warn!("No native PoW generator available, falling back to StubParallelPowGenerator");
-                Arc::new(StubParallelPowGenerator::new())
+                warn!("No native PoW generator available, falling back to SingleThreadedPowGenerator");
+                Arc::new(SingleThreadedPowGenerator::new())
             }
         };
         let runtime_services = Arc::new(RuntimeServices { time_provider, transport_factory, pow_generator });

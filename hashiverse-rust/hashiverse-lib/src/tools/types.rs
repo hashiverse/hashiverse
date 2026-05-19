@@ -541,7 +541,7 @@ pub struct BucketKey {
 /// reporting / feedback. Encoding difficulty as a single byte keeps packets compact and keeps
 /// comparison cheap — `Ord` on `Pow` is the natural "harder or easier" ordering. Values are
 /// produced by the chained-hash measurement in [`crate::tools::pow::pow_measure_from_data_hash`]
-/// and searched for via [`ParallelPowGenerator`].
+/// and searched for via [`crate::tools::pow_generator::pow_generator::PowGenerator`].
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[serde(transparent)]
 pub struct Pow(pub u8);

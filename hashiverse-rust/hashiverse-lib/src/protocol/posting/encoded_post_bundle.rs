@@ -239,12 +239,12 @@ mod tests {
     use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
     use crate::tools::tools;
     use crate::tools::types::Pow;
-    use crate::tools::parallel_pow_generator::StubParallelPowGenerator;
+    use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
 
     /// Builds a valid single-post bundle encrypted under `base_id`.
     async fn make_valid_bundle(base_id: Id) -> anyhow::Result<EncodedPostBundleV1> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
@@ -308,7 +308,7 @@ mod tests {
     async fn test_verify_wrong_post_id_in_header() -> anyhow::Result<()> {
         let base_id = Id::random();
         let mut bundle = make_valid_bundle(base_id).await?;
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
         bundle.header.encoded_post_ids[0] = Id::random(); // wrong post_id
         bundle.header.signature_generate(&server_id.keys.signature_key)?;
@@ -320,7 +320,7 @@ mod tests {
     async fn test_verify_wrong_length_sum() -> anyhow::Result<()> {
         let base_id = Id::random();
         let mut bundle = make_valid_bundle(base_id).await?;
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
         bundle.header.encoded_post_lengths[0] += 1; // length doesn't match bytes
         bundle.header.signature_generate(&server_id.keys.signature_key)?;
@@ -361,7 +361,7 @@ mod tests {
     #[tokio::test]
     async fn encoded_post_bundle_v1_to_from_bytes_roundtrip() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
@@ -406,7 +406,7 @@ mod tests {
     #[tokio::test]
     async fn encoded_post_bundle_v1_to_from_bytes_roundtrip_without_body() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 

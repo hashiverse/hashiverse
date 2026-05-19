@@ -25,7 +25,7 @@
 
 use crate::protocol::peer::{Peer, PeerPow};
 use crate::tools::keys::Keys;
-use crate::tools::parallel_pow_generator::ParallelPowGenerator;
+use crate::tools::pow_generator::pow_generator::PowGenerator;
 use crate::tools::time::{TimeMillis, TimeMillisBytes, TIME_MILLIS_BYTES};
 use crate::tools::time_provider::time_provider::TimeProvider;
 use crate::tools::types::{Hash, Id, PQCommitmentBytes, Pow, Salt, Signature, SignatureKey, VerificationKey, VerificationKeyBytes, HASH_BYTES, ID_BYTES, PQ_COMMITMENT_BYTES, SALT_BYTES, SIGNATURE_KEY_BYTES, VERIFICATION_KEY_BYTES};
@@ -69,7 +69,7 @@ impl ServerId {
         verification_key: &VerificationKeyBytes,
         pq_commitment_bytes: &PQCommitmentBytes,
         content_hash: &Hash,
-        pow_generator: &dyn ParallelPowGenerator,
+        pow_generator: &dyn PowGenerator,
     ) -> anyhow::Result<(TimeMillis, Salt, Pow, Hash)> {
         let timestamp = time_provider.current_time_millis();
         let timestamp_be = timestamp.encode_be();
@@ -83,7 +83,7 @@ impl ServerId {
         pow::pow_measure(&[sponsor_id.as_ref(), verification_key.as_ref(), pqcommitment_bytes.as_ref(), timestamp_be.as_ref(), content_hash.as_ref()], salt)
     }
 
-    pub async fn new(label: &str, time_provider: &dyn TimeProvider, pow_min: Pow, skip_pq_commitment_bytes: bool, pow_generator: &dyn ParallelPowGenerator) -> anyhow::Result<Self> {
+    pub async fn new(label: &str, time_provider: &dyn TimeProvider, pow_min: Pow, skip_pq_commitment_bytes: bool, pow_generator: &dyn PowGenerator) -> anyhow::Result<Self> {
         let sponsor_id = Id::random();
         let keys = Keys::from_rnd(skip_pq_commitment_bytes)?;
         let hash = Hash::random();
@@ -251,13 +251,13 @@ impl fmt::Display for ServerId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::parallel_pow_generator::StubParallelPowGenerator;
+    use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
     use crate::tools::time_provider::time_provider::RealTimeProvider;
 
     #[tokio::test]
     async fn pow_test() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         const POW_MAX: u8 = 2 * 8;
         for pow_min in 0..POW_MAX {
             let server_id = ServerId::new("own_pow", &time_provider, Pow(pow_min), true, &pow_generator).await?;
@@ -270,7 +270,7 @@ mod tests {
     #[tokio::test]
     async fn server_id_encode_decode_verify() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(8), false, &pow_generator).await?;
         let encoded = server_id.encode()?;
         let decoded = ServerId::decode(&encoded)?;
@@ -281,7 +281,7 @@ mod tests {
     #[tokio::test]
     async fn server_id_encode_decode_reversibility() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(8), false, &pow_generator).await?;
 
         let server_id_encoded = server_id.encode()?;

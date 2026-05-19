@@ -134,7 +134,7 @@ impl HashiverseClient {
         &self.client_id
     }
 
-    pub fn active_pow_jobs(&self) -> Vec<crate::tools::parallel_pow_generator::PowJobStatus> {
+    pub fn active_pow_jobs(&self) -> Vec<crate::tools::pow_generator::pow_generator::PowJobStatus> {
         self.runtime_services.pow_generator.active_jobs()
     }
 

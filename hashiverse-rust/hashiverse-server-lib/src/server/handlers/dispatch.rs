@@ -1431,7 +1431,7 @@ mod tests {
         use hashiverse_lib::protocol::payload::payload::{PAYLOAD_REQUEST_KIND_COUNT, PeerStatsRequestV1, PeerStatsResponseV1};
         use hashiverse_lib::protocol::peer::PeerPow;
         use hashiverse_lib::tools::compression;
-        use hashiverse_lib::tools::parallel_pow_generator::StubParallelPowGenerator;
+        use hashiverse_lib::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
         use hashiverse_lib::tools::runtime_services::RuntimeServices;
         use hashiverse_lib::tools::time::TimeMillis;
         use hashiverse_lib::tools::time_provider::time_provider::RealTimeProvider;
@@ -1443,7 +1443,7 @@ mod tests {
         async fn make_server() -> anyhow::Result<Arc<HashiverseServer>> {
             let time_provider = Arc::new(RealTimeProvider::default());
             let transport_factory = MemTransportFactory::default();
-            let pow_generator = Arc::new(StubParallelPowGenerator::new());
+            let pow_generator = Arc::new(SingleThreadedPowGenerator::new());
             let runtime_services = Arc::new(RuntimeServices { time_provider, transport_factory, pow_generator });
             let environment_factory = Arc::new(MemEnvironmentFactory::new(""));
             let args = Args::default_for_testing();

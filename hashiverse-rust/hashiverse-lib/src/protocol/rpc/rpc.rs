@@ -181,7 +181,7 @@ mod tests {
     use crate::protocol::payload::payload::{PayloadRequestKind, PayloadResponseKind};
     use crate::protocol::rpc::rpc_request::{RpcRequestPacketRx, RpcRequestPacketTx, RpcRequestPacketTxFlags};
     use crate::protocol::rpc::rpc_response::{RpcResponsePacketRx, RpcResponsePacketTx, RpcResponsePacketTxFlags};
-    use crate::tools::parallel_pow_generator::StubParallelPowGenerator;
+    use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
     use crate::tools::server_id::ServerId;
     use crate::tools::time_provider::time_provider::RealTimeProvider;
     use crate::tools::tools;
@@ -250,7 +250,7 @@ mod tests {
     #[tokio::test]
     async fn rpc_request_packet_txrx_server_unknown() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator: Arc<dyn crate::tools::parallel_pow_generator::ParallelPowGenerator> = Arc::new(StubParallelPowGenerator::new());
+        let pow_generator: Arc<dyn crate::tools::pow_generator::pow_generator::PowGenerator> = Arc::new(SingleThreadedPowGenerator::new());
 
         let pow_min_for_server_id = Pow(12);
         let pow_min_for_rpc = Pow(12);

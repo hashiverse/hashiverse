@@ -1,6 +1,6 @@
 //! # Progress reporting and ETA estimation for long PoW searches
 //!
-//! A book-keeping helper for [`crate::tools::parallel_pow_generator`]: tracks how many
+//! A book-keeping helper for [`crate::tools::pow_generator`]: tracks how many
 //! attempts have been made across repeated batches, what the best-so-far `pow` is, and
 //! produces a human-readable log line including an ETA.
 //!

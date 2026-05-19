@@ -11,7 +11,7 @@ use hashiverse_server_lib::server::hashiverse_server::HashiverseServer;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use hashiverse_lib::tools::config;
-use hashiverse_lib::tools::parallel_pow_generator::NativeParallelPowGenerator;
+use hashiverse_lib::tools::pow_generator::native_parallel_pow_generator::NativeParallelPowGenerator;
 use hashiverse_lib::tools::runtime_services::RuntimeServices;
 use hashiverse_lib::transport::bootstrap_provider::dnssec_bootstrap_provider::DnssecBootstrapProvider;
 use hashiverse_server_lib::transport::ddos::ipset_ddos::IpsetDdosProtection;

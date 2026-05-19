@@ -865,14 +865,14 @@ mod tests {
     use crate::tools::{config, json, tools};
     use crate::tools::types::{Id, Pow, Signature, ID_BYTES};
     use std::collections::HashSet;
-    use crate::tools::parallel_pow_generator::StubParallelPowGenerator;
+    use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
     use bytes::Bytes;
 
     #[tokio::test]
     #[allow(non_snake_case)]
     async fn test_to_from_GetPostBundleResponseV1() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
@@ -926,7 +926,7 @@ mod tests {
     }
 
     async fn make_signed_header(time_provider: &RealTimeProvider) -> anyhow::Result<(EncodedPostBundleHeaderV1, ServerId)> {
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", time_provider, config::SERVER_KEY_POW_MIN, true, &pow_generator).await?;
         let peer = server_id.to_peer(time_provider)?;
         let num_posts: u8 = 4;
@@ -954,7 +954,7 @@ mod tests {
     #[allow(non_snake_case)]
     async fn test_SubmitPostClaimTokenV1_verify() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
@@ -967,7 +967,7 @@ mod tests {
     #[allow(non_snake_case)]
     async fn test_SubmitPostCommitTokenV1_verify() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
@@ -1081,7 +1081,7 @@ mod tests {
         use crate::tools::time::MILLIS_IN_MINUTE;
 
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         let bucket_location = make_bucket_location()?;
@@ -1100,7 +1100,7 @@ mod tests {
         use crate::tools::time::MILLIS_IN_MINUTE;
 
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         let bucket_location = make_bucket_location()?;
@@ -1132,7 +1132,7 @@ mod tests {
         use crate::tools::time::MILLIS_IN_MINUTE;
 
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         let bucket_location = make_bucket_location()?;
@@ -1155,7 +1155,7 @@ mod tests {
         use crate::tools::time::MILLIS_IN_MINUTE;
 
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         let bucket_location = make_bucket_location()?;
@@ -1460,7 +1460,7 @@ mod tests {
         use crate::tools::compression;
 
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
