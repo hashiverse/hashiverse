@@ -9,7 +9,7 @@ import "@mantine/core/styles.css";
 import { ActionIcon, createTheme, MantineProvider, Tooltip } from "@mantine/core";
 import React, { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { HashRouter, Route, Routes, useNavigate } from "react-router";
+import { HashRouter, Route, Routes, useLocation, useNavigate } from "react-router";
 import type { HashiverseClientWasmProxy } from "./Hashiverse.ts";
 import { Hashiverse } from "./Hashiverse.ts";
 import i18n from "./i18n/i18n.ts";
@@ -96,6 +96,18 @@ const PostLoginReturner: React.FC<PostLoginReturnerProps> = ({ user_settings_cac
 	return null;
 };
 
+// Reflects the current route in document.title so browser history, tab
+// labels, and bookmarks distinguish between screens. Literal pathname
+// suffix — no param resolution.
+const RouteTitleUpdater: React.FC = () => {
+	const location = useLocation();
+	useEffect(() => {
+		const suffix = location.pathname === "/" ? "Home" : location.pathname.slice(1);
+		document.title = `Hashiverse - ${suffix}`;
+	}, [location.pathname]);
+	return null;
+};
+
 const App: React.FC<AppProps> = ({ initial_hashiverse, initial_settings }) => {
 	useKeyboardInsetBottomCssVariable();
 	const [hashiverse, set_hashiverse] = useState<HashiverseClientWasmProxy>(initial_hashiverse);
@@ -133,6 +145,7 @@ const App: React.FC<AppProps> = ({ initial_hashiverse, initial_settings }) => {
 	return (
 		<div className="App FullColumnChildAndParent">
 			<HashRouter>
+				<RouteTitleUpdater />
 				<ComposeDialog hashiverse={hashiverse} user_settings_cache={user_settings_cache} />
 				<PostLoginReturner user_settings_cache={user_settings_cache} />
 				<Routes>
