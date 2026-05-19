@@ -54,9 +54,7 @@ impl Keys {
 
     pub fn from_phrase(phrase: &str) -> anyhow::Result<Keys> {
         let mut seed = [0u8; 32];
-        Argon2::default()
-            .hash_password_into(phrase.as_bytes(), b"hashiverse-global-salt", &mut seed)
-            .map_err(|e| anyhow!("error hashing phrase: {}", e))?;
+        Argon2::default().hash_password_into(phrase.as_bytes(), b"hashiverse-global-salt", &mut seed).map_err(|e| anyhow!("error hashing phrase: {}", e))?;
 
         Self::from_seed(&seed, false)
     }
@@ -71,7 +69,7 @@ impl Keys {
         let verification_key_bytes = verification_key.to_verification_key_bytes();
         let pq_commitment_bytes = match skip_pq_commitment_bytes {
             false => pq_commitment_bytes_from_seed(&seed),
-            true => Ok(PQCommitmentBytes::zero())
+            true => Ok(PQCommitmentBytes::zero()),
         }?;
 
         Ok(Keys {
@@ -201,8 +199,9 @@ impl Keys {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::string::ToString;
     use ml_dsa::signature::Keypair;
+    use std::string::ToString;
+    use ml_dsa::SigningKey;
     use uuid::Uuid;
 
     #[tokio::test]
@@ -235,11 +234,7 @@ mod tests {
         let keys1 = Keys::from_seed(&seed, false).unwrap();
         let keys2 = Keys::from_seed(&seed, false).unwrap();
 
-        assert_eq!(
-            keys1.pq_commitment_bytes.as_ref(),
-            keys2.pq_commitment_bytes.as_ref(),
-            "PQ key commitments must be deterministic from the same seed"
-        );
+        assert_eq!(keys1.pq_commitment_bytes.as_ref(), keys2.pq_commitment_bytes.as_ref(), "PQ key commitments must be deterministic from the same seed");
     }
 
     #[tokio::test]
@@ -257,13 +252,11 @@ mod tests {
         assert!(falcon512::verify(msg, &sig, &pk), "Falcon signature should verify");
 
         // Rehydrated verifying key
-        let pk_rehydrated = falcon512::PublicKey::from_bytes(&pk.to_bytes())
-            .map_err(|e| anyhow::anyhow!("Failed to decode Falcon public key: {:?}", e))?;
+        let pk_rehydrated = falcon512::PublicKey::from_bytes(&pk.to_bytes()).map_err(|e| anyhow::anyhow!("Failed to decode Falcon public key: {:?}", e))?;
         assert!(falcon512::verify(msg, &sig, &pk_rehydrated), "Rehydrated Falcon verifying key should verify");
 
         // Rehydrated signing key: re-serialised, signs a new message
-        let sk_rehydrated = falcon512::SecretKey::from_bytes(&sk.to_bytes())
-            .map_err(|e| anyhow::anyhow!("Failed to decode Falcon secret key: {:?}", e))?;
+        let sk_rehydrated = falcon512::SecretKey::from_bytes(&sk.to_bytes()).map_err(|e| anyhow::anyhow!("Failed to decode Falcon secret key: {:?}", e))?;
         let msg2 = b"second message";
         let sig2 = falcon512::sign(msg2, &sk_rehydrated);
         assert!(falcon512::verify(msg2, &sig2, &pk), "Rehydrated Falcon signing key should produce valid signatures");
@@ -276,7 +269,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dilithium_sign_and_verify() -> anyhow::Result<()> {
-        use ml_dsa::{KeyGen, MlDsa44};
+        use ml_dsa::MlDsa44;
         use ml_dsa::signature::{Signer, Verifier};
 
         let mut seed = [0u8; 32];
@@ -284,26 +277,23 @@ mod tests {
         let dilithium_seed = blake3::derive_key("hashiverse-pk-dilithium", &seed);
 
         // Generate key pair — same derivation as Keys::from_seed
-        let kp = MlDsa44::from_seed(&dilithium_seed.into());
+        let signing_key = SigningKey::<MlDsa44>::from_seed(&dilithium_seed.into());
 
         let msg = b"hello hashiverse";
-        let sig = kp.signing_key().sign(msg);
+        let sig = signing_key.sign(msg);
 
         // Verify with original verifying key
-        assert!(kp.verifying_key().verify(msg, &sig).is_ok(), "Dilithium signature should verify");
+        assert!(signing_key.verifying_key().verify(msg, &sig).is_ok(), "Dilithium signature should verify");
 
         // Rehydrated: regenerate from the same seed (the seed is the Dilithium private key)
-        let kp_rehydrated = MlDsa44::from_seed(&dilithium_seed.into());
-        let vk_encoded = kp.verifying_key().encode();
+        let kp_rehydrated = SigningKey::<MlDsa44>::from_seed(&dilithium_seed.into());
+        let vk_encoded = signing_key.verifying_key().encode();
         let vk_rehydrated_encoded = kp_rehydrated.verifying_key().encode();
         assert_eq!(vk_encoded, vk_rehydrated_encoded, "Dilithium keys must be identical for the same seed");
-        assert!(
-            kp_rehydrated.verifying_key().verify(msg, &sig).is_ok(),
-            "Rehydrated Dilithium verifying key should verify the same signature"
-        );
+        assert!(kp_rehydrated.verifying_key().verify(msg, &sig).is_ok(), "Rehydrated Dilithium verifying key should verify the same signature");
 
         // Wrong message should fail
-        assert!(kp.verifying_key().verify(b"wrong message", &sig).is_err(), "Dilithium should reject wrong message");
+        assert!(signing_key.verifying_key().verify(b"wrong message", &sig).is_err(), "Dilithium should reject wrong message");
 
         Ok(())
     }
@@ -311,7 +301,7 @@ mod tests {
     #[tokio::test]
     async fn test_pq_commitment_matches_key() -> anyhow::Result<()> {
         use falcon_rust::falcon512;
-        use ml_dsa::{KeyGen, MlDsa44};
+        use ml_dsa::MlDsa44;
 
         let seed = [123u8; 32];
         let keys = Keys::from_seed(&seed, false)?;
@@ -328,18 +318,14 @@ mod tests {
         // Independently compute expected Dilithium commitment
         let expected_dilithium: [u8; 16] = {
             let dilithium_seed = blake3::derive_key("hashiverse-pk-dilithium", &seed);
-            let kp = MlDsa44::from_seed(&dilithium_seed.into());
+            let kp = SigningKey::<MlDsa44>::from_seed(&dilithium_seed.into());
             let vk_bytes = kp.verifying_key().encode();
             let hash = blake3::hash(vk_bytes.as_ref());
             hash.as_bytes()[..16].try_into()?
         };
 
         let expected: Vec<u8> = [expected_falcon, expected_dilithium].concat();
-        assert_eq!(
-            keys.pq_commitment_bytes.as_ref(),
-            expected.as_slice(),
-            "pq_commitment_bytes must match independently computed PQ commitments"
-        );
+        assert_eq!(keys.pq_commitment_bytes.as_ref(), expected.as_slice(), "pq_commitment_bytes must match independently computed PQ commitments");
 
         Ok(())
     }

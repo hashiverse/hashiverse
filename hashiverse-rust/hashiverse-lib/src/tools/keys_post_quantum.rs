@@ -44,8 +44,8 @@
 
 use crate::tools::types::PQCommitmentBytes;
 use falcon_rust::falcon512;
-use ml_dsa::{KeyGen, MlDsa44};
 use ml_dsa::signature::Keypair;
+use ml_dsa::{MlDsa44, SigningKey};
 
 pub fn pq_commitment_bytes_from_seed(seed: &[u8; 32]) -> anyhow::Result<PQCommitmentBytes> {
     // The Falcon PQ public key commitment
@@ -67,7 +67,7 @@ pub fn pq_commitment_bytes_from_seed(seed: &[u8; 32]) -> anyhow::Result<PQCommit
         dilithium_seed.copy_from_slice(&blake3::derive_key("hashiverse-pk-dilithium", seed));
 
         // trace!("Generating dilithium key from seed");
-        let key_pair = MlDsa44::from_seed(&dilithium_seed.into());
+        let key_pair = SigningKey::<MlDsa44>::from_seed(&dilithium_seed.into());
         let verifying_key = key_pair.verifying_key();
         let verifying_key_bytes = verifying_key.encode();
 
