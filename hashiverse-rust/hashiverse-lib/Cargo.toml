@@ -69,10 +69,20 @@ wasm-bindgen-futures = "0.4"
 [target.'cfg(all(tokio_unstable, not(target_arch = "wasm32")))'.dependencies]
 console-subscriber = { version = "0.5.0" }
 
-[dependencies.getrandom]
+[dependencies.getrandom_2]
+package = "getrandom"
 version = "0.2.17"
 features = [ 'js' ]
 
+[dependencies.getrandom_3]
+package = "getrandom"
+version = "0.3.4"
+features = [ 'wasm_js' ]
+
+[dependencies.getrandom_4]
+package = "getrandom"
+version = "0.4.2"
+features = [ 'wasm_js' ]
 
 [dev-dependencies]
 wasm-bindgen-test = "*"
