@@ -1,0 +1,55 @@
+{
+  "name": "@hashiverse/hashiverse-client-nodejs",
+  "version": "0.0.0",
+  "description": "Native Node.js binding for the Hashiverse client — your open-source decentralized X/Twitter replacement.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hashiverse/hashiverse.git",
+    "directory": "hashiverse-rust/hashiverse-client-nodejs"
+  },
+  "homepage": "https://www.hashiverse.com",
+  "bugs": {
+    "url": "https://github.com/hashiverse/hashiverse/issues"
+  },
+  "keywords": [
+    "hashiverse",
+    "decentralized",
+    "social-network",
+    "p2p",
+    "kademlia",
+    "dht"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
+  "napi": {
+    "binaryName": "hashiverse-client-nodejs",
+    "packageName": "@hashiverse/hashiverse-client-nodejs",
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc"
+    ]
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "artifacts": "napi artifacts",
+    "prepublishOnly": "napi prepublish -t github --skip-gh-release",
+    "test": "vitest run",
+    "version": "napi version"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.0.0",
+    "vitest": "^2.0.0"
+  }
+}

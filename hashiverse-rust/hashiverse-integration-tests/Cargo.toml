@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+publish = false
 
 [[bin]]
 name = "test-harness"
@@ -14,7 +15,7 @@ anyhow = { workspace = true }
 log = { workspace = true }
 scopeguard = { workspace = true }
 parking_lot = { workspace = true }
-hashiverse-lib = { path = "../hashiverse-lib" }
+hashiverse-lib = { workspace = true }
 hashiverse-server-lib = { path = "../hashiverse-server-lib" }
 tokio-util = { version = "0.7.14", features = ["codec", "rt"] }
 tokio = { version = "1.45", features = ["macros", "time", "rt", "io-util", "rt-multi-thread"] }

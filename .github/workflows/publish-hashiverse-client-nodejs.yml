@@ -1,0 +1,174 @@
+name: publish-hashiverse-client-nodejs
+
+on:
+  release:
+    types: [released, prereleased]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to publish"
+        type: choice
+        required: true
+        default: "dry-run"
+        options:
+          - dry-run
+          - npm
+
+env:
+  CARGO_TERM_COLOR: always
+  PACKAGE_DIR: hashiverse-rust/hashiverse-client-nodejs
+
+jobs:
+  build:
+    name: build (${{ matrix.settings.target }})
+    runs-on: ${{ matrix.settings.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - host: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - host: macos-latest
+            target: x86_64-apple-darwin
+            cross: true
+          - host: macos-latest
+            target: aarch64-apple-darwin
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/set-cargo-version-from-tag
+
+      - uses: ./.github/actions/install-rust-toolchain
+        with:
+          targets: ${{ matrix.settings.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust"
+          workspaces: hashiverse-rust -> target
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: npm ci
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: npm ci
+
+      - name: napi build
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: npx napi build --platform --release --target ${{ matrix.settings.target }}
+
+      - name: Smoke test (native-host only)
+        if: ${{ !matrix.settings.cross }}
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: npm test
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: ${{ env.PACKAGE_DIR }}/*.node
+          if-no-files-found: error
+
+  publish-dry-run:
+    name: npm publish --dry-run (all packages)
+    needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'dry-run' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/set-cargo-version-from-tag
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          registry-url: "https://registry.npmjs.org"
+
+      - name: npm ci
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: npm ci
+
+      - uses: actions/download-artifact@v5
+        with:
+          path: ${{ env.PACKAGE_DIR }}/artifacts
+
+      - name: napi artifacts + prepublish
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: |
+          npx napi artifacts
+          npx napi prepublish -t github --skip-gh-release
+
+      - name: Dry-run publish all packages
+        working-directory: ${{ env.PACKAGE_DIR }}
+        shell: bash
+        run: |
+          for dir in npm/*/ .; do
+            echo "--- dry-run publish $dir ---"
+            (cd "$dir" && npm publish --access public --dry-run)
+          done
+
+  publish:
+    name: publish all packages (OIDC + provenance)
+    needs: build
+    if: |
+      (github.event_name == 'release') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'npm')
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/@hashiverse/hashiverse-client-nodejs
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/set-cargo-version-from-tag
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          registry-url: "https://registry.npmjs.org"
+
+      - name: npm ci
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: npm ci
+
+      - uses: actions/download-artifact@v5
+        with:
+          path: ${{ env.PACKAGE_DIR }}/artifacts
+
+      - name: napi artifacts (assemble npm/*)
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: npx napi artifacts
+
+      - name: napi prepublish (rewrite optionalDependencies)
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: npx napi prepublish -t github --skip-gh-release
+
+      - name: Publish all packages (platforms first, then root)
+        working-directory: ${{ env.PACKAGE_DIR }}
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag_flag=""
+          if [[ "$version" == *-* ]]; then
+            echo "Prerelease version $version -> --tag next"
+            tag_flag="--tag next"
+          fi
+          for dir in npm/*/; do
+            echo "--- publishing $dir ---"
+            (cd "$dir" && npm publish --access public --provenance $tag_flag)
+          done
+          echo "--- publishing root ---"
+          npm publish --access public --provenance $tag_flag

@@ -1,0 +1,7 @@
+*.node
+index.js
+index.d.ts
+node_modules/
+artifacts/
+npm/
+package-lock.json

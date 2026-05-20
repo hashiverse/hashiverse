@@ -1,0 +1,29 @@
+[package]
+name = "hashiverse-client-rust"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Friendly Rust client wrapper for Hashiverse — your open-source decentralized X/Twitter replacement. Picks sensible defaults (sqlite storage, disk key locker, DNSSEC-validated bootstrap, native parallel PoW) so you can spin up a working client in a few lines."
+readme = "README.md"
+keywords = ["hashiverse", "p2p", "decentralized", "social", "kademlia"]
+categories = ["network-programming", "cryptography"]
+
+[lints]
+workspace = true
+
+[dependencies]
+hashiverse-lib = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+bytes = { workspace = true }
+hex = { workspace = true }
+tokio = { version = "1.45", features = ["macros", "rt-multi-thread"] }
+dirs-next = "2.0"
+shellexpand = "3"
+rustls = { version = "0.23", features = ["ring"] }
+
+[dev-dependencies]
+tempfile = "3.25.0"

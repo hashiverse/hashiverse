@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+publish = false
 
 [lints]
 workspace = true
@@ -13,7 +14,7 @@ name = "hashiverse_server_lib"
 path = "src/lib.rs"
 
 [dependencies]
-hashiverse-lib = { path = "../hashiverse-lib" }
+hashiverse-lib = { workspace = true }
 
 anyhow = { workspace = true }
 log = { workspace = true }
@@ -53,4 +54,4 @@ sysinfo = { version = "0.39.2", default-features = false, features = ["system", 
 serde_json = { version = "1.0.145" }
 
 [dev-dependencies]
-hashiverse-lib = { path = "../hashiverse-lib", features = ["generic-tests"] }
+hashiverse-lib = { workspace = true, features = ["generic-tests"] }

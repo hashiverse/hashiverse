@@ -4,6 +4,12 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Core protocol library for Hashiverse — your open-source decentralized X/Twitter replacement."
+readme = "README.md"
+keywords = ["hashiverse", "p2p", "decentralized", "social", "kademlia"]
+categories = ["network-programming", "cryptography", "wasm"]
 
 [lints]
 workspace = true
@@ -74,5 +80,5 @@ getrandom_4 = { package = "getrandom", version = "0.4.2", features = ["wasm_js"]
 console-subscriber = { version = "0.5.0" }
 
 [dev-dependencies]
-wasm-bindgen-test = "*"
+wasm-bindgen-test = "0.3.71"
 bolero = "0.11"
