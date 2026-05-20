@@ -1,0 +1,105 @@
+name: publish-hashiverse-client-wasm
+
+on:
+  release:
+    types: [released, prereleased]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to publish"
+        type: choice
+        required: true
+        default: "dry-run"
+        options:
+          - dry-run
+          - npm
+
+env:
+  CARGO_TERM_COLOR: always
+  PACKAGE_DIR: hashiverse-rust/hashiverse-client-wasm
+
+jobs:
+  build:
+    name: build wasm package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/set-cargo-version-from-tag
+
+      - uses: ./.github/actions/install-rust-toolchain
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust-wasm"
+          workspaces: hashiverse-rust -> target
+
+      - uses: jetli/wasm-pack-action@v0.4.0
+
+      - name: Build WASM package
+        working-directory: hashiverse-rust
+        run: wasm-pack build hashiverse-client-wasm --release --target bundler --scope hashiverse
+
+      - name: Sanity-check generated package.json
+        shell: bash
+        working-directory: ${{ env.PACKAGE_DIR }}/pkg
+        run: cat package.json
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: pkg
+          path: ${{ env.PACKAGE_DIR }}/pkg
+          if-no-files-found: error
+
+  publish-dry-run:
+    name: npm publish --dry-run
+    needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'dry-run' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: pkg
+          path: pkg
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          registry-url: "https://registry.npmjs.org"
+
+      - name: npm publish --dry-run
+        working-directory: pkg
+        run: npm publish --access public --provenance --dry-run
+
+  publish-npm:
+    name: publish to npm
+    needs: build
+    if: |
+      (github.event_name == 'release') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'npm')
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/@hashiverse/hashiverse-client-wasm
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: pkg
+          path: pkg
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          registry-url: "https://registry.npmjs.org"
+
+      - name: npm publish
+        working-directory: pkg
+        run: npm publish --access public --provenance
