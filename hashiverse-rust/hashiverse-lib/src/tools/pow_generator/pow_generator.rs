@@ -62,6 +62,30 @@ impl JobTracker {
     }
 }
 
+/// RAII guard that registers a job on construction and removes it on drop.
+/// Guarantees cleanup on normal return, `?` propagation, panic, and future cancellation.
+struct TrackedJobGuard {
+    tracker: Arc<Mutex<JobTracker>>,
+    job_id: JobId,
+}
+
+impl TrackedJobGuard {
+    fn new(tracker: Arc<Mutex<JobTracker>>, label: &str, pow_min: Pow) -> Self {
+        let job_id = tracker.lock().unwrap().add(label, pow_min);
+        Self { tracker, job_id }
+    }
+
+    fn update(&self, best_pow_so_far: Pow) {
+        self.tracker.lock().unwrap().update(self.job_id, best_pow_so_far);
+    }
+}
+
+impl Drop for TrackedJobGuard {
+    fn drop(&mut self) {
+        self.tracker.lock().unwrap().remove(self.job_id);
+    }
+}
+
 /// A pluggable engine for searching for proof-of-work solutions.
 ///
 /// Proof-of-work is required on every RPC packet, on peer announcements, and on report /
@@ -107,10 +131,8 @@ pub trait PowGenerator: Send + Sync {
     /// Use this when a single-batch PoW is run directly (i.e. not inside `generate_loop`),
     /// otherwise the job is invisible to `active_jobs()`.
     async fn generate_best_effort_tracked(&self, label: &str, iteration_limit: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
-        let job_id = self.tracker().lock().unwrap().add(label, pow_min);
-        let result = self.generate_best_effort(label, iteration_limit, pow_min, data_hash).await;
-        self.tracker().lock().unwrap().remove(job_id);
-        result
+        let _guard = TrackedJobGuard::new(self.tracker().clone(), label, pow_min);
+        self.generate_best_effort(label, iteration_limit, pow_min, data_hash).await
     }
 }
 
@@ -134,14 +156,13 @@ pub async fn generate_loop(
     const BATCH_SIZE: usize = 64 * 1024;
     let real_time_provider = RealTimeProvider::default();
     let mut estimator = PowRequiredEstimator::new(real_time_provider.current_time_millis(), label, pow_min);
-    let job_id = tracker.lock().unwrap().add(label, pow_min);
+    let guard = TrackedJobGuard::new(tracker.clone(), label, pow_min);
     loop {
         let result = generator.generate_best_effort(label, BATCH_SIZE, pow_min, data_hash).await?;
         if result.1 >= pow_min {
-            tracker.lock().unwrap().remove(job_id);
             return Ok(result);
         }
-        tracker.lock().unwrap().update(job_id, result.1);
+        guard.update(result.1);
         let progress = estimator.record_batch_and_estimate(real_time_provider.current_time_millis(), BATCH_SIZE, result.1);
         trace!("{}", progress);
         tools::yield_now().await;
@@ -150,8 +171,9 @@ pub async fn generate_loop(
 
 #[cfg(test)]
 mod tests {
-    use crate::tools::pow_generator::pow_generator::JobTracker;
+    use crate::tools::pow_generator::pow_generator::{JobTracker, TrackedJobGuard};
     use crate::tools::types::Pow;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn job_tracker_round_trip() {
@@ -182,5 +204,27 @@ mod tests {
 
         tracker.remove(job_b);
         assert!(tracker.snapshot().is_empty());
+    }
+
+    #[test]
+    fn tracked_job_guard_removes_on_drop() {
+        let tracker = Arc::new(Mutex::new(JobTracker::default()));
+        {
+            let _guard = TrackedJobGuard::new(tracker.clone(), "rpc", Pow(18));
+            assert_eq!(tracker.lock().unwrap().snapshot().len(), 1);
+        }
+        assert!(tracker.lock().unwrap().snapshot().is_empty());
+    }
+
+    #[test]
+    fn tracked_job_guard_update_writes_through() {
+        let tracker = Arc::new(Mutex::new(JobTracker::default()));
+        let guard = TrackedJobGuard::new(tracker.clone(), "rpc", Pow(18));
+        guard.update(Pow(42));
+        let snapshot = tracker.lock().unwrap().snapshot();
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].label, "rpc");
+        assert_eq!(snapshot[0].pow_min, Pow(18));
+        assert_eq!(snapshot[0].best_pow_so_far, Pow(42));
     }
 }
