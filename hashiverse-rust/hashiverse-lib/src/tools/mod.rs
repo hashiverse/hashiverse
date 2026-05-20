@@ -21,7 +21,7 @@ pub mod signing;
 pub mod hashing;
 pub mod pow;
 pub mod pow_required_estimator;
-pub mod parallel_pow_generator;
+pub mod pow_generator;
 pub mod runtime_services;
 pub mod anyhow_asserts;
 pub mod buckets;

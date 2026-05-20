@@ -431,6 +431,13 @@ body {
 	width: 100%;
 }
 
+.plugin-urlpreview-card-image-link {
+	display: block;
+	text-decoration: none;
+	color: inherit;
+	cursor: pointer;
+}
+
 .plugin-urlpreview-card-image {
 	display: block;
 	width: 100%;

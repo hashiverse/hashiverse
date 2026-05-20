@@ -372,9 +372,9 @@ pub fn spawn_background_task<F>(task: F)
 where
     F: Future<Output = ()> + Send + 'static,
 {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     tokio::spawn(task);
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     wasm_bindgen_futures::spawn_local(task);
 }
 

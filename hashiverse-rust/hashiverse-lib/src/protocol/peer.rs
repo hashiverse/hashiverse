@@ -318,13 +318,13 @@ mod tests {
     use crate::tools::server_id::ServerId;
     use crate::tools::time::TimeMillis;
     use crate::tools::time_provider::time_provider::RealTimeProvider;
-    use crate::tools::parallel_pow_generator::StubParallelPowGenerator;
+    use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
     use crate::tools::tools;
     use crate::tools::types::{Pow, VerificationKeyBytes};
 
     async fn get_random_ingredients() -> anyhow::Result<(ServerId, Peer)> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
 
         let mut peer = server_id.to_peer(&time_provider)?;

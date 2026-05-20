@@ -194,12 +194,12 @@ mod tests {
     use hashiverse_lib::tools::server_id::ServerId;
     use hashiverse_lib::tools::time::TimeMillis;
     use hashiverse_lib::tools::time_provider::time_provider::RealTimeProvider;
-    use hashiverse_lib::tools::parallel_pow_generator::StubParallelPowGenerator;
+    use hashiverse_lib::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
     use hashiverse_lib::tools::types::{Id, Pow};
 
     async fn make_test_server_and_peer() -> anyhow::Result<(ServerId, hashiverse_lib::protocol::peer::Peer)> {
         let time_provider = RealTimeProvider::default();
-        let pow_generator = StubParallelPowGenerator::new();
+        let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
         Ok((server_id, peer))

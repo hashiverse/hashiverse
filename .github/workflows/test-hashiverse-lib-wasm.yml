@@ -22,8 +22,10 @@ jobs:
         working-directory: hashiverse-rust
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: bytecodealliance/actions/wasmtime/setup@v1
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/install-rust-toolchain
         with:
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2

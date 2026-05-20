@@ -4,6 +4,8 @@
   "license": "MIT OR Apache-2.0",
   "scripts": {
     "dev": "astro dev",
+    "predev": "node scripts/generate-page-dates.mjs",
+    "prebuild": "node scripts/generate-page-dates.mjs",
     "build": "astro build",
     "preview": "astro preview",
     "build:full": "node build.mjs"

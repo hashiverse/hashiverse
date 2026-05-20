@@ -6,7 +6,7 @@
 //!
 //! - [`RpcRequestPacketTx`] — build a request. `encode` optionally compresses the
 //!   payload, runs the PoW search (via a
-//!   [`crate::tools::parallel_pow_generator::ParallelPowGenerator`]) targeting the
+//!   [`crate::tools::pow_generator::pow_generator::PowGenerator`]) targeting the
 //!   destination server's identity, and produces a header containing the discriminator,
 //!   sponsor id, PoW timestamp, content hash, salt, and payload length.
 //! - [`RpcRequestPacketRx`] — parse a request on the receive side. Extracts the header,
@@ -18,7 +18,7 @@
 //! for server A can't be forwarded to server B and still authenticate.
 
 use crate::protocol::payload::payload::PayloadRequestKind;
-use crate::tools::parallel_pow_generator::ParallelPowGenerator;
+use crate::tools::pow_generator::pow_generator::PowGenerator;
 use crate::tools::server_id::ServerId;
 use crate::tools::time::{TimeMillis, TimeMillisBytes, TIME_MILLIS_BYTES};
 use crate::tools::time_provider::time_provider::TimeProvider;
@@ -38,7 +38,7 @@ bitflags! {
 ///
 /// The "Tx" (transmit) side owns the encode path. Constructing one is expensive: in addition
 /// to compressing the payload and prefixing the header, `encode` performs a proof-of-work
-/// search against the destination server's identity via [`ParallelPowGenerator`]. The `pow`
+/// search against the destination server's identity via [`PowGenerator`]. The `pow`
 /// sits in the wire header so the server can reject under-powered requests cheaply before
 /// doing any payload work. `pow_content_hash` is retained on the struct so the caller can
 /// later verify that the response was produced for *this* specific request (see
@@ -60,7 +60,7 @@ impl RpcRequestPacketTx {
         destination_verification_key_bytes: &VerificationKeyBytes,
         destination_pq_commitment_bytes: &PQCommitmentBytes,
         payload_uncompressed: Bytes,
-        pow_generator: &dyn ParallelPowGenerator,
+        pow_generator: &dyn PowGenerator,
     ) -> anyhow::Result<Self> {
         // Do we actually need to compress this?
         let payload_compressed = match flags.contains(RpcRequestPacketTxFlags::COMPRESSED) {

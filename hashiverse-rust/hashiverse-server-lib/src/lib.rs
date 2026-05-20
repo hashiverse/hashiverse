@@ -7,7 +7,6 @@
 //! handlers together.
 
 #![feature(try_blocks)]
-#![feature(duration_constructors)]
 
 pub mod server;
 pub mod tools;

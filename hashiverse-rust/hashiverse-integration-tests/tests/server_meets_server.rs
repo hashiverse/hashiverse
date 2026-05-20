@@ -1,5 +1,5 @@
 use hashiverse_lib::protocol::peer::Peer;
-use hashiverse_lib::tools::parallel_pow_generator::NativeParallelPowGenerator;
+use hashiverse_lib::tools::pow_generator::native_parallel_pow_generator::NativeParallelPowGenerator;
 use hashiverse_lib::tools::runtime_services::RuntimeServices;
 use hashiverse_lib::tools::time::{MILLIS_IN_MINUTE, MILLIS_IN_SECOND};
 use hashiverse_lib::tools::time_provider::time_provider::{ScaledTimeProvider, TimeProvider};

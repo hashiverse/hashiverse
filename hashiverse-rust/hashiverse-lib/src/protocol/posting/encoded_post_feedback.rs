@@ -17,7 +17,7 @@
 use bytes::{Buf, BufMut, BytesMut};
 use crate::{anyhow_assert_eq, anyhow_assert_ge};
 use crate::tools::config::CLIENT_FEEDBACK_POW_NUMERAIRE;
-use crate::tools::parallel_pow_generator::ParallelPowGenerator;
+use crate::tools::pow_generator::pow_generator::PowGenerator;
 use crate::tools::pow;
 use crate::tools::types::{Hash, Id, Pow, Salt, ID_BYTES, SALT_BYTES};
 
@@ -81,7 +81,7 @@ impl EncodedPostFeedbackV1 {
         }
     }
 
-    pub async fn pow_generate(post_id: &Id, feedback_type: u8, pow_generator: &dyn ParallelPowGenerator) -> anyhow::Result<(Salt, Pow, Hash)> {
+    pub async fn pow_generate(post_id: &Id, feedback_type: u8, pow_generator: &dyn PowGenerator) -> anyhow::Result<(Salt, Pow, Hash)> {
         let data_hash = pow::pow_compute_data_hash(&[post_id.as_bytes(), &[feedback_type]]);
         pow_generator.generate_best_effort_tracked("feedback", CLIENT_FEEDBACK_POW_NUMERAIRE, Pow(255), data_hash).await
     }

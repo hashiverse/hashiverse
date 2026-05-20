@@ -246,24 +246,24 @@ mod tests {
     use log::info;
     use crate::tools::encryption::*;
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     extern crate wasm_bindgen_test;
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use wasm_bindgen_test::*;
     use crate::tools::time_provider::stop_watch::StopWatch;
     use crate::tools::time_provider::time_provider::RealTimeProvider;
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_multiple_encryption_strong() -> anyhow::Result<()> {
         test_multiple_encryption(encrypt_strong).await
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_multiple_encryption_weak() -> anyhow::Result<()> {
         test_multiple_encryption(encrypt_weak).await
     }
@@ -291,8 +291,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_encryption_speeds() -> anyhow::Result<()> {
         // configure_logging();
 
@@ -326,8 +326,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_zero_recipients_rejected() -> anyhow::Result<()> {
         let result = encrypt_weak(b"test", &vec![]);
         assert!(result.is_err());
@@ -335,8 +335,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_too_many_recipients_rejected() -> anyhow::Result<()> {
         let passwords: Vec<Vec<u8>> = (0..=MAX_RECIPIENTS).map(|i| format!("password{}", i).into_bytes()).collect();
         let result = encrypt_weak(b"test", &passwords);
@@ -345,8 +345,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_max_recipients() -> anyhow::Result<()> {
         let plaintext = b"test";
         let passwords: Vec<Vec<u8>> = (0..MAX_RECIPIENTS).map(|i| format!("password{}", i).into_bytes()).collect();
@@ -360,8 +360,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_nonce_uniqueness() -> anyhow::Result<()> {
         let plaintext = b"same plaintext every time";
         let passwords = vec![b"key".to_vec()];
@@ -379,8 +379,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_tamper_detection() -> anyhow::Result<()> {
         let plaintext = b"tamper me if you dare";
         let passwords = vec![b"key".to_vec()];
@@ -397,8 +397,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_dos_rejection() -> anyhow::Result<()> {
         // A crafted ciphertext claiming too many recipients must be rejected
         // before any expensive crypto is attempted

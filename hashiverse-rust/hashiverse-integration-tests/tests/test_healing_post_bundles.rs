@@ -7,7 +7,7 @@ use hashiverse_lib::client::key_locker::key_locker::KeyLockerManager;
 use hashiverse_lib::client::key_locker::mem_key_locker::MemKeyLockerManager;
 use hashiverse_lib::tools::buckets::BucketLocation;
 use hashiverse_lib::tools::config;
-use hashiverse_lib::tools::parallel_pow_generator::NativeParallelPowGenerator;
+use hashiverse_lib::tools::pow_generator::native_parallel_pow_generator::NativeParallelPowGenerator;
 use hashiverse_lib::tools::runtime_services::RuntimeServices;
 use hashiverse_lib::tools::time::MILLIS_IN_MINUTE;
 use hashiverse_lib::tools::time_provider::time_provider::{ScaledTimeProvider, TimeProvider};

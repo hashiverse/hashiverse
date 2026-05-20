@@ -127,7 +127,8 @@ pub fn convert_text_to_hashiverse_html_x_url_preview(
     if !image_url.is_empty() {
         out.push_str("<div class=\"plugin-urlpreview-card-image-container\">");
         out.push_str(&format!(
-            "<img src=\"{}\" alt=\"\" class=\"plugin-urlpreview-card-image unblur-image\">",
+            "<a class=\"plugin-urlpreview-card-image-link\" href=\"{}\" rel=\"noopener noreferrer nofollow\"><img src=\"{}\" alt=\"\" class=\"plugin-urlpreview-card-image unblur-image\"></a>",
+            html_escape(url),
             html_escape(image_url),
         ));
         out.push_str(&format!(
@@ -514,10 +515,26 @@ mod tests {
             "https://example.com/path",
         );
         assert!(result.starts_with("<div class=\"plugin-urlpreview-card\"><div class=\"plugin-urlpreview-card-image-container\">"));
-        assert!(result.contains("<img src=\"https://img.example/x.png\" alt=\"\" class=\"plugin-urlpreview-card-image unblur-image\">"));
+        assert!(result.contains(
+            "<a class=\"plugin-urlpreview-card-image-link\" href=\"https://example.com/path\" rel=\"noopener noreferrer nofollow\"><img src=\"https://img.example/x.png\" alt=\"\" class=\"plugin-urlpreview-card-image unblur-image\"></a>"
+        ));
         assert!(result.contains("<div class=\"plugin-urlpreview-card-domain\">example.com</div>"));
         assert!(result.contains("<a class=\"plugin-urlpreview-card-title\" href=\"https://example.com/path\" rel=\"noopener noreferrer nofollow\">Title</a>"));
         assert!(result.contains("<div class=\"plugin-urlpreview-card-description\">Desc</div>"));
+    }
+
+    #[test]
+    fn test_x_url_preview_image_link_uses_same_href_as_title() {
+        // Clicking the image must navigate to the same URL as clicking the title,
+        // and the URL must be HTML-escaped consistently in both anchors.
+        let url = "https://example.com/?a=1&b=2";
+        let result = convert_text_to_hashiverse_html_x_url_preview("Title", "", "https://img.example/x.png", url);
+        assert!(result.contains(
+            "<a class=\"plugin-urlpreview-card-image-link\" href=\"https://example.com/?a=1&amp;b=2\" rel=\"noopener noreferrer nofollow\"><img"
+        ));
+        assert!(result.contains(
+            "<a class=\"plugin-urlpreview-card-title\" href=\"https://example.com/?a=1&amp;b=2\" rel=\"noopener noreferrer nofollow\">Title</a>"
+        ));
     }
 
     #[test]

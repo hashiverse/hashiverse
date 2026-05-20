@@ -44,10 +44,12 @@ jobs:
             manylinux: ""
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/set-cargo-version-from-tag
 
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/install-rust-toolchain
 
       - uses: actions/setup-python@v6
         with:
@@ -65,7 +67,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           manylinux: ${{ matrix.platform.manylinux }}
           args: --release --out dist
-          rust-toolchain: nightly
+          rust-toolchain: ${{ env.RUST_CHANNEL }}
 
       - name: Smoke-test wheel
         if: ${{ !matrix.platform.cross }}

@@ -8,7 +8,6 @@ use crate::tools::types::{Hash, Pow, Salt};
 use crate::tools::{hashing, tools};
 use digest::consts::{U32, U64};
 
-use digest::generic_array::GenericArray;
 use digest::Digest;
 use log::trace;
 
@@ -24,7 +23,6 @@ fn apply_chained_hash(algo_index: usize, hash_current: Hash) -> anyhow::Result<H
     let algo_index = algo_index % ALGO_COUNT;
 
     match algo_index {
-        // --- Cases 0-13: Use the existing clean apply_hash ---
         0 => apply_hash::<blake2::Blake2s256>(&hash_current),
         1 => apply_hash::<blake2::Blake2b512>(&hash_current),
         2 => apply_hash::<sha2::Sha256>(&hash_current),
@@ -39,20 +37,10 @@ fn apply_chained_hash(algo_index: usize, hash_current: Hash) -> anyhow::Result<H
         11 => apply_hash::<groestl::Groestl256>(&hash_current),
         12 => apply_hash::<groestl::Groestl512>(&hash_current),
         13 => apply_hash::<whirlpool::Whirlpool>(&hash_current),
+        14 => apply_hash::<skein::Skein256<U32>>(&hash_current),
+        15 => apply_hash::<skein::Skein512<U64>>(&hash_current),
 
-        // --- Cases 14-16: Keep custom logic here ---
-        14 => {
-            let mut hasher = skein::Skein256::new();
-            hasher.update(hash_current.as_ref());
-            let hash_output: GenericArray<u8, U32> = hasher.finalize();
-            Hash::from_slice(&hash_output.as_slice()[0..32])
-        },
-        15 => {
-            let mut hasher = skein::Skein512::new();
-            hasher.update(hash_current.as_ref());
-            let hash_output: GenericArray<u8, U64> = hasher.finalize();
-            Hash::from_slice(&hash_output.as_slice()[0..32])
-        },
+        // Unfortunately the "digest" trait of the blake3 crate is an older version than we need...so hand roll.
         16 => {
             let mut hasher = blake3::Hasher::new();
             hasher.update(hash_current.as_ref());
@@ -150,6 +138,92 @@ mod tests {
     use crate::tools::tools;
     use crate::tools::types::{Pow, Salt};
 
+    struct RegressionVector {
+        label: &'static str,
+        datas: Vec<Vec<u8>>,
+        salt_hex: &'static str,
+        expected_pow: u8,
+        expected_final_hash_hex: &'static str,
+    }
+
+    // Confirmed via `cargo llvm-cov nextest -p hashiverse-lib --tests pow::tests` that running
+    // `pow_regression_vectors_match` over these vectors hits every arm of the `apply_chained_hash`
+    // match block in pow.rs, so all 17 hash functions are exercised for regression.
+    fn regression_vectors() -> Vec<RegressionVector> {
+        vec![
+            RegressionVector {
+                label: "empty_data_zero_salt",
+                datas: vec![hex::decode("").unwrap()],
+                salt_hex: "0000000000000000",
+                expected_pow: 1,
+                expected_final_hash_hex: "6eec432cb487409c9500776340420e6281ac4aa06c2b7ec39916828dbf8bb39e",
+            },
+            RegressionVector {
+                label: "single_byte_zero_data",
+                datas: vec![hex::decode("00").unwrap()],
+                salt_hex: "0000000000000001",
+                expected_pow: 4,
+                expected_final_hash_hex: "0db42c05e85a32ac76f14c4a3132e8b82c0f97ba49e5bf0464173067ec20e86d",
+            },
+            RegressionVector {
+                label: "single_byte_high",
+                datas: vec![hex::decode("ff").unwrap()],
+                salt_hex: "ffffffffffffffff",
+                expected_pow: 0,
+                expected_final_hash_hex: "8b3754ac665ff1cdff1539552511b23b320c9865f0989add3bcaa245798be5a8",
+            },
+            RegressionVector {
+                label: "ascii_short",
+                datas: vec![hex::decode("68617368697665727365").unwrap()],
+                salt_hex: "0123456789abcdef",
+                expected_pow: 0,
+                expected_final_hash_hex: "adb2ef187879beb0615fc054ef2c94fcda7f022226b5f86d92485c00161bf081",
+            },
+            RegressionVector {
+                label: "ascii_long",
+                datas: vec![hex::decode("54686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f67").unwrap()],
+                salt_hex: "deadbeefcafebabe",
+                expected_pow: 0,
+                expected_final_hash_hex: "9502fa8669c3a191e3c0f3a59ce5b630c97c0460262cc8235b225ec88f05b27c",
+            },
+            RegressionVector {
+                label: "two_chunks_ascii",
+                datas: vec![hex::decode("68656c6c6f").unwrap(), hex::decode("776f726c64").unwrap()],
+                salt_hex: "fedcba9876543210",
+                expected_pow: 0,
+                expected_final_hash_hex: "8885e4616f1b5657c954a587a260c05d820c028fcc792ca27741d943507c397d",
+            },
+            RegressionVector {
+                label: "three_chunks_mixed",
+                datas: vec![hex::decode("61").unwrap(), hex::decode("6262").unwrap(), hex::decode("636363").unwrap()],
+                salt_hex: "1111111111111111",
+                expected_pow: 2,
+                expected_final_hash_hex: "2ca9bb4af0b9946d7b4ec2591f80148235355c75d4a6bb808257980c2546f6a3",
+            },
+            RegressionVector {
+                label: "binary_pattern",
+                datas: vec![hex::decode("0001020304050607").unwrap()],
+                salt_hex: "8000000000000000",
+                expected_pow: 3,
+                expected_final_hash_hex: "1080bab28b0963e88416512f313172774a0b1e538912928ed870f28c402d2e29",
+            },
+            RegressionVector {
+                label: "256_byte_zeroes",
+                datas: vec![hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap()],
+                salt_hex: "a5a5a5a5a5a5a5a5",
+                expected_pow: 2,
+                expected_final_hash_hex: "39c0c67e6d471fee89b36f484237af21a83e2ab5113ff0c7a2adc66ce95a7de9",
+            },
+            RegressionVector {
+                label: "256_byte_ones",
+                datas: vec![hex::decode("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").unwrap()],
+                salt_hex: "5a5a5a5a5a5a5a5a",
+                expected_pow: 0,
+                expected_final_hash_hex: "eb532e53c96611844a9d7cb3417740572f7455a54f5a9c77dec08d24eccb3b26",
+            },
+        ]
+    }
+
     #[tokio::test]
     async fn pow_test() {
         for _ in 1..1000 {
@@ -196,4 +270,64 @@ mod tests {
         }
         Ok(())
     }
+
+    /// Regression guard: a future dep bump that silently changes the output of any of the 17
+    /// chained hash algorithms (or of the blake3 pre-hash / hash-two step) will fail this test.
+    ///
+    /// Hard-coded vectors are captured against the current crate versions. When an *intentional*
+    /// future bump changes output, regenerate via the `pow_regression_vectors_print` helper.
+    #[test]
+    fn pow_regression_vectors_match() -> anyhow::Result<()> {
+        for vector in regression_vectors() {
+            let salt_bytes = hex::decode(vector.salt_hex).expect("salt_hex must be valid hex");
+            let salt = Salt::from_slice(&salt_bytes)?;
+            let data_refs: Vec<&[u8]> = vector.datas.iter().map(|v| v.as_slice()).collect();
+
+            let (pow_direct, hash_direct) = pow_measure(&data_refs, &salt)?;
+            let data_hash = pow_compute_data_hash(&data_refs);
+            let (pow_split, hash_split) = pow_measure_from_data_hash(&data_hash, &salt)?;
+
+            assert_eq!(pow_direct, pow_split, "vector {}: two-path mismatch", vector.label);
+            assert_eq!(hash_direct, hash_split, "vector {}: two-path mismatch", vector.label);
+            assert_eq!(pow_direct, Pow(vector.expected_pow), "vector {}: pow drift (likely crypto crate output change)", vector.label);
+            assert_eq!(hex::encode(hash_direct.as_bytes()), vector.expected_final_hash_hex, "vector {}: final-hash drift (likely crypto crate output change)", vector.label);
+        }
+        Ok(())
+    }
+
+
+    /*
+    /// Run with: `cargo nextest run -p hashiverse-lib pow::tests::pow_regression_vectors_print --run-ignored ignored-only --no-capture`
+    /// then paste the printed RegressionVector blocks back into `regression_vectors()`.
+    #[test]
+    #[ignore]
+    fn pow_regression_vectors_print() -> anyhow::Result<()> {
+        println!();
+        println!("// --- begin regenerated PoW regression vectors ---");
+        for vector in regression_vectors() {
+            let salt_bytes = hex::decode(vector.salt_hex).expect("salt_hex must be valid hex");
+            let salt = Salt::from_slice(&salt_bytes)?;
+            let data_refs: Vec<&[u8]> = vector.datas.iter().map(|v| v.as_slice()).collect();
+
+            let (pow, hash) = pow_measure(&data_refs, &salt)?;
+
+            let datas_literal = vector
+                .datas
+                .iter()
+                .map(|d| format!("hex::decode(\"{}\").unwrap()", hex::encode(d)))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            println!("RegressionVector {{");
+            println!("    label: \"{}\",", vector.label);
+            println!("    datas: vec![{}],", datas_literal);
+            println!("    salt_hex: \"{}\",", vector.salt_hex);
+            println!("    expected_pow: {},", pow.0);
+            println!("    expected_final_hash_hex: \"{}\",", hex::encode(hash.as_bytes()));
+            println!("}},");
+        }
+        println!("// --- end regenerated PoW regression vectors ---");
+        Ok(())
+    }
+    */
 }

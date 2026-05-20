@@ -24,7 +24,9 @@ jobs:
         working-directory: hashiverse-rust
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/install-rust-toolchain
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2

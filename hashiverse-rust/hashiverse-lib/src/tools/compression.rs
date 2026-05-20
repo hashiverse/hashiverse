@@ -150,11 +150,11 @@ mod tests {
     use crate::tools::compression::{compress_for_size, compress_for_speed, decompress};
     use crate::tools::tools;
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     extern crate wasm_bindgen_test;
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use wasm_bindgen_test::*;
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
     fn roundtrip_speed(input: &[u8], msg: &str) -> anyhow::Result<()> {
@@ -171,8 +171,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_compression_is_reversible() -> anyhow::Result<()> {
         let input = b"Some example string to test compression and decompression.";
         roundtrip_speed(input, "lz4 roundtrip")?;
@@ -180,8 +180,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_compression_is_reversible_short() -> anyhow::Result<()> {
         // Below MIN_BYTES_FOR_LZ4 and MIN_BYTES_FOR_BROTLI — both should passthrough
         let input = b"Some...";
@@ -190,8 +190,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_compression_is_reversible_empty() -> anyhow::Result<()> {
         let input = b"";
         roundtrip_speed(input, "lz4 empty passthrough")?;
@@ -199,8 +199,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_compression_is_reversible_random() -> anyhow::Result<()> {
         // Random data is incompressible; both should fall back to passthrough.
         // Use lz4 path only — brotli quality 11 on 64 MB of random data is too slow for a test.
@@ -210,8 +210,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_brotli_actually_compresses_html() -> anyhow::Result<()> {
         // Brotli should produce a smaller result on compressible text.
         let input = "<!DOCTYPE html><html><head><title>Test</title></head><body>".repeat(50);
@@ -227,8 +227,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_lz4_rejects_oversized_decompressed_payload() {
         // Craft an lz4 payload with a claimed uncompressed size exceeding the limit.
         // Layout: [version=1][uncompressed_len u32 le][compressed data...]
@@ -241,8 +241,8 @@ mod tests {
         assert!(error_message.contains("exceeds limit"), "unexpected error: {}", error_message);
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_lz4_accepts_valid_decompressed_payload() -> anyhow::Result<()> {
         // A normal roundtrip should still work fine
         let input = "hello world! ".repeat(100);
@@ -252,8 +252,8 @@ mod tests {
         Ok(())
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_lz4_actually_compresses_text() -> anyhow::Result<()> {
         // lz4 should produce a smaller result on compressible text.
         let input = "The quick brown fox jumps over the lazy dog. ".repeat(100);

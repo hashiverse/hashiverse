@@ -19,7 +19,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tokio_util::codec::{FramedRead, LinesCodec};
 use tokio_util::sync::CancellationToken;
-use hashiverse_lib::tools::parallel_pow_generator::{NativeParallelPowGenerator, ParallelPowGenerator};
+use hashiverse_lib::tools::pow_generator::native_parallel_pow_generator::NativeParallelPowGenerator;
+use hashiverse_lib::tools::pow_generator::pow_generator::PowGenerator;
 use hashiverse_lib::tools::runtime_services::RuntimeServices;
 use hashiverse_lib::transport::bootstrap_provider::bootstrap_provider::BootstrapProvider;
 use hashiverse_lib::transport::ddos::ddos::DdosProtection;
@@ -47,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
     let ddos_protection: Arc<dyn DdosProtection> = NoopDdosProtection::default();
     let bootstrap_provider: Arc<dyn BootstrapProvider> = hashiverse_lib::transport::bootstrap_provider::manual_bootstrap_provider::ManualBootstrapProvider::new(vec!["127.0.0.1:443".to_string()]);
     let transport_factory = Arc::new(FullHttpsTransportFactory::new(ddos_protection, bootstrap_provider));
-    let pow_generator: Arc<dyn ParallelPowGenerator> = Arc::new(NativeParallelPowGenerator::new());
+    let pow_generator: Arc<dyn PowGenerator> = Arc::new(NativeParallelPowGenerator::new());
 
     let runtime_services = Arc::new(RuntimeServices {
         time_provider: time_provider.clone(),

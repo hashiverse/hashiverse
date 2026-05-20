@@ -1,22 +1,47 @@
 ---
 import { strings_for, supported_locales } from "../i18n/strings";
+import {
+  OG_IMAGE_URL,
+  build_organization_schema,
+  build_software_application_schema,
+  build_website_schema,
+  safe_json_ld,
+} from "../utils/schema";
 
 interface Props {
   title: string;
   description?: string;
   fullscreen?: boolean;
+  page_type?: "website" | "article";
+  article_published_time?: string;
+  article_modified_time?: string;
 }
 
 const locale = Astro.currentLocale ?? "en";
 const t = strings_for(locale);
 
-const { title, description = t.site.default_description, fullscreen = false } = Astro.props;
+const {
+  title,
+  description = t.site.default_description,
+  fullscreen = false,
+  page_type = "website",
+  article_published_time,
+  article_modified_time,
+} = Astro.props;
 const prerelease_tag = import.meta.env.PUBLIC_PRERELEASE_TAG;
 
 const path_without_locale = Astro.url.pathname.replace(/^\/[a-z]{2}(\/|$)/, "/");
 const canonical_href = Astro.site ? new URL(`/${locale}${path_without_locale}`, Astro.site).href : `/${locale}${path_without_locale}`;
 const alternate_href = (l: string) => Astro.site ? new URL(`/${l}${path_without_locale}`, Astro.site).href : `/${l}${path_without_locale}`;
 const x_default_href = Astro.site ? new URL("/", Astro.site).href : "/";
+
+const full_title = title === t.site.title_suffix ? t.site.title_suffix : `${title} — ${t.site.title_suffix}`;
+const og_image_alt = `${t.site.title_suffix} — ${description}`;
+const alternate_locales = supported_locales.filter((l) => l !== locale);
+
+const organization_schema = build_organization_schema();
+const website_schema = build_website_schema(t.site.default_description);
+const software_application_schema = build_software_application_schema(t.site.default_description);
 ---
 
 <!doctype html>
@@ -25,13 +50,46 @@ const x_default_href = Astro.site ? new URL("/", Astro.site).href : "/";
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
-    <title>{title === t.site.title_suffix ? t.site.title_suffix : `${title} — ${t.site.title_suffix}`}</title>
+    <title>{full_title}</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="canonical" href={canonical_href} />
     {supported_locales.map((l) => (
       <link rel="alternate" hreflang={l} href={alternate_href(l)} />
     ))}
     <link rel="alternate" hreflang="x-default" href={x_default_href} />
+
+    <meta property="og:type" content={page_type} />
+    <meta property="og:site_name" content={t.site.title_suffix} />
+    <meta property="og:title" content={full_title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical_href} />
+    <meta property="og:locale" content={locale} />
+    {alternate_locales.map((l) => (
+      <meta property="og:locale:alternate" content={l} />
+    ))}
+    <meta property="og:image" content={OG_IMAGE_URL} />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta property="og:image:alt" content={og_image_alt} />
+    <meta property="og:image:type" content="image/jpeg" />
+    {page_type === "article" && article_published_time && (
+      <meta property="article:published_time" content={article_published_time} />
+    )}
+    {page_type === "article" && article_modified_time && (
+      <meta property="article:modified_time" content={article_modified_time} />
+    )}
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={full_title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={OG_IMAGE_URL} />
+    <meta name="twitter:image:alt" content={og_image_alt} />
+
+    <script type="application/ld+json" set:html={safe_json_ld(organization_schema)} />
+    <script type="application/ld+json" set:html={safe_json_ld(website_schema)} />
+    <script type="application/ld+json" set:html={safe_json_ld(software_application_schema)} />
+
+    <slot name="head" />
   </head>
   <body class:list={[{ fullscreen }]}>
     {prerelease_tag && (

@@ -40,6 +40,6 @@ const path_without_locale = Astro.url.pathname.replace(/^\/[a-z]{2}(\/|$)/, "/")
 const banner = banner_map[path_without_locale] ?? banner_map[path_without_locale.replace(/\/$/, "")] ?? undefined;
 ---
 
-<Doc title={title} description={description} sidebar={sidebar} banner={banner}>
+<Doc title={title} description={description} sidebar={sidebar} banner={banner} article_type="Article">
   <slot />
 </Doc>

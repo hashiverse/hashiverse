@@ -24,7 +24,9 @@ jobs:
         working-directory: hashiverse-rust/hashiverse-client-python
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/install-rust-toolchain
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "hashiverse-rust"

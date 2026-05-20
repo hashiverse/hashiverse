@@ -3,6 +3,7 @@ import type React from "react";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import type { HashiverseClientWasmProxy } from "../../Hashiverse.ts";
+import { Spinner } from "../../tools/Spinner.tsx";
 import { ErrorTab } from "../ErrorTab.tsx";
 import { TabHeader } from "../TabHeader.tsx";
 
@@ -47,7 +48,7 @@ export const GeeksPeerStatsTab: React.FC<Props> = ({ hashiverse }) => {
 						</Text>
 					</Tooltip>
 				</Group>
-				{loading && <Text c="dimmed">Loading…</Text>}
+				{loading && <Spinner />}
 				{error && (
 					<Text c="red" size="sm">
 						{error}

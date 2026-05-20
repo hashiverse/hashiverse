@@ -30,8 +30,8 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }  # Tel
 [workspace.dependencies]
 anyhow = "1.0.102"
 log = "0.4.29"
-bytes = { version = "1.10.1", features = ["serde"] }
-digest = "0.10.7"
+bytes = { version = "1.11.1", features = ["serde"] }
+digest = "0.11.3"
 scopeguard = "1.2.0"
 hex = "0.4.3"
 parking_lot = "0.12.5"

@@ -129,7 +129,7 @@ mod tests {
     use crate::client::peer_tracker::peer_tracker::PeerTracker;
     use crate::tools::buckets::{BUCKET_DURATIONS, BucketLocation, BucketType, generate_bucket_location};
     use crate::tools::config;
-    use crate::tools::parallel_pow_generator::StubParallelPowGenerator;
+    use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
     use crate::tools::runtime_services::RuntimeServices;
     use crate::tools::server_id::ServerId;
     use crate::tools::time::{DurationMillis, TimeMillis};
@@ -142,7 +142,7 @@ mod tests {
         Arc::new(RuntimeServices {
             time_provider: Arc::new(RealTimeProvider::default()),
             transport_factory: MemTransportFactory::default(),
-            pow_generator: Arc::new(StubParallelPowGenerator::new()),
+            pow_generator: Arc::new(SingleThreadedPowGenerator::new()),
         })
     }
 
