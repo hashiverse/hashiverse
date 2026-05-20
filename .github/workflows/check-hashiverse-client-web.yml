@@ -46,7 +46,7 @@ jobs:
         working-directory: hashiverse-rust
         run: wasm-pack build hashiverse-client-wasm --release --target bundler
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: lts/*
           cache: npm
