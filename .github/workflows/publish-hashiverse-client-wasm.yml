@@ -75,7 +75,15 @@ jobs:
 
       - name: npm publish --dry-run
         working-directory: pkg
-        run: npm publish --access public --provenance --dry-run
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [[ "$version" == *-* ]]; then
+            echo "Prerelease version $version -> --tag next"
+            npm publish --access public --provenance --dry-run --tag next
+          else
+            npm publish --access public --provenance --dry-run
+          fi
 
   publish-npm:
     name: publish to npm
@@ -102,4 +110,12 @@ jobs:
 
       - name: npm publish
         working-directory: pkg
-        run: npm publish --access public --provenance
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [[ "$version" == *-* ]]; then
+            echo "Prerelease version $version -> --tag next"
+            npm publish --access public --provenance --tag next
+          else
+            npm publish --access public --provenance
+          fi
