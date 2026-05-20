@@ -1,0 +1,140 @@
+name: publish-hashiverse-rust
+
+on:
+  release:
+    types: [released, prereleased]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to publish"
+        type: choice
+        required: true
+        default: "dry-run"
+        options:
+          - dry-run
+          - crates-io
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ---- dry-run path (workflow_dispatch only) ----
+
+  publish-lib-dry-run:
+    name: cargo publish --dry-run (hashiverse-lib)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'dry-run' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/set-cargo-version-from-tag
+      - uses: ./.github/actions/install-rust-toolchain
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust-publish"
+          workspaces: hashiverse-rust -> target
+      - name: cargo publish --dry-run
+        working-directory: hashiverse-rust
+        run: cargo publish --dry-run -p hashiverse-lib
+
+  publish-server-lib-dry-run:
+    name: cargo publish --dry-run (hashiverse-server-lib)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'dry-run' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/set-cargo-version-from-tag
+      - uses: ./.github/actions/install-rust-toolchain
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust-publish"
+          workspaces: hashiverse-rust -> target
+      - name: cargo publish --dry-run
+        working-directory: hashiverse-rust
+        run: cargo publish --dry-run -p hashiverse-server-lib
+
+  publish-client-rust-dry-run:
+    name: cargo publish --dry-run (hashiverse-client-rust)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'dry-run' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/set-cargo-version-from-tag
+      - uses: ./.github/actions/install-rust-toolchain
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust-publish"
+          workspaces: hashiverse-rust -> target
+      - name: cargo publish --dry-run
+        working-directory: hashiverse-rust
+        run: cargo publish --dry-run -p hashiverse-client-rust
+
+  # ---- real publish path (release events, or workflow_dispatch with target=crates-io) ----
+  #
+  # All three crates publish from a single job. `cargo build --workspace` upfront
+  # is the safety check that the code compiles; the three `cargo publish` calls
+  # then use `--no-verify` so each one is just package-and-upload, not a fresh
+  # build under target/package/<crate>/target/. This is the real saving over
+  # three separate jobs — verify-with-build per crate is dominant in publish
+  # time and doesn't share artifacts across crates.
+  #
+  # The publishes go in dependency order (lib → server-lib & client-rust). With
+  # --no-verify there's no need to wait for the sparse index between them —
+  # nothing here is resolving dependencies from crates.io.
+  #
+  # Trade-off: --no-verify skips the build of the filtered (`include`/`exclude`-
+  # applied) packaged tarball. The workspace build above validates the path-dep
+  # source. In practice these only diverge if Cargo.toml's include/exclude omits
+  # a file that the path-built version uses — caught proactively by the
+  # `--dry-run` jobs (which keep full verify), so run those before cutting a
+  # real release if any of the publish-metadata changed.
+
+  publish:
+    name: publish all three crates to crates.io
+    if: |
+      (github.event_name == 'release') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'crates-io')
+    runs-on: ubuntu-latest
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/hashiverse-lib
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/set-cargo-version-from-tag
+      - uses: ./.github/actions/install-rust-toolchain
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust-publish"
+          workspaces: hashiverse-rust -> target
+
+      - name: cargo build --workspace (safety check)
+        working-directory: hashiverse-rust
+        run: cargo build --workspace
+
+      - name: cargo publish hashiverse-lib
+        working-directory: hashiverse-rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: cargo publish --no-verify -p hashiverse-lib
+
+      - name: cargo publish hashiverse-server-lib
+        working-directory: hashiverse-rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: cargo publish --no-verify -p hashiverse-server-lib
+
+      - name: cargo publish hashiverse-client-rust
+        working-directory: hashiverse-rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: cargo publish --no-verify -p hashiverse-client-rust
