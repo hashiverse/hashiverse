@@ -31,11 +31,18 @@ function build_card_dom(attrs: PreviewAttrs, on_dismiss?: () => void): HTMLEleme
 		const image_container = document.createElement("div");
 		image_container.className = "plugin-urlpreview-card-image-container";
 
+		const image_link = document.createElement("a");
+		image_link.className = "plugin-urlpreview-card-image-link";
+		image_link.href = attrs.url;
+		image_link.target = "_blank";
+		image_link.rel = "noopener noreferrer nofollow";
+
 		const img = document.createElement("img");
 		img.src = attrs.image_url;
 		img.alt = "";
 		img.className = "plugin-urlpreview-card-image";
-		image_container.appendChild(img);
+		image_link.appendChild(img);
+		image_container.appendChild(image_link);
 
 		const domain_el = document.createElement("div");
 		domain_el.className = "plugin-urlpreview-card-domain";
