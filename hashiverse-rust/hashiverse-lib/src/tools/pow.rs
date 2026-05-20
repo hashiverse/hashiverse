@@ -146,6 +146,9 @@ mod tests {
         expected_final_hash_hex: &'static str,
     }
 
+    // Confirmed via `cargo llvm-cov nextest -p hashiverse-lib --tests pow::tests` that running
+    // `pow_regression_vectors_match` over these vectors hits every arm of the `apply_chained_hash`
+    // match block in pow.rs, so all 17 hash functions are exercised for regression.
     fn regression_vectors() -> Vec<RegressionVector> {
         vec![
             RegressionVector {
