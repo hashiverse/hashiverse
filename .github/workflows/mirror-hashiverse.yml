@@ -13,6 +13,14 @@ jobs:
   mirror:
     runs-on: ubuntu-latest
     steps:
+      # Clone from GitHub BEFORE setting up ssh-agent. webfactory/ssh-agent
+      # parses the loaded SSH key's comment and installs git `insteadOf`
+      # rules; if the key's comment happens to mention github.com it
+      # rewrites our HTTPS clone into an SSH connection to the wrong host.
+      # Doing the GitHub clone first sidesteps the rewrite entirely.
+      - name: Clone from GitHub
+        run: git clone --mirror https://github.com/hashiverse/hashiverse.git mirror
+
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.CODEBERG_SSH_KEY_HASHIVERSE }}
@@ -22,9 +30,8 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan codeberg.org >> ~/.ssh/known_hosts
 
-      - name: Mirror to Codeberg
+      - name: Push to Codeberg
         run: |
-          git clone --mirror https://github.com/hashiverse/hashiverse.git mirror
           git -C mirror push --prune git@codeberg.org:hashiverse/hashiverse.git \
             "+refs/heads/*:refs/heads/*" \
             "+refs/tags/*:refs/tags/*"

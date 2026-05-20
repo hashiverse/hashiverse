@@ -20,6 +20,17 @@ jobs:
           - { repo: www-eu, domain: www.hashiverse.eu }
           - { repo: www-ch, domain: www.hashiverse.ch }
     steps:
+      # Clone from GitHub BEFORE setting up ssh-agent. webfactory/ssh-agent
+      # parses the loaded SSH key's comment and installs git `insteadOf`
+      # rules; if the key's comment happens to mention github.com it
+      # rewrites our HTTPS clone into an SSH connection to the wrong host.
+      # Doing the GitHub clones first sidesteps the rewrite entirely.
+      - name: Clone from GitHub (mirror)
+        run: git clone --mirror https://github.com/hashiverse/www.git mirror
+
+      - name: Clone from GitHub (work, for pages branch)
+        run: git clone --branch main --depth 1 https://github.com/hashiverse/www.git work
+
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.CODEBERG_SSH_KEY_WWW }}
@@ -29,11 +40,10 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan codeberg.org >> ~/.ssh/known_hosts
 
-      - name: Mirror branches and tags
+      - name: Push branches and tags to Codeberg
         env:
           REPO: git@codeberg.org:hashiverse/${{ matrix.target.repo }}.git
         run: |
-          git clone --mirror https://github.com/hashiverse/www.git mirror
           git -C mirror push --prune "$REPO" \
             "+refs/heads/*:refs/heads/*" \
             "+refs/tags/*:refs/tags/*"
@@ -43,7 +53,6 @@ jobs:
           REPO: git@codeberg.org:hashiverse/${{ matrix.target.repo }}.git
           DOMAIN: ${{ matrix.target.domain }}
         run: |
-          git clone --branch main --depth 1 https://github.com/hashiverse/www.git work
           cd work
           git config user.name "hashiverse-mirror"
           git config user.email "mirror@hashiverse.com"
