@@ -1,6 +1,8 @@
-## About
+# @hashiverse/hashiverse-client-wasm
 
-This library provides the rust/wasm backend for the associated hashiverse-client-web repo.
+Browser/WASM client for Hashiverse — your open-source decentralized X/Twitter replacement. This package provides the Rust/WASM backend for the associated `hashiverse-client-web` repo.
+
+[![test-hashiverse-client-wasm](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-client-wasm.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-client-wasm.yml)
 
 ## Install
 
@@ -19,13 +21,12 @@ wasm_init(true);
 
 A future `@hashiverse/hashiverse-client-nodejs` package will provide a native-Node binding via NAPI-RS (parallel to the PyPI wheel). Use this WASM build only in browser/bundler contexts.
 
-## Tests
+---
 
-[![test-hashiverse-client-wasm](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-client-wasm.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-client-wasm.yml) — run with `wasm-pack test --headless --chrome --lib`.
+## Developing this package
 
-## Get started (contributors)
+The rest of this document describes how to build and test `hashiverse-client-wasm` itself. End-user usage is covered above.
 
 - Build for development with `wasm-pack build --dev`
 - Build for release with `wasm-pack build --release`
 - Run tests with `wasm-pack test --chrome --headless --lib`
-
