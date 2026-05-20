@@ -24,7 +24,7 @@ jobs:
 
       # --- Build binary ---
 
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/install-rust-toolchain
 
       - uses: Swatinem/rust-cache@v2
         with:

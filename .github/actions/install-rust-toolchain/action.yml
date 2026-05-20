@@ -1,0 +1,38 @@
+name: Install pinned Rust toolchain
+description: |
+  Reads the channel from hashiverse-rust/rust-toolchain.toml and installs
+  exactly that toolchain via dtolnay/rust-toolchain (fast pre-built tarball).
+  Single source of truth: bump the toml and every workflow follows.
+
+  Also exports the channel to $GITHUB_ENV as RUST_CHANNEL so downstream
+  steps (e.g. PyO3/maturin-action's rust-toolchain input) can reference it.
+
+inputs:
+  targets:
+    description: Comma-separated list of target triples to add (e.g. wasm32-wasip1)
+    required: false
+    default: ""
+  components:
+    description: Comma-separated list of components to add (e.g. llvm-tools-preview)
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Read pinned channel from rust-toolchain.toml
+      id: channel
+      shell: bash
+      run: |
+        ch=$(grep '^channel' hashiverse-rust/rust-toolchain.toml | cut -d'"' -f2)
+        if [ -z "$ch" ]; then
+          echo "Could not read channel from hashiverse-rust/rust-toolchain.toml" >&2
+          exit 1
+        fi
+        echo "channel=$ch" >> "$GITHUB_OUTPUT"
+        echo "RUST_CHANNEL=$ch" >> "$GITHUB_ENV"
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ steps.channel.outputs.channel }}
+        targets: ${{ inputs.targets }}
+        components: ${{ inputs.components }}

@@ -22,7 +22,7 @@ jobs:
 
       # --- Rust docs ---
 
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/install-rust-toolchain
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -48,6 +48,11 @@ jobs:
       - name: Build Astro site
         working-directory: www
         env:
+          # PUBLIC_PRERELEASE_TAG drives a "prerelease" banner in www/src/layouts/Base.astro
+          # and is intentionally empty on stable releases.
+          # PUBLIC_RELEASE_TAG is the tag of the build itself and feeds schema.org
+          # softwareVersion in www/src/utils/schema.ts — it must be set for prereleases too,
+          # otherwise www-prerelease.hashiverse.com ships without a version in its JSON-LD.
           PUBLIC_PRERELEASE_TAG: ${{ github.event.release.prerelease && github.event.release.tag_name || '' }}
           PUBLIC_RELEASE_TAG: ${{ github.event.release.tag_name || '' }}
         run: npm run build

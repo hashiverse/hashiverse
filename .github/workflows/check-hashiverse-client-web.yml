@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/install-rust-toolchain
         with:
           targets: wasm32-unknown-unknown
 
