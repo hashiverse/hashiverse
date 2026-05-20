@@ -117,9 +117,14 @@ jobs:
           shared-key: "hashiverse-rust-publish"
           workspaces: hashiverse-rust -> target
 
-      - name: cargo build --workspace (safety check)
+      # Safety check: compile only the three crates we're about to publish.
+      # `cargo build --workspace` doesn't work here because hashiverse-client-wasm
+      # only compiles for wasm32 (it uses non-Send JsFuture / IndexedDB types
+      # that fail the Send bounds of #[async_trait] on a native target) — the
+      # wasm/nodejs/python siblings each have their own CI for native validation.
+      - name: cargo build (publishable crates)
         working-directory: hashiverse-rust
-        run: cargo build --workspace
+        run: cargo build -p hashiverse-lib -p hashiverse-server-lib -p hashiverse-client-rust
 
       - name: cargo publish hashiverse-lib
         working-directory: hashiverse-rust
