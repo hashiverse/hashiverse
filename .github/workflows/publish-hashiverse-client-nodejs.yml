@@ -104,6 +104,10 @@ jobs:
         with:
           path: ${{ env.PACKAGE_DIR }}/artifacts
 
+      - name: napi create-npm-dirs (scaffold npm/<target>/ from package.json targets)
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: npx napi create-npm-dirs
+
       - name: napi artifacts + prepublish
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
@@ -152,11 +156,15 @@ jobs:
         with:
           path: ${{ env.PACKAGE_DIR }}/artifacts
 
-      - name: napi artifacts (assemble npm/*)
+      - name: napi create-npm-dirs (scaffold npm/<target>/ from package.json targets)
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: npx napi create-npm-dirs
+
+      - name: napi artifacts (move .node files into npm/<target>/)
         working-directory: ${{ env.PACKAGE_DIR }}
         run: npx napi artifacts
 
-      - name: napi prepublish (rewrite optionalDependencies)
+      - name: napi prepublish (rewrite root optionalDependencies)
         working-directory: ${{ env.PACKAGE_DIR }}
         run: npx napi prepublish -t github --skip-gh-release
 
