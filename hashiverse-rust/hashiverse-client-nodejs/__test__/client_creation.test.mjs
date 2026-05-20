@@ -24,7 +24,10 @@ describe("client creation", () => {
     });
 
     afterEach(() => {
-        rmSync(parentDir, { recursive: true, force: true });
+        // Windows holds SQLite file handles open until JS GC finalises the
+        // napi-rs client, so rmSync can hit EPERM. With force: true, rmSync
+        // retries on EPERM up to maxRetries with linear backoff.
+        rmSync(parentDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     });
 
     it("createFromKeyphrase returns a client", async () => {

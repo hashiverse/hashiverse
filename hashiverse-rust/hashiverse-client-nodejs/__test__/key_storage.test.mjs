@@ -24,7 +24,10 @@ describe("key storage", () => {
     });
 
     afterEach(() => {
-        rmSync(dataDir, { recursive: true, force: true });
+        // Windows holds SQLite file handles open until JS GC finalises the
+        // napi-rs client, so rmSync can hit EPERM. With force: true, rmSync
+        // retries on EPERM up to maxRetries with linear backoff.
+        rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     });
 
     it("new client's key is listed", async () => {
