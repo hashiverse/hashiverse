@@ -11,6 +11,17 @@ Hashiverse is owned by you, the Hashiverse community. It is completely open-sour
 Live it right now at https://www.hashiverse.com
 
 
+## Licence
+
+Hashiverse is dual-licensed under either of
+
+- [MIT license](LICENSE-MIT) ([`https://opensource.org/licenses/MIT`](https://opensource.org/licenses/MIT))
+- [Apache License, Version 2.0](LICENSE-APACHE) ([`https://www.apache.org/licenses/LICENSE-2.0`](https://www.apache.org/licenses/LICENSE-2.0))
+
+at your option. This is the same dual-licence arrangement used by the Rust project itself, and by the majority of the Rust ecosystem.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in Hashiverse by you, as defined in the Apache-2.0 licence, shall be dual-licensed as above, without any additional terms or conditions.
+
 ## Builds
 
 - [![build-app](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml)
@@ -42,13 +53,8 @@ Live it right now at https://www.hashiverse.com
 - [![test-hashiverse-client-wasm](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-client-wasm.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-client-wasm.yml)
 - [![test-hashiverse-client-python](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-client-python.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-client-python.yml)
 
-## Licence
+## Mirrors
 
-Hashiverse is dual-licensed under either of
-
-- [MIT license](LICENSE-MIT) ([`https://opensource.org/licenses/MIT`](https://opensource.org/licenses/MIT))
-- [Apache License, Version 2.0](LICENSE-APACHE) ([`https://www.apache.org/licenses/LICENSE-2.0`](https://www.apache.org/licenses/LICENSE-2.0))
-
-at your option. This is the same dual-licence arrangement used by the Rust project itself, and by the majority of the Rust ecosystem.
-
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in Hashiverse by you, as defined in the Apache-2.0 licence, shall be dual-licensed as above, without any additional terms or conditions.
+- [![mirror-hashiverse](https://github.com/hashiverse/hashiverse/actions/workflows/mirror-hashiverse.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/mirror-hashiverse.yml) — mirrors this repo to [`codeberg.org/hashiverse/hashiverse`](https://codeberg.org/hashiverse/hashiverse).
+- [![mirror-app](https://github.com/hashiverse/hashiverse/actions/workflows/mirror-app.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/mirror-app.yml) — after `build-app` succeeds, mirrors [`github.com/hashiverse/app`](https://github.com/hashiverse/app) to `codeberg.org/hashiverse/app-eu` and `app-ch` for Codeberg Pages hosting at [app.hashiverse.eu](https://app.hashiverse.eu) and [app.hashiverse.ch](https://app.hashiverse.ch).
+- [![mirror-www](https://github.com/hashiverse/hashiverse/actions/workflows/mirror-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/mirror-www.yml) — after `build-www` succeeds, mirrors [`github.com/hashiverse/www`](https://github.com/hashiverse/www) to `codeberg.org/hashiverse/www-eu` and `www-ch` for Codeberg Pages hosting at [www.hashiverse.eu](https://www.hashiverse.eu) and [www.hashiverse.ch](https://www.hashiverse.ch).
