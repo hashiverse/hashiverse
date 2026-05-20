@@ -11,7 +11,7 @@ workspace = true
 
 [dependencies]
 hashiverse-lib = { workspace = true }
-hashiverse-server-lib = { path = "../hashiverse-server-lib" }
+hashiverse-server-lib = { workspace = true }
 
 anyhow = { workspace = true }
 log = { workspace = true }

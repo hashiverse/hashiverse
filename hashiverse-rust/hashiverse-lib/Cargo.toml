@@ -8,7 +8,7 @@ repository.workspace = true
 homepage.workspace = true
 description = "Core protocol library for Hashiverse — your open-source decentralized X/Twitter replacement."
 readme = "README.md"
-keywords = ["hashiverse", "p2p", "decentralized", "social", "kademlia"]
+keywords = ["hashiverse", "p2p", "decentralized", "social-media", "social"]
 categories = ["network-programming", "cryptography", "wasm"]
 
 [lints]

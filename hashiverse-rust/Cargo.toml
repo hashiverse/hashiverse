@@ -47,6 +47,7 @@ async-trait = "0.1.89"
 # tag alongside [workspace.package].version, and every member references the
 # crate via `{ workspace = true }` so the constraint never has to be repeated.
 hashiverse-lib = { path = "hashiverse-lib", version = "0.0.0" }
+hashiverse-server-lib = { path = "hashiverse-server-lib", version = "0.0.0" }
 
 # Make sure our dependencies always use the release-level optimisations
 [profile.dev.package."*"]

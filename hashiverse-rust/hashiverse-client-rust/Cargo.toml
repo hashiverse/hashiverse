@@ -8,7 +8,7 @@ repository.workspace = true
 homepage.workspace = true
 description = "Friendly Rust client wrapper for Hashiverse — your open-source decentralized X/Twitter replacement. Picks sensible defaults (sqlite storage, disk key locker, DNSSEC-validated bootstrap, native parallel PoW) so you can spin up a working client in a few lines."
 readme = "README.md"
-keywords = ["hashiverse", "p2p", "decentralized", "social", "kademlia"]
+keywords = ["hashiverse", "p2p", "decentralized", "social-media", "social"]
 categories = ["network-programming", "cryptography"]
 
 [lints]
