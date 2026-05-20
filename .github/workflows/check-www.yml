@@ -13,6 +13,9 @@ on:
       - "www/**"
       - ".github/workflows/check-www.yml"
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest

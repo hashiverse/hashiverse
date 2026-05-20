@@ -17,6 +17,9 @@ on:
       - "hashiverse-rust/hashiverse-lib/**"
       - ".github/workflows/check-hashiverse-client-web.yml"
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 

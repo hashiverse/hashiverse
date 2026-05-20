@@ -13,6 +13,9 @@ on:
       - "hashiverse-rust/hashiverse-lib/**"
       - "hashiverse-rust/hashiverse-client-wasm/**"
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 

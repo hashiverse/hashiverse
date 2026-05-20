@@ -4,6 +4,12 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Hashiverse server library — production node implementation (HTTPS + ACME, Kademlia routing, DDoS protection, on-disk persistence) for your open-source decentralized X/Twitter replacement."
+readme = "README.md"
+keywords = ["hashiverse", "p2p", "decentralized", "social-media", "social"]
+categories = ["network-programming"]
 
 [lints]
 workspace = true
@@ -13,7 +19,7 @@ name = "hashiverse_server_lib"
 path = "src/lib.rs"
 
 [dependencies]
-hashiverse-lib = { path = "../hashiverse-lib" }
+hashiverse-lib = { workspace = true }
 
 anyhow = { workspace = true }
 log = { workspace = true }
@@ -53,4 +59,4 @@ sysinfo = { version = "0.39.2", default-features = false, features = ["system", 
 serde_json = { version = "1.0.145" }
 
 [dev-dependencies]
-hashiverse-lib = { path = "../hashiverse-lib", features = ["generic-tests"] }
+hashiverse-lib = { workspace = true, features = ["generic-tests"] }

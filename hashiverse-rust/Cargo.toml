@@ -5,6 +5,8 @@ members = [
     "hashiverse-server",
     "hashiverse-client-wasm",
     "hashiverse-client-python",
+    "hashiverse-client-nodejs",
+    "hashiverse-client-rust",
     "hashiverse-integration-tests",
 ]
 
@@ -16,6 +18,8 @@ version = "0.0.0"
 edition = "2024"
 authors = ["James Jardine <mail@jimme.net>"]
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/hashiverse/hashiverse"
+homepage = "https://www.hashiverse.com"
 
 # Workspace-wide dependencies (can be inherited by members)
 [workspace.lints.clippy]
@@ -36,6 +40,14 @@ scopeguard = "1.2.0"
 hex = "0.4.3"
 parking_lot = "0.12.5"
 async-trait = "0.1.89"
+
+# Internal workspace members published to crates.io. The `version` constraint here
+# is the single source of truth: the CI action
+# `.github/actions/set-cargo-version-from-tag` rewrites it to match the release
+# tag alongside [workspace.package].version, and every member references the
+# crate via `{ workspace = true }` so the constraint never has to be repeated.
+hashiverse-lib = { path = "hashiverse-lib", version = "0.0.0" }
+hashiverse-server-lib = { path = "hashiverse-server-lib", version = "0.0.0" }
 
 # Make sure our dependencies always use the release-level optimisations
 [profile.dev.package."*"]

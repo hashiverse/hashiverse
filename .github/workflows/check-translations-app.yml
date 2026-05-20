@@ -10,6 +10,9 @@ on:
       - "hashiverse-client-web/translations/**"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest

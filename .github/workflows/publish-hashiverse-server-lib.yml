@@ -1,0 +1,99 @@
+name: publish-hashiverse-server-lib
+
+on:
+  release:
+    types: [released, prereleased]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to publish"
+        type: choice
+        required: true
+        default: "dry-run"
+        options:
+          - dry-run
+          - crates-io
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish-dry-run:
+    name: cargo publish --dry-run
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'dry-run' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/set-cargo-version-from-tag
+
+      - uses: ./.github/actions/install-rust-toolchain
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust-publish"
+          workspaces: hashiverse-rust -> target
+
+      - name: cargo publish --dry-run
+        working-directory: hashiverse-rust
+        run: cargo publish --dry-run -p hashiverse-server-lib
+
+  publish-crates-io:
+    name: publish to crates.io
+    if: |
+      (github.event_name == 'release') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'crates-io')
+    runs-on: ubuntu-latest
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/hashiverse-server-lib
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/set-cargo-version-from-tag
+
+      - uses: ./.github/actions/install-rust-toolchain
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust-publish"
+          workspaces: hashiverse-rust -> target
+
+      # Wait for the just-published hashiverse-lib version to appear on the
+      # crates.io index. The publish-hashiverse-lib workflow runs in parallel
+      # off the same release event; server-lib depends on lib so we have to
+      # let the lib publish propagate before resolving deps. Cap at ~5 min.
+      - name: wait for hashiverse-lib on crates.io
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -e
+          version="${TAG#v}"
+          # workflow_dispatch has no release tag — read the workspace version directly
+          if [ -z "$version" ]; then
+            version=$(sed -nE '/^\[workspace\.package\]/,/^\[/ s/^version = "([^"]+)".*/\1/p' hashiverse-rust/Cargo.toml | head -1)
+          fi
+          echo "Waiting for hashiverse-lib==$version on crates.io..."
+          for i in $(seq 1 30); do
+            if cargo search --limit 1 hashiverse-lib 2>/dev/null | grep -qE "^hashiverse-lib = \"$version\""; then
+              echo "Found hashiverse-lib $version"
+              exit 0
+            fi
+            echo "  attempt $i/30 — not yet, sleeping 10s"
+            sleep 10
+          done
+          echo "Timed out waiting for hashiverse-lib $version" >&2
+          exit 1
+
+      - name: cargo publish
+        working-directory: hashiverse-rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: cargo publish -p hashiverse-server-lib
