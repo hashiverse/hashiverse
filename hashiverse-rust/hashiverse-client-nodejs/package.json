@@ -44,7 +44,7 @@
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
     "artifacts": "napi artifacts",
-    "prepublishOnly": "napi prepublish -t github --skip-gh-release",
+    "prepublishOnly": "napi prepublish -t github",
     "test": "vitest run",
     "version": "napi version"
   },

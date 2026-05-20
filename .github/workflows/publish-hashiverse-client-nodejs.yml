@@ -112,7 +112,7 @@ jobs:
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
           npx napi artifacts
-          npx napi prepublish -t github --skip-gh-release
+          npx napi prepublish -t github
 
       - name: Dry-run publish all packages
         working-directory: ${{ env.PACKAGE_DIR }}
@@ -166,7 +166,7 @@ jobs:
 
       - name: napi prepublish (rewrite root optionalDependencies)
         working-directory: ${{ env.PACKAGE_DIR }}
-        run: npx napi prepublish -t github --skip-gh-release
+        run: npx napi prepublish -t github
 
       - name: Publish all packages (platforms first, then root)
         working-directory: ${{ env.PACKAGE_DIR }}
