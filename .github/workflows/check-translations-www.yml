@@ -10,6 +10,9 @@ on:
       - "www/translations/**"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
