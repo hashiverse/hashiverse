@@ -32,7 +32,7 @@ tokio = { version = "1.45", features = ["macros", "time", "rt", "io-util"] }
 tokio-util = { version = "0.7.18", features = ["codec", "rt"] }
 clap = { version = "4.6.1", features = ["derive"] }
 base64 = "0.22.1"
-uuid = { version = "1.17.0", features = ["v4", "js"] }
+uuid = { version = "1.17.0", features = ["v4"] }
 lz4_flex="0.13.1"
 brotli="8.0.2"
 scraper = "0.27.0"
@@ -47,7 +47,6 @@ sha3 = "0.12.0"
 whirlpool = "0.11.0"
 groestl = "0.11.0"
 skein = "0.2.0"
-gloo-timers = { version = "0.4.0", features = ["futures"] }
 send_wrapper = { version = "0.6.0", features = ["futures"]}
 tempfile = "3.25.0"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "registry", "fmt"] }
@@ -63,26 +62,16 @@ rusqlite = { version = "0.36", features = ["bundled"] }
 dirs-next = "2.0"
 hickory-resolver = { version = "0.25", features = ["https-ring", "dnssec-ring", "webpki-roots"] }
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 wasm-bindgen-futures = "0.4"
+gloo-timers = { version = "0.4.0", features = ["futures"] }
+uuid = { version = "1.17.0", features = ["js"] }
+getrandom_2 = { package = "getrandom", version = "0.2.17", features = ["js"] }
+getrandom_3 = { package = "getrandom", version = "0.3.4", features = ["wasm_js"] }
+getrandom_4 = { package = "getrandom", version = "0.4.2", features = ["wasm_js"] }
 
 [target.'cfg(all(tokio_unstable, not(target_arch = "wasm32")))'.dependencies]
 console-subscriber = { version = "0.5.0" }
-
-[dependencies.getrandom_2]
-package = "getrandom"
-version = "0.2.17"
-features = [ 'js' ]
-
-[dependencies.getrandom_3]
-package = "getrandom"
-version = "0.3.4"
-features = [ 'wasm_js' ]
-
-[dependencies.getrandom_4]
-package = "getrandom"
-version = "0.4.2"
-features = [ 'wasm_js' ]
 
 [dev-dependencies]
 wasm-bindgen-test = "*"
