@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,8 +34,9 @@ function file_to_url(file_path) {
 
 function git_mtime(file_path) {
     try {
-        const out = execSync(
-            `git log -1 --format=%aI -- "${file_path}"`,
+        const out = execFileSync(
+            "git",
+            ["log", "-1", "--format=%aI", "--", file_path],
             { encoding: "utf8", cwd: www_root, stdio: ["ignore", "pipe", "ignore"] },
         ).trim();
         return out || null;
