@@ -3,6 +3,7 @@
 Browser/WASM client for Hashiverse — your open-source decentralized X/Twitter replacement. This package provides the Rust/WASM backend for the associated `hashiverse-client-web` repo.
 
 [![test-hashiverse-client-wasm](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-client-wasm.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-client-wasm.yml)
+[![publish-hashiverse-client-wasm](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-wasm.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-wasm.yml)
 
 ## Install
 

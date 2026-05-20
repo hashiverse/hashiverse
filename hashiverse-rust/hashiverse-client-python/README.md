@@ -3,6 +3,7 @@
 Python client for Hashiverse — your open-source decentralized X/Twitter replacement. Wraps the Rust `hashiverse-lib` via PyO3 for native performance.
 
 [![test-hashiverse-client-python](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-client-python.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/test-hashiverse-client-python.yml)
+[![publish-hashiverse-client-python](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml)
 
 ## Install
 

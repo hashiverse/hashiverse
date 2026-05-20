@@ -2,6 +2,8 @@
 
 Native Node.js binding for the Hashiverse client — your open-source decentralized X/Twitter replacement.
 
+[![publish-hashiverse-client-nodejs](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-nodejs.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-nodejs.yml)
+
 This is the Node.js sibling of the [`hashiverse-client`](https://pypi.org/project/hashiverse-client/) PyPI wheel: it binds `hashiverse-lib` directly via [NAPI-RS](https://napi.rs/), producing prebuilt platform-native `.node` binaries — no in-process WASM, no browser APIs. For browser/bundler usage, see [`@hashiverse/hashiverse-client-wasm`](https://www.npmjs.com/package/@hashiverse/hashiverse-client-wasm) instead.
 
 ## Install

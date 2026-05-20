@@ -16,7 +16,13 @@ Live it right now at https://www.hashiverse.com
 - [![build-app](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml)
 - [![build-www](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml)
 - [![build-server](https://github.com/hashiverse/hashiverse/actions/workflows/build-server.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-server.yml)
-- [![publish-hashiverse-client-python](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml)
+
+## Publishes
+
+- [![publish-hashiverse-rust](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-rust.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-rust.yml) — `hashiverse-lib`, `hashiverse-server-lib`, `hashiverse-client-rust` to [crates.io](https://crates.io/users/hashiverse).
+- [![publish-hashiverse-client-python](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml) — [`hashiverse-client`](https://pypi.org/project/hashiverse-client/) to PyPI.
+- [![publish-hashiverse-client-wasm](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-wasm.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-wasm.yml) — [`@hashiverse/hashiverse-client-wasm`](https://www.npmjs.com/package/@hashiverse/hashiverse-client-wasm) to npm (browser/bundler).
+- [![publish-hashiverse-client-nodejs](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-nodejs.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-nodejs.yml) — [`@hashiverse/hashiverse-client-nodejs`](https://www.npmjs.com/package/@hashiverse/hashiverse-client-nodejs) to npm (native Node).
 
 ## Translations
 

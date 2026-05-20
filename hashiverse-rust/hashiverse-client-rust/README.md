@@ -2,6 +2,8 @@
 
 Friendly Rust client wrapper for [Hashiverse](https://www.hashiverse.com) — your open-source decentralized X/Twitter replacement.
 
+[![publish-hashiverse-rust](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-rust.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-rust.yml)
+
 Hashiverse is a protocol, not a product. Like email or the web itself, no one can own it, sell it, or shut it down. Your identity is a cryptographic key pair, generated on your device, never held by anyone else. Your posts are signed with that key and propagate across a distributed network. No company can ban you, no acquisition can erase your history, no algorithm can decide you're not worth showing.
 
 This crate picks sensible defaults for every pluggable trait in [`hashiverse-lib`](https://crates.io/crates/hashiverse-lib):
