@@ -35,6 +35,8 @@ const next_page = current_index >= 0 && current_index < linear_pages.length - 1
   ? linear_pages[current_index + 1]
   : null;
 
+// page_dates.json keys are locale-prefixed pathnames (e.g. "/en/dev/cryptography"),
+// matching Astro.url.pathname; no locale-stripping needed.
 const page_dates_map = page_dates as Record<string, string>;
 const date_modified = page_dates_map[current_normalized] ?? PUBLISHED_DATE;
 const canonical_href = Astro.site ? new URL(current, Astro.site).href : current;
