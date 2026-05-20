@@ -1,6 +1,3 @@
-#![feature(try_blocks)]
-#![feature(duration_constructors)]
-
 use clap::Parser;
 use hashiverse_lib::client::client_storage::mem_client_storage::MemClientStorage;
 use hashiverse_lib::client::hashiverse_client::HashiverseClient;
