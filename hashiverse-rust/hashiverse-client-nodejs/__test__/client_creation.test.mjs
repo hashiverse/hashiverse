@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, statSync } from "node:fs";
+import { mkdtempSync, existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { HashiverseClient } from "../index.js";
+import { cleanupTmpDir } from "./cleanup.mjs";
 
 const BOOTSTRAP = ["127.0.0.1:19999"];
 
@@ -24,10 +25,7 @@ describe("client creation", () => {
     });
 
     afterEach(() => {
-        // Windows holds SQLite file handles open until JS GC finalises the
-        // napi-rs client, so rmSync can hit EPERM. With force: true, rmSync
-        // retries on EPERM up to maxRetries with linear backoff.
-        rmSync(parentDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+        cleanupTmpDir(parentDir);
     });
 
     it("createFromKeyphrase returns a client", async () => {
