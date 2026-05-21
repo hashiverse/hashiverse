@@ -154,7 +154,7 @@ pub async fn generate_loop(
     data_hash: Hash,
 ) -> anyhow::Result<(Salt, Pow, Hash)> {
     const BATCH_SIZE: usize = 64 * 1024;
-    let real_time_provider = RealTimeProvider::default();
+    let real_time_provider = RealTimeProvider;
     let mut estimator = PowRequiredEstimator::new(real_time_provider.current_time_millis(), label, pow_min);
     let guard = TrackedJobGuard::new(tracker.clone(), label, pow_min);
     loop {

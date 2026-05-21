@@ -210,66 +210,6 @@ pub fn read_length_prefixed_json<T: serde::de::DeserializeOwned>(bytes: &mut Byt
     json::bytes_to_struct::<T>(&json_bytes)
 }
 
-#[cfg(test)]
-mod tests {
-    #[tokio::test]
-    async fn xor_distance_bits_test() -> anyhow::Result<()> {
-        use crate::tools::tools::leading_agreement_bits_xor;
-
-        let tests = [
-            // Identical
-            ("0000", "0000", 16),
-            ("ffff", "ffff", 16),
-            ("1234", "1234", 16),
-            ("abcd", "abcd", 16),
-            // MSB
-            ("0000", "ffff", 0),
-            ("0000", "0fff", 4),
-            ("0000", "00ff", 8),
-            ("0000", "000f", 12),
-            // Units
-            ("0000", "efff", 0),
-            ("0000", "7fff", 1),
-            ("0000", "3fff", 2),
-            ("0000", "1fff", 3),
-            ("0000", "0fff", 4),
-            ("0000", "07ff", 5),
-            ("0000", "03ff", 6),
-            ("0000", "01ff", 7),
-            ("0000", "00ff", 8),
-            ("0000", "007f", 9),
-            ("0000", "003f", 10),
-            ("0000", "001f", 11),
-            ("0000", "000f", 12),
-            ("0000", "0007", 13),
-            ("0000", "0003", 14),
-            ("0000", "0001", 15),
-            // MSB + random
-            ("0000", "fff9", 0),
-            ("0000", "0ff9", 4),
-            ("0000", "00f9", 8),
-            // Different lengths
-            ("", "0000", 0),
-            ("00", "0000", 8),
-            ("0000", "000000", 16),
-        ];
-
-        for (a, b, expected) in tests {
-            let a_binary = hex::decode(a)?;
-            let b_binary = hex::decode(b)?;
-            {
-                let distance = leading_agreement_bits_xor(&a_binary, &b_binary);
-                assert_eq!(distance, expected, "Failed for {} and {}.  Got {} expected {}.", a, b, distance, expected);
-            }
-            {
-                let distance = leading_agreement_bits_xor(&b_binary, &a_binary);
-                assert_eq!(distance, expected, "Failed for {} and {}.  Got {} expected {}.", a, b, distance, expected);
-            }
-        }
-        Ok(())
-    }
-}
-
 pub fn random_element<T>(range: &[T]) -> &T {
     let index = random_usize_bounded(range.len());
     &range[index]
@@ -376,5 +316,65 @@ where
     tokio::spawn(task);
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     wasm_bindgen_futures::spawn_local(task);
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn xor_distance_bits_test() -> anyhow::Result<()> {
+        use crate::tools::tools::leading_agreement_bits_xor;
+
+        let tests = [
+            // Identical
+            ("0000", "0000", 16),
+            ("ffff", "ffff", 16),
+            ("1234", "1234", 16),
+            ("abcd", "abcd", 16),
+            // MSB
+            ("0000", "ffff", 0),
+            ("0000", "0fff", 4),
+            ("0000", "00ff", 8),
+            ("0000", "000f", 12),
+            // Units
+            ("0000", "efff", 0),
+            ("0000", "7fff", 1),
+            ("0000", "3fff", 2),
+            ("0000", "1fff", 3),
+            ("0000", "0fff", 4),
+            ("0000", "07ff", 5),
+            ("0000", "03ff", 6),
+            ("0000", "01ff", 7),
+            ("0000", "00ff", 8),
+            ("0000", "007f", 9),
+            ("0000", "003f", 10),
+            ("0000", "001f", 11),
+            ("0000", "000f", 12),
+            ("0000", "0007", 13),
+            ("0000", "0003", 14),
+            ("0000", "0001", 15),
+            // MSB + random
+            ("0000", "fff9", 0),
+            ("0000", "0ff9", 4),
+            ("0000", "00f9", 8),
+            // Different lengths
+            ("", "0000", 0),
+            ("00", "0000", 8),
+            ("0000", "000000", 16),
+        ];
+
+        for (a, b, expected) in tests {
+            let a_binary = hex::decode(a)?;
+            let b_binary = hex::decode(b)?;
+            {
+                let distance = leading_agreement_bits_xor(&a_binary, &b_binary);
+                assert_eq!(distance, expected, "Failed for {} and {}.  Got {} expected {}.", a, b, distance, expected);
+            }
+            {
+                let distance = leading_agreement_bits_xor(&b_binary, &a_binary);
+                assert_eq!(distance, expected, "Failed for {} and {}.  Got {} expected {}.", a, b, distance, expected);
+            }
+        }
+        Ok(())
+    }
 }
 

@@ -32,6 +32,12 @@ pub struct DdosScore {
     last_updated: Instant,
 }
 
+impl Default for DdosScore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DdosScore {
     pub fn new() -> Self {
         Self { score: 0.0, last_updated: Instant::now() }

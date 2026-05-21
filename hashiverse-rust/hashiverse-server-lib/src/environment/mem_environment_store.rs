@@ -49,7 +49,6 @@ impl EnvironmentFactory for MemEnvironmentFactory {
 }
 
 /// MemEnvironmentStore implements the `EnvironmentStore` trait for use during testing.  Everything is stored in memory and is volatile to restarts.
-
 pub struct MemEnvironmentStore {
     config: RwLock<HashMap<String, Vec<u8>>>,
     post_bundle_metadata: RwLock<HashMap<Id, Vec<u8>>>,

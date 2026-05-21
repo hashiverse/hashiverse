@@ -68,13 +68,14 @@ impl EncodedPostBundleHeaderV1 {
         let encoded_post_lengths_be: Vec<[u8; 8]> = self.encoded_post_lengths.iter().map(|&l| (l as u64).to_be_bytes()).collect();
         let peer_hash = self.peer.signature_hash_generate()?;
 
-        let mut hash_input: Vec<&[u8]> = vec![];
+        let mut hash_input: Vec<&[u8]> = vec![
+            time_millis_be.as_ref(),
+            self.location_id.as_ref(),
+            &overflowed_bytes,
+            &sealed_bytes,
+            &num_posts_bytes,
+        ];
 
-        hash_input.push(time_millis_be.as_ref());
-        hash_input.push(self.location_id.as_ref());
-        hash_input.push(&overflowed_bytes);
-        hash_input.push(&sealed_bytes);
-        hash_input.push(&num_posts_bytes);
         for encoded_post_id in &self.encoded_post_ids {
             hash_input.push(encoded_post_id.as_ref());
         }
@@ -243,7 +244,7 @@ mod tests {
 
     /// Builds a valid single-post bundle encrypted under `base_id`.
     async fn make_valid_bundle(base_id: Id) -> anyhow::Result<EncodedPostBundleV1> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
@@ -309,7 +310,7 @@ mod tests {
         let base_id = Id::random();
         let mut bundle = make_valid_bundle(base_id).await?;
         let pow_generator = SingleThreadedPowGenerator::new();
-        let server_id = ServerId::new("own_pow", &RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &RealTimeProvider, Pow(0), true, &pow_generator).await?;
         bundle.header.encoded_post_ids[0] = Id::random(); // wrong post_id
         bundle.header.signature_generate(&server_id.keys.signature_key)?;
         assert!(bundle.verify(&base_id).is_err());
@@ -321,7 +322,7 @@ mod tests {
         let base_id = Id::random();
         let mut bundle = make_valid_bundle(base_id).await?;
         let pow_generator = SingleThreadedPowGenerator::new();
-        let server_id = ServerId::new("own_pow", &RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &RealTimeProvider, Pow(0), true, &pow_generator).await?;
         bundle.header.encoded_post_lengths[0] += 1; // length doesn't match bytes
         bundle.header.signature_generate(&server_id.keys.signature_key)?;
         assert!(bundle.verify(&base_id).is_err());
@@ -360,7 +361,7 @@ mod tests {
 
     #[tokio::test]
     async fn encoded_post_bundle_v1_to_from_bytes_roundtrip() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
@@ -392,7 +393,7 @@ mod tests {
         };
 
         let bytes1 = bundle.to_bytes()?;
-        let decoded = EncodedPostBundleV1::from_bytes(Bytes::from(bytes1.clone()), true)?;
+        let decoded = EncodedPostBundleV1::from_bytes(bytes1.clone(), true)?;
 
         assert_eq!(bundle, decoded);
 
@@ -405,7 +406,7 @@ mod tests {
 
     #[tokio::test]
     async fn encoded_post_bundle_v1_to_from_bytes_roundtrip_without_body() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
@@ -437,7 +438,7 @@ mod tests {
         };
 
         let bytes1 = bundle.to_bytes()?;
-        let decoded = EncodedPostBundleV1::from_bytes(Bytes::from(bytes1.clone()), false)?;
+        let decoded = EncodedPostBundleV1::from_bytes(bytes1.clone(), false)?;
 
         assert_eq!(bundle.header, decoded.header);
         assert!(decoded.encoded_posts_bytes.is_empty());

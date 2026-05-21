@@ -59,15 +59,14 @@ impl EnvironmentFactory for DiskEnvironmentFactory {
     }
 }
 
-/// DiskEnvironmentStore implements the `EnvironmentStore` trait for production use.  PostBundles are stored as files in a directory tree, while config, metadata, feedback, and post-expiry metainformation are stored in a key-value database. 
-
+/// DiskEnvironmentStore implements the `EnvironmentStore` trait for production use.  PostBundles are stored as files in a directory tree, while config, metadata, feedback, and post-expiry metainformation are stored in a key-value database.
+///
 /// A lot of time was spent comparing the different available databases.  Given the nature of hashiverse, it makes sense that some sort of key-value (KV) database is used.
 /// For simplicity of building and maintenance, we decided to use a pure-Rust implementation.  This narrowed teh field down to redb, sled, and fjall.
 /// We would have liked to use redb, because of its self-reported performance with individual writes and random range reads - both things that hashiverse does a lot of.
 /// Unfortunately it requires occasional compaction of the ever-growing files on disk, something that needs downtime and 2x disk space to do.  This essentially killed it for us.
 /// Next was sled, which autocompacts and seemed the next most performant, but there seems to be little improvement and support for it - it's own github repo says use this as beta software only, and work on its v1.0 release seems to have stalled.
 /// That leaves fjall - seemingly third place in performance, but gauging by its github activity, is ever improving and is highly supported.  It also does autocompaction.
-
 pub struct DiskEnvironmentStore {
     path: PathBuf,
     #[allow(dead_code)]

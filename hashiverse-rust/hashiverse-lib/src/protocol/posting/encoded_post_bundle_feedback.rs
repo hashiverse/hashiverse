@@ -47,12 +47,12 @@ impl EncodedPostBundleFeedbackHeaderV1 {
     pub fn get_hash_for_signing(&self) -> Hash {
         let time_millis_be = self.time_millis.encode_be();
 
-        let mut hash_input: Vec<&[u8]> = vec![];
-
-        hash_input.push(time_millis_be.as_ref());
-        hash_input.push(self.location_id.as_ref());
-        hash_input.push(self.feedbacks_bytes_hash.as_ref());
-        hash_input.push(self.peer.signature.as_ref());
+        let hash_input: Vec<&[u8]> = vec![
+            time_millis_be.as_ref(),
+            self.location_id.as_ref(),
+            self.feedbacks_bytes_hash.as_ref(),
+            self.peer.signature.as_ref(),
+        ];
 
         hashing::hash_multiple(&hash_input)
     }
@@ -144,7 +144,7 @@ impl EncodedPostBundleFeedbackV1 {
         self.header.verify()?;
 
         // (2) Body must be an exact multiple of the fixed entry size
-        if self.feedbacks_bytes.len() % ENTRY_SIZE != 0 {
+        if !self.feedbacks_bytes.len().is_multiple_of(ENTRY_SIZE) {
             anyhow::bail!(
                 "feedbacks_bytes length ({}) is not a multiple of ENTRY_SIZE ({})",
                 self.feedbacks_bytes.len(),
@@ -170,12 +170,10 @@ impl EncodedPostBundleFeedbackV1 {
     }
 
     pub fn get_post_pow_for_feedback_type(&self, post_id: &Id, feedback_type: u8) -> Pow {
-        for view in EncodedPostFeedbackViewV1::iter(&self.feedbacks_bytes) {
-            if let Ok(view) = view {
-                // Check feedback_type first as it short circuits and is therefore faster...
-                if view.feedback_type() == feedback_type && view.post_id_bytes() == post_id.as_ref() {
-                    return view.pow();
-                }
+        for view in EncodedPostFeedbackViewV1::iter(&self.feedbacks_bytes).flatten() {
+            // Check feedback_type first as it short circuits and is therefore faster...
+            if view.feedback_type() == feedback_type && view.post_id_bytes() == post_id.as_ref() {
+                return view.pow();
             }
         }
         Pow(0)
@@ -217,11 +215,9 @@ impl EncodedPostBundleFeedbackV1 {
 
     pub fn get_post_pows(&self, post_id: &Id) -> [Pow; 256] {
         let mut result = [Pow(0); 256];
-        for view in EncodedPostFeedbackViewV1::iter(&self.feedbacks_bytes) {
-            if let Ok(view) = view {
-                if  view.post_id_bytes() == post_id.as_ref() {
-                    result[view.feedback_type() as usize] = view.pow();
-                }
+        for view in EncodedPostFeedbackViewV1::iter(&self.feedbacks_bytes).flatten() {
+            if  view.post_id_bytes() == post_id.as_ref() {
+                result[view.feedback_type() as usize] = view.pow();
             }
         }
 
@@ -239,7 +235,7 @@ mod tests {
 
     /// Builds a valid single-entry feedback bundle.
     async fn make_valid_bundle() -> anyhow::Result<EncodedPostBundleFeedbackV1> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
@@ -285,7 +281,7 @@ mod tests {
     async fn test_verify_wrong_feedbacks_hash() -> anyhow::Result<()> {
         let mut bundle = make_valid_bundle().await?;
         let pow_generator = SingleThreadedPowGenerator::new();
-        let server_id = ServerId::new("own_pow", &RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &RealTimeProvider, Pow(0), true, &pow_generator).await?;
         bundle.header.feedbacks_bytes_hash = hashing::hash(b"wrong");
         bundle.header.signature_generate(&server_id.keys.signature_key); // re-sign so header sig itself is valid
         assert!(bundle.verify().is_err());
@@ -296,7 +292,7 @@ mod tests {
     async fn test_verify_partial_entry() -> anyhow::Result<()> {
         let mut bundle = make_valid_bundle().await?;
         let pow_generator = SingleThreadedPowGenerator::new();
-        let server_id = ServerId::new("own_pow", &RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &RealTimeProvider, Pow(0), true, &pow_generator).await?;
         // Append one extra byte to make the length not a multiple of ENTRY_SIZE
         let mut bytes = bundle.feedbacks_bytes.to_vec();
         bytes.push(0u8);
@@ -311,7 +307,7 @@ mod tests {
     async fn test_verify_wrong_pow() -> anyhow::Result<()> {
         let mut bundle = make_valid_bundle().await?;
         let pow_generator = SingleThreadedPowGenerator::new();
-        let server_id = ServerId::new("own_pow", &RealTimeProvider::default(), Pow(0), true, &pow_generator).await?;
+        let server_id = ServerId::new("own_pow", &RealTimeProvider, Pow(0), true, &pow_generator).await?;
         // Flip the last byte of the entry (the pow byte) to an incorrect value
         let mut bytes = bundle.feedbacks_bytes.to_vec();
         let last = bytes.last_mut().unwrap();
@@ -325,7 +321,7 @@ mod tests {
 
     #[tokio::test]
     async fn encoded_post_bundle_header_v1_to_from_bytes_roundtrip() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;

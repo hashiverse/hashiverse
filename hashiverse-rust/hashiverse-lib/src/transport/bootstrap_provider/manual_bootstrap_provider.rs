@@ -15,6 +15,7 @@ pub struct ManualBootstrapProvider {
 }
 
 impl ManualBootstrapProvider {
+    #[allow(clippy::should_implement_trait)] // wraps Arc<Self>, can't satisfy the Default trait
     pub fn default() -> Arc<Self> {
         Self::new(vec![])
     }

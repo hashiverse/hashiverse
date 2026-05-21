@@ -42,6 +42,7 @@ bitflags! {
 pub struct RpcResponsePacketTx;
 
 impl RpcResponsePacketTx {
+    #[allow(clippy::too_many_arguments)] // protocol layer — each arg is a wire field
     pub fn encode(
         server_id_signature_key: &SignatureKey,
         server_id_verification_key_bytes: &VerificationKeyBytes,

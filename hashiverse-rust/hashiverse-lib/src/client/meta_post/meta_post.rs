@@ -53,6 +53,7 @@ impl<T> VersionedField<T> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, PartialEq)]
+#[allow(clippy::large_enum_variant)] // V1 dominates by design — adding a Box would just rename indirection that's rarely on a hot path
 pub enum MetaPost {
     None,
     MetaPostV1(MetaPostV1),

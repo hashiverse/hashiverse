@@ -168,7 +168,7 @@ pub mod tests {
     use tokio_util::sync::CancellationToken;
 
     pub async fn rpc_test(transport_factory: Arc<dyn TransportFactory>) -> anyhow::Result<()> {
-        let time_provider = Arc::new(RealTimeProvider::default());
+        let time_provider = Arc::new(RealTimeProvider);
         // configure_logging_with_time_provider("trace", time_provider.clone());
 
         let cancellation_token = CancellationToken::new();
@@ -222,7 +222,7 @@ pub mod tests {
     }
 
     pub async fn bind_port_zero_test(transport_factory: Arc<dyn TransportFactory>) -> anyhow::Result<()> {
-        let time_provider = Arc::new(RealTimeProvider::default());
+        let time_provider = Arc::new(RealTimeProvider);
         // configure_logging_with_time_provider("trace", time_provider.clone());
 
         info!("starting test");

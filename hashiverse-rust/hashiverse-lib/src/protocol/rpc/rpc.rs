@@ -30,7 +30,7 @@ use crate::tools::{config, json};
 pub async fn rpc_server_unknown(
     runtime_services: &RuntimeServices,
     sponsor_id: &Id,
-    destination_address: &String,
+    destination_address: &str,
     payload_request_kind: PayloadRequestKind,
     payload: Bytes,
 ) -> anyhow::Result<RpcResponsePacketRx> {
@@ -147,6 +147,7 @@ pub async fn rpc_server_known_with_requisite_pow_and_no_compression(
     .await
 }
 
+#[allow(clippy::too_many_arguments)] // protocol layer — each arg is part of the RPC envelope; bundling into a struct would just rename them
 async fn rpc_server_xxx(
     runtime_services: &RuntimeServices,
     pow_minimum_per_rpc: Pow,
@@ -219,7 +220,7 @@ mod tests {
         let rpc_request_packet_rx = RpcRequestPacketRx::decode(&server_id.timestamp, &server_id.keys.verification_key_bytes, &server_id.keys.pq_commitment_bytes, rpc_request_packet_tx.bytes)?;
         assert_eq!(payload_request_kind, rpc_request_packet_rx.payload_request_kind);
         assert_eq!(payload_request, rpc_request_packet_rx.bytes.as_ref());
-        assert_eq!(true, rpc_request_packet_rx.pow_server_known);
+        assert!(rpc_request_packet_rx.pow_server_known);
 
         let mut payload_response = [0u8; 1024];
         tools::random_fill_bytes(&mut payload_response);
@@ -249,7 +250,7 @@ mod tests {
 
     #[tokio::test]
     async fn rpc_request_packet_txrx_server_unknown() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator: Arc<dyn crate::tools::pow_generator::pow_generator::PowGenerator> = Arc::new(SingleThreadedPowGenerator::new());
 
         let pow_min_for_server_id = Pow(12);
@@ -266,7 +267,7 @@ mod tests {
         let rpc_request_packet_rx = RpcRequestPacketRx::decode(&server_id.timestamp, &server_id.keys.verification_key_bytes, &server_id.keys.pq_commitment_bytes, rpc_request_packet_tx.bytes)?;
         assert_eq!(payload_request_kind, rpc_request_packet_rx.payload_request_kind);
         assert_eq!(payload_request, rpc_request_packet_rx.bytes.as_ref());
-        assert_eq!(false, rpc_request_packet_rx.pow_server_known);
+        assert!(!rpc_request_packet_rx.pow_server_known);
 
         let mut payload_response = [0u8; 1024];
         tools::random_fill_bytes(&mut payload_response);

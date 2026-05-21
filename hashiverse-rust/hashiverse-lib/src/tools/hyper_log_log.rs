@@ -26,6 +26,12 @@ pub struct HyperLogLog {
     registers: [u8; NUM_REGISTERS],
 }
 
+impl Default for HyperLogLog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HyperLogLog {
     pub fn new() -> Self {
         Self { registers: [0; NUM_REGISTERS] }

@@ -51,6 +51,7 @@ pub struct RpcRequestPacketTx {
     pub bytes: Bytes,
 }
 impl RpcRequestPacketTx {
+    #[allow(clippy::too_many_arguments)] // protocol layer — each arg is a wire field
     pub async fn encode(
         time_provider: &dyn TimeProvider,
         pow_minimum_per_rpc: Pow,

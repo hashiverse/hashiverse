@@ -20,6 +20,6 @@ impl Args {
 
 impl Default for Args {
     fn default() -> Self {
-        Args::parse_from(&[""])
+        Args::parse_from([""])
     }
 }

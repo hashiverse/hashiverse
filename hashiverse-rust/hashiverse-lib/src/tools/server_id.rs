@@ -61,6 +61,7 @@ impl ServerId {
     }
 
     // Generates the initial pow hash for a server.
+    #[allow(clippy::too_many_arguments)] // server-identity PoW takes the full identity bundle by reference
     pub async fn pow_generate(
         label: &str,
         time_provider: &dyn TimeProvider,
@@ -256,7 +257,7 @@ mod tests {
 
     #[tokio::test]
     async fn pow_test() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         const POW_MAX: u8 = 2 * 8;
         for pow_min in 0..POW_MAX {
@@ -269,7 +270,7 @@ mod tests {
 
     #[tokio::test]
     async fn server_id_encode_decode_verify() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(8), false, &pow_generator).await?;
         let encoded = server_id.encode()?;
@@ -280,7 +281,7 @@ mod tests {
 
     #[tokio::test]
     async fn server_id_encode_decode_reversibility() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(8), false, &pow_generator).await?;
 

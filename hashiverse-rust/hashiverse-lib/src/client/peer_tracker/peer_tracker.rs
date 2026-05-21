@@ -321,7 +321,7 @@ mod tests {
             let bucket_location = generate_bucket_location(BucketType::User, Id::random(), BUCKET_DURATIONS[0], runtime_services.time_provider.current_time_millis())?;
             let mut count = 0;
             let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, usize::MAX, None).await?;
-            while let Some(_peer) = peer_iter.next_peer() { count += 1; break; }
+            if peer_iter.next_peer().is_some() { count += 1; }
             assert_eq!(1, count);
         };
 
@@ -430,14 +430,14 @@ mod tests {
             const PEER_DISCOVERY_I_PLUS_1: usize = PEER_DISCOVERY_I + 1;
 
             let bucket_location = {
-                let mut location_id = target_peer.id.clone();
+                let mut location_id = target_peer.id;
                 for i in 10..31 { location_id.0[i] = 0u8; }
                 BucketLocation {
                     bucket_type: BucketType::User,
-                    base_id: location_id.clone(),
+                    base_id: location_id,
                     duration: DurationMillis::zero(),
                     bucket_time_millis: TimeMillis::zero(),
-                    location_id: location_id.clone(),
+                    location_id,
                 }
             };
 
