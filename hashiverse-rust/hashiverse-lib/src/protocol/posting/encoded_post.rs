@@ -343,7 +343,7 @@ mod tests {
         // Tampering with bytes
         {
             let mut tampered_bytes = Vec::from(bytes.bytes());
-            tampered_bytes[100] = 0u8;
+            tampered_bytes[100] ^= 0xff;
             let decoded_post_attempt = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(&tampered_bytes), &password1, true, true);
             if decoded_post_attempt.is_ok() {
                 anyhow::bail!("Decoding tampered bytes should fail")
@@ -400,7 +400,7 @@ mod tests {
 
         {
             let mut tampered_bytes = Vec::from(bytes.bytes_without_body());
-            tampered_bytes[100] = 0u8;
+            tampered_bytes[100] ^= 0xff;
             let decoded_post_attempt = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(&tampered_bytes), &password1, false, false);
             if decoded_post_attempt.is_ok() {
                 anyhow::bail!("Decoding tampered bytes should fail")
