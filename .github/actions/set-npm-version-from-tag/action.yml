@@ -1,11 +1,18 @@
 name: Set npm package version from release tag
 description: |
   When the calling workflow is triggered by a release event, rewrites the
-  version in hashiverse-client-web/package.json (and package-lock.json) from
-  the release tag (leading "v" stripped). No-op for non-release triggers.
+  version in the npm package at `working-directory` (package.json, and
+  package-lock.json if present) from the release tag (leading "v" stripped).
+  No-op for non-release triggers.
 
   Tag format must be valid SemVer: v1.0.5 (stable), v1.0.5-rc1 /
   v1.0.5-beta.2 (pre-release with hyphen).
+
+inputs:
+  working-directory:
+    description: "Directory containing the package.json to bump."
+    required: false
+    default: hashiverse-client-web
 
 runs:
   using: composite
@@ -13,7 +20,7 @@ runs:
     - name: Set npm package version from release tag
       if: github.event_name == 'release'
       shell: bash
-      working-directory: hashiverse-client-web
+      working-directory: ${{ inputs.working-directory }}
       run: |
         tag="${{ github.event.release.tag_name }}"
         version="${tag#v}"
