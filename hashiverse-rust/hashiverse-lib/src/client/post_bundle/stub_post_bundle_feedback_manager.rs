@@ -11,12 +11,10 @@ use crate::protocol::posting::encoded_post_bundle_feedback::EncodedPostBundleFee
 use crate::tools::buckets::BucketLocation;
 use crate::tools::time::TimeMillis;
 
+#[derive(Default)]
 pub struct StubPostBundleFeedbackManager {
 }
 
-impl Default for StubPostBundleFeedbackManager {
-    fn default() -> Self { Self { }}
-}
 
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]

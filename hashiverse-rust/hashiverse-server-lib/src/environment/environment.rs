@@ -35,7 +35,6 @@ use hashiverse_lib::tools::{compression, json};
 
 /// An environment is a 'folder' location that contains everything to persist a server
 ///  - e.g. config , keys, posts, etc
-
 pub const CONFIG_SERVER_ID: &str = "server_id";
 pub const CONFIG_KADEMLIA_PEER_BUCKETS: &str = "kademlia_peer_buckets";
 pub const CONFIG_POST_BUNDLE_CURRENT_SIZE_BYTES: &str = "post_bundle_current_size_bytes";
@@ -360,7 +359,7 @@ pub mod tests {
         let environment = environment_factory.open_next_available(environment_dimensions).await?;
 
         let delete_post_bundle = |location_id: &Id| -> anyhow::Result<()> {
-            let vec = vec![*location_id].to_vec();
+            let vec = [*location_id].to_vec();
             environment.environment_store.post_bundles_delete(&vec)
         };
 

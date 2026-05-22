@@ -362,8 +362,8 @@ mod tests {
     #[test]
     fn view_rejects_wrong_length() {
         assert!(EncodedPostFeedbackViewV1::from_slice(&[]).is_err());
-        assert!(EncodedPostFeedbackViewV1::from_slice(&vec![1u8; ENTRY_SIZE - 1]).is_err());
-        assert!(EncodedPostFeedbackViewV1::from_slice(&vec![1u8; ENTRY_SIZE + 1]).is_err());
+        assert!(EncodedPostFeedbackViewV1::from_slice(&[1u8; ENTRY_SIZE - 1]).is_err());
+        assert!(EncodedPostFeedbackViewV1::from_slice(&[1u8; ENTRY_SIZE + 1]).is_err());
     }
 
     #[test]

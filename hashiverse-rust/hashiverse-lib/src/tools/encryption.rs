@@ -141,7 +141,7 @@ fn derive_wrap_key(argon2: &argon2::Argon2, password: &[u8]) -> anyhow::Result<K
     Ok(*Key::from_slice(&key_bytes))
 }
 
-fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &Vec<Vec<u8>>) -> anyhow::Result<Vec<u8>> {
+fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &[Vec<u8>]) -> anyhow::Result<Vec<u8>> {
     if passwords.is_empty() {
         anyhow::bail!("at least one password required");
     }
@@ -181,12 +181,12 @@ fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &Vec<
 }
 
 /// Strong encrypt data with one or more passwords – for private / sensitive data.
-pub fn encrypt_strong(plaintext: &[u8], passwords: &Vec<Vec<u8>>) -> anyhow::Result<Vec<u8>> {
+pub fn encrypt_strong(plaintext: &[u8], passwords: &[Vec<u8>]) -> anyhow::Result<Vec<u8>> {
     encrypt_with_config(&Argon2Config::strong(), plaintext, passwords)
 }
 
 /// Weak encrypt data with one or more passwords - for public-at-rest data where speed matters more.
-pub fn encrypt_weak(plaintext: &[u8], passwords: &Vec<Vec<u8>>) -> anyhow::Result<Vec<u8>> {
+pub fn encrypt_weak(plaintext: &[u8], passwords: &[Vec<u8>]) -> anyhow::Result<Vec<u8>> {
     encrypt_with_config(&Argon2Config::weak(), plaintext, passwords)
 }
 
@@ -268,7 +268,9 @@ mod tests {
         test_multiple_encryption(encrypt_weak).await
     }
 
-    async fn test_multiple_encryption(encrypt_fn: fn(&[u8], &Vec<Vec<u8>>) -> anyhow::Result<Vec<u8>>) -> anyhow::Result<()> {
+    type EncryptFn = fn(&[u8], &[Vec<u8>]) -> anyhow::Result<Vec<u8>>;
+
+    async fn test_multiple_encryption(encrypt_fn: EncryptFn) -> anyhow::Result<()> {
         let plaintext = "Jimme was here and then some...".as_bytes();
         let passwords = vec!["alice".to_string().into_bytes(), "bob".to_string().into_bytes(), "charlie".to_string().into_bytes()];
         let encrypted = encrypt_fn(plaintext, &passwords)?;
@@ -303,7 +305,7 @@ mod tests {
         assert_ne!(encrypted_strong, encrypted_weak, "weak and strong encryption should not be identical");
 
         const ITERATIONS: usize = 128;
-        let time_provider = Arc::new(RealTimeProvider::default());
+        let time_provider = Arc::new(RealTimeProvider);
 
         let stopwatch_strong = StopWatch::new(time_provider.clone());
         for _ in 0..ITERATIONS {
@@ -329,7 +331,7 @@ mod tests {
     #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
     #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     async fn test_zero_recipients_rejected() -> anyhow::Result<()> {
-        let result = encrypt_weak(b"test", &vec![]);
+        let result = encrypt_weak(b"test", &[]);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("at least one password"));
         Ok(())

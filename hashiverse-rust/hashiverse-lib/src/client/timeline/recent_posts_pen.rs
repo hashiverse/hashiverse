@@ -44,6 +44,12 @@ pub struct RecentPostsPen {
     entries: Vec<RecentPostsPenEntry>,
 }
 
+impl Default for RecentPostsPen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RecentPostsPen {
     pub fn new() -> Self {
         Self { entries: Vec::new() }

@@ -42,7 +42,7 @@ pub struct RuntimeServices {
 impl RuntimeServices {
     pub fn default_for_testing() -> Arc<Self> {
         Arc::new(RuntimeServices {
-            time_provider: Arc::new(RealTimeProvider::default()),
+            time_provider: Arc::new(RealTimeProvider),
             transport_factory: MemTransportFactory::default(),
             pow_generator: Arc::new(SingleThreadedPowGenerator::new()),
         })

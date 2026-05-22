@@ -117,7 +117,7 @@ pub async fn pow_generate_with_iteration_limit(iteration_limit: usize, pow_min: 
 /// This method "yields" occasionally so that other tokio processes can make progress.
 pub async fn pow_generate(pow_required: Pow, datas: &[&[u8]]) -> anyhow::Result<(Salt, Pow, Hash)> {
     const BATCH_SIZE: usize = 64 * 1024;
-    let real_time_provider = RealTimeProvider::default();
+    let real_time_provider = RealTimeProvider;
     let mut estimator = PowRequiredEstimator::new(real_time_provider.current_time_millis(), "pow_generate", pow_required);
     let data_hash = pow_compute_data_hash(datas);
     loop {

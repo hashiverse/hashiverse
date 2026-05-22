@@ -13,6 +13,7 @@ use crate::transport::ddos::ddos::DdosProtection;
 pub struct NoopDdosProtection;
 
 impl NoopDdosProtection {
+    #[allow(clippy::should_implement_trait)] // wraps Arc<Self>, can't satisfy the Default trait
     pub fn default() -> Arc<Self> {
         Arc::new(Self)
     }

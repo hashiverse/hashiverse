@@ -40,7 +40,6 @@ use hashiverse_lib::protocol::rpc::rpc_request::RpcRequestPacketRx;
 use hashiverse_lib::protocol::rpc::rpc_response::{RpcResponsePacketTx, RpcResponsePacketTxFlags};
 use hashiverse_lib::tools::buckets::{BucketLocation, BucketType, BUCKET_DURATIONS};
 use hashiverse_lib::tools::time::{TimeMillis, MILLIS_IN_SECOND};
-use hashiverse_lib::tools::hyper_log_log::HyperLogLog;
 use hashiverse_lib::tools::types::{Id, Signature};
 use hashiverse_lib::tools::{hashing, url_preview};
 use hashiverse_lib::tools::{compression, config, json, signing, BytesGatherer};
@@ -647,7 +646,7 @@ impl HashiverseServer {
                     if !decoded_post.header.linked_base_ids.contains(&hashtag_id) {
                         continue; // Hashtag not backed by a linked_base_id (no PoW), skip it
                     }
-                    let mut hll = self.trending_hashtags.get(referenced_hashtag).unwrap_or_else(HyperLogLog::new);
+                    let mut hll = self.trending_hashtags.get(referenced_hashtag).unwrap_or_default();
                     hll.insert(author_verification_key_bytes.as_ref());
                     self.trending_hashtags.insert(referenced_hashtag.clone(), hll);
                 }
@@ -700,8 +699,8 @@ impl HashiverseServer {
         let mut post_bundle = match post_bundle_bytes {
             Some(bytes) => {
                 let bytes = Bytes::from_owner(bytes);
-                let bundle = EncodedPostBundleV1::from_bytes(bytes, true)?;
-                bundle
+                
+                EncodedPostBundleV1::from_bytes(bytes, true)?
             }
             None => {
                 let header = EncodedPostBundleHeaderV1 {
@@ -1244,7 +1243,7 @@ impl HashiverseServer {
                     .filter(|entry| entry.count > 0)
                     .collect();
 
-                trending_hashtags.sort_by(|a, b| b.count.cmp(&a.count));
+                trending_hashtags.sort_by_key(|entry| std::cmp::Reverse(entry.count));
 
                 let full_response = TrendingHashtagsFetchResponseV1 { trending_hashtags };
 
@@ -1441,7 +1440,7 @@ mod tests {
         use std::sync::atomic::Ordering;
 
         async fn make_server() -> anyhow::Result<Arc<HashiverseServer>> {
-            let time_provider = Arc::new(RealTimeProvider::default());
+            let time_provider = Arc::new(RealTimeProvider);
             let transport_factory = MemTransportFactory::default();
             let pow_generator = Arc::new(SingleThreadedPowGenerator::new());
             let runtime_services = Arc::new(RuntimeServices { time_provider, transport_factory, pow_generator });

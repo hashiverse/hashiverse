@@ -43,7 +43,7 @@ impl<'a> PeerIterator<'a> {
             peers_already_queried: HashSet::new(),
             high_watermark: 0,
             iterations_since_high_watermark: 0,
-            cache_radius: cache_radius,
+            cache_radius,
         }
     }
     pub fn next_peer(&mut self) -> Option<(Peer, LeadingAgreementBits)> {
@@ -54,7 +54,7 @@ impl<'a> PeerIterator<'a> {
                 .iter()
                 .filter(|peer| !self.peers_already_queried.contains(&peer.id))
                 .map(|peer| (peer, tools::leading_agreement_bits_xor(&self.bucket_location_id.0, &peer.id.0)))
-                .filter(|(_, lab)| self.cache_radius.map_or(true, |r| *lab < r))
+                .filter(|(_, lab)| self.cache_radius.is_none_or(|r| *lab < r))
                 .max_by_key(|peer| peer.1);
 
             match nearest_peer {
@@ -87,9 +87,9 @@ impl<'a> PeerIterator<'a> {
                         return None;
                     }
                     // Allow the next ring of closer peers and retry.
-                    match &mut self.cache_radius {
-                        Some(r) => *r = (*r + 1).min(256),
-                        None => return None,
+                    {
+                        let r = &mut self.cache_radius?;
+                        *r = (*r + 1).min(256)
                     }
                 }
             }
@@ -140,7 +140,7 @@ mod tests {
 
     fn get_test_runtime_services() -> Arc<RuntimeServices> {
         Arc::new(RuntimeServices {
-            time_provider: Arc::new(RealTimeProvider::default()),
+            time_provider: Arc::new(RealTimeProvider),
             transport_factory: MemTransportFactory::default(),
             pow_generator: Arc::new(SingleThreadedPowGenerator::new()),
         })
@@ -246,9 +246,8 @@ mod tests {
             let bucket_location = generate_bucket_location(BucketType::User, Id::random(), BUCKET_DURATIONS[0], runtime_services.time_provider.current_time_millis())?;
             let mut count = 0;
             let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, usize::MAX, None).await?;
-            while let Some(_peer) = peer_iter.next_peer() {
+            if peer_iter.next_peer().is_some() {
                 count += 1;
-                break;
             }
             assert_eq!(1, count);
         };
@@ -370,16 +369,16 @@ mod tests {
             const PEER_DISCOVERY_I_PLUS_1: usize = PEER_DISCOVERY_I + 1;
 
             let bucket_location = {
-                let mut location_id = target_peer.id.clone();
+                let mut location_id = target_peer.id;
                 for i in 10..31 {
                     location_id.0[i] = 0u8;
                 }
                 BucketLocation {
                     bucket_type: BucketType::User,
-                    base_id: location_id.clone(),
+                    base_id: location_id,
                     duration: DurationMillis::zero(),
                     bucket_time_millis: TimeMillis::zero(),
-                    location_id: location_id.clone(),
+                    location_id,
                 }
             };
 

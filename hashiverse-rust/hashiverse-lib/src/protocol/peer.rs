@@ -323,7 +323,7 @@ mod tests {
     use crate::tools::types::{Pow, VerificationKeyBytes};
 
     async fn get_random_ingredients() -> anyhow::Result<(ServerId, Peer)> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
 

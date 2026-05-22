@@ -371,14 +371,24 @@ mod tests {
     use hashiverse_lib::transport::transport::TransportFactory;
     use std::sync::Arc;
 
+    // Rustls 0.23+ requires a process-global CryptoProvider. Binaries install it from `main`
+    // (see hashiverse-server/src/main.rs:26); library tests have no main, so each TLS-touching
+    // test installs the provider itself. `install_default` is atomic and idempotent — `Err`
+    // means another test already installed the same provider, which is fine.
+    fn install_crypto_provider() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+
     #[tokio::test]
     async fn rpc_test() -> anyhow::Result<()> {
+        install_crypto_provider();
         let factory: Arc<dyn TransportFactory> = Arc::new(FullHttpsTransportFactory::new(NoopDdosProtection::default(), ManualBootstrapProvider::default()));
         hashiverse_lib::transport::transport::tests::rpc_test(factory).await
     }
 
     #[tokio::test]
     async fn bind_port_zero_test() -> anyhow::Result<()> {
+        install_crypto_provider();
         let factory: Arc<dyn TransportFactory> = Arc::new(FullHttpsTransportFactory::new(NoopDdosProtection::default(), ManualBootstrapProvider::default()));
         hashiverse_lib::transport::transport::tests::bind_port_zero_test(factory).await
     }

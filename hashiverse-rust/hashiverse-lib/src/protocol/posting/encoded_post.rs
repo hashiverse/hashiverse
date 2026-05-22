@@ -301,13 +301,13 @@ mod tests {
     async fn test_post_v1_verification() -> anyhow::Result<()> {
         let key_locker_manager = MemKeyLockerManager::new().await?;
         let key_locker: Arc<dyn KeyLocker> = key_locker_manager.create("this is a random keyphrase".to_string()).await?;
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let client_id = key_locker.client_id();
         let timestamp = time_provider.current_time_millis();
         let linked_base_ids = vec![client_id.id, Id::random(), Id::random(), Id::random()];
 
-        let password1 = linked_base_ids[0].clone();
-        let password2 = linked_base_ids[1].clone();
+        let password1 = linked_base_ids[0];
+        let password2 = linked_base_ids[1];
 
         let mut encoded_post = EncodedPostV1::new(client_id, timestamp, linked_base_ids, "this is a test post");
         let bytes = encoded_post.encode_to_bytes_direct(&key_locker).await?;
@@ -315,26 +315,26 @@ mod tests {
         // Test decoding with multiple passwords
         {
             {
-                let decoded_post = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(&bytes.bytes()), &password1, true, true)?;
+                let decoded_post = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(bytes.bytes()), &password1, true, true)?;
                 assert_eq!(encoded_post, decoded_post);
             }
 
             {
-                let decoded_post = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(&bytes.bytes()), &password2, true, true)?;
+                let decoded_post = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(bytes.bytes()), &password2, true, true)?;
                 assert_eq!(encoded_post, decoded_post);
             }
         }
 
         // Test decoding without body
         {
-            let decoded_post = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(&bytes.bytes()), &password2, true, false)?;
+            let decoded_post = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(bytes.bytes()), &password2, true, false)?;
             assert_eq!("", decoded_post.post);
         }
 
         // Incorrect password
         {
             let wrong_password = Id::random();
-            let decoded_post_attempt = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(&bytes.bytes()), &wrong_password, true, true);
+            let decoded_post_attempt = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(bytes.bytes()), &wrong_password, true, true);
             if decoded_post_attempt.is_ok() {
                 anyhow::bail!("Decoding with wrong password should fail")
             }
@@ -343,7 +343,7 @@ mod tests {
         // Tampering with bytes
         {
             let mut tampered_bytes = Vec::from(bytes.bytes());
-            tampered_bytes[100] = 0u8;
+            tampered_bytes[100] ^= 0xff;
             let decoded_post_attempt = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(&tampered_bytes), &password1, true, true);
             if decoded_post_attempt.is_ok() {
                 anyhow::bail!("Decoding tampered bytes should fail")
@@ -357,26 +357,26 @@ mod tests {
     async fn test_header_only_verification() -> anyhow::Result<()> {
         let key_locker_manager = MemKeyLockerManager::new().await?;
         let key_locker: Arc<dyn KeyLocker> = key_locker_manager.create("this is a random keyphrase".to_string()).await?;
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let client_id = key_locker.client_id();
         let timestamp = time_provider.current_time_millis();
         let linked_base_ids = vec![client_id.id, Id::random(), Id::random(), Id::random()];
 
-        let password1 = linked_base_ids[0].clone();
-        let password2 = linked_base_ids[1].clone();
+        let password1 = linked_base_ids[0];
+        let password2 = linked_base_ids[1];
 
         let mut encoded_post = EncodedPostV1::new(client_id, timestamp, linked_base_ids, "this is a test post");
         let bytes = encoded_post.encode_to_bytes_direct(&key_locker).await?;
 
         {
-            let decoded_post = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(&bytes.bytes_without_body()), &password1, false, false)?;
+            let decoded_post = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(bytes.bytes_without_body()), &password1, false, false)?;
             assert_eq!(encoded_post.signature, decoded_post.signature);
             assert_eq!(encoded_post.header, decoded_post.header);
             assert_eq!(String::new(), decoded_post.post);
         }
 
         {
-            let decoded_post = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(&bytes.bytes_without_body()), &password2, false, false)?;
+            let decoded_post = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(bytes.bytes_without_body()), &password2, false, false)?;
             assert_eq!(encoded_post.signature, decoded_post.signature);
             assert_eq!(encoded_post.header, decoded_post.header);
             assert_eq!(String::new(), decoded_post.post);
@@ -384,7 +384,7 @@ mod tests {
 
         // Provide the body when not expected
         {
-            let decoded_post_attempt = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(&bytes.bytes()), &password2, false, false);
+            let decoded_post_attempt = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(bytes.bytes()), &password2, false, false);
             if decoded_post_attempt.is_ok() {
                 anyhow::bail!("Decoding with wrong too many bytes should fail")
             }
@@ -392,7 +392,7 @@ mod tests {
 
         {
             let wrong_password = Id::random();
-            let decoded_post_attempt = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(&bytes.bytes_without_body()), &wrong_password, false, false);
+            let decoded_post_attempt = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(bytes.bytes_without_body()), &wrong_password, false, false);
             if decoded_post_attempt.is_ok() {
                 anyhow::bail!("Decoding with wrong password should fail")
             }
@@ -400,7 +400,7 @@ mod tests {
 
         {
             let mut tampered_bytes = Vec::from(bytes.bytes_without_body());
-            tampered_bytes[100] = 0u8;
+            tampered_bytes[100] ^= 0xff;
             let decoded_post_attempt = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(&tampered_bytes), &password1, false, false);
             if decoded_post_attempt.is_ok() {
                 anyhow::bail!("Decoding tampered bytes should fail")
@@ -414,12 +414,12 @@ mod tests {
     async fn test_post_with_no_linked_base_ids() -> anyhow::Result<()> {
         let key_locker_manager = MemKeyLockerManager::new().await?;
         let key_locker: Arc<dyn KeyLocker> = key_locker_manager.create("this is a random keyphrase".to_string()).await?;
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let client_id = key_locker.client_id();
         let timestamp = time_provider.current_time_millis();
 
         // No linked_base_ids — only the client_id itself is used as password
-        let password = client_id.id.clone();
+        let password = client_id.id;
         let mut encoded_post = EncodedPostV1::new(client_id, timestamp, vec![], "post with no linked ids");
         let bytes = encoded_post.encode_to_bytes_direct(&key_locker).await?;
 
@@ -441,12 +441,12 @@ mod tests {
     async fn test_bytes_without_body_round_trip() -> anyhow::Result<()> {
         let key_locker_manager = MemKeyLockerManager::new().await?;
         let key_locker: Arc<dyn KeyLocker> = key_locker_manager.create("test keyphrase for bytes_without_body".to_string()).await?;
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let client_id = key_locker.client_id();
         let timestamp = time_provider.current_time_millis();
         let linked_base_ids = vec![client_id.id, Id::random(), Id::random()];
 
-        let password = linked_base_ids[0].clone();
+        let password = linked_base_ids[0];
 
         let mut encoded_post = EncodedPostV1::new(client_id, timestamp, linked_base_ids, "test post for bytes_without_body");
         let bytes = encoded_post.encode_to_bytes_direct(&key_locker).await?;

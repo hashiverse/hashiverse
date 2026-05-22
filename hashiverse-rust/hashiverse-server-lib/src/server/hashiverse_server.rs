@@ -192,7 +192,7 @@ impl HashiverseServer {
         }
     }
 
-    async fn rpc_server_unknown(&self, address: &String, payload_request_kind: PayloadRequestKind, payload: Bytes) -> anyhow::Result<RpcResponsePacketRx> {
+    async fn rpc_server_unknown(&self, address: &str, payload_request_kind: PayloadRequestKind, payload: Bytes) -> anyhow::Result<RpcResponsePacketRx> {
         rpc::rpc::rpc_server_unknown(&self.runtime_services, &self.server_id.id, address, payload_request_kind, payload).await
     }
 

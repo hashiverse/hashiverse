@@ -32,7 +32,7 @@ pub struct MultipleTimeline {
 
 impl MultipleTimeline {
     pub fn new(bucket_type: BucketType, base_ids: Vec<Id>, post_bundle_manager: Arc<dyn PostBundleManager>, recent_posts_pen: Arc<RwLock<RecentPostsPen>>) -> Self {
-        let single_timelines = base_ids.iter().map(|base_id| SingleTimeline::new(bucket_type, &base_id, post_bundle_manager.clone(), recent_posts_pen.clone())).collect();
+        let single_timelines = base_ids.iter().map(|base_id| SingleTimeline::new(bucket_type, base_id, post_bundle_manager.clone(), recent_posts_pen.clone())).collect();
         Self { bucket_type, base_ids, single_timelines }
     }
 
@@ -133,54 +133,54 @@ pub mod tests {
         // Check the ordering of the initial ties
         {
             info!("1)--- FETCH -----------------------");
-            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, &bucket_durations_starting_at_monthly).await?;
+            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, bucket_durations_starting_at_monthly).await?;
             assert_eq!(29, posts.len());
             info!("--- FETCH -----------------------");
-            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, &bucket_durations_starting_at_monthly).await?;
+            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, bucket_durations_starting_at_monthly).await?;
             assert_eq!(23, posts.len());
             info!("--- FETCH -----------------------");
-            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, &bucket_durations_starting_at_monthly).await?;
+            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, bucket_durations_starting_at_monthly).await?;
             assert_eq!(27, posts.len());
         }
 
         // Check the ordering of the "num posts" penalty
         {
             info!("2)--- FETCH -----------------------");
-            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, &bucket_durations_starting_at_monthly).await?;
+            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, bucket_durations_starting_at_monthly).await?;
             assert_eq!(21, posts.len());
             info!("--- FETCH -----------------------");
-            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, &bucket_durations_starting_at_monthly).await?;
+            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, bucket_durations_starting_at_monthly).await?;
             assert_eq!(28, posts.len());
             info!("--- FETCH -----------------------");
-            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, &bucket_durations_starting_at_monthly).await?;
+            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, bucket_durations_starting_at_monthly).await?;
             assert_eq!(25, posts.len());
         }
 
         // Check the next "batch" that will need to be aggregated to reach enough posts for the batch
         {
             info!("3)--- FETCH -----------------------");
-            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, &bucket_durations_starting_at_monthly).await?;
+            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, bucket_durations_starting_at_monthly).await?;
             assert_eq!(9 + 6 + 7, posts.len());
         }
 
         {
             info!("4)--- FETCH -----------------------");
-            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, &bucket_durations_starting_at_monthly).await?;
+            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, bucket_durations_starting_at_monthly).await?;
             assert_eq!(28, posts.len());
         }
 
         // Then the rump posts
         {
             info!("5) --- FETCH -----------------------");
-            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, &bucket_durations_starting_at_monthly).await?;
+            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, bucket_durations_starting_at_monthly).await?;
             assert_eq!(35, posts.len());
 
             info!("6) --- FETCH -----------------------");
-            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, &bucket_durations_starting_at_monthly).await?;
+            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, bucket_durations_starting_at_monthly).await?;
             assert_eq!(3, posts.len());
 
             info!("--- FETCH -----------------------");
-            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, &bucket_durations_starting_at_monthly).await?;
+            let posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("6M")?, 20, 5, bucket_durations_starting_at_monthly).await?;
             assert_eq!(0, posts.len());
         }
 
@@ -203,11 +203,11 @@ pub mod tests {
         assert_eq!(multiple_timeline.oldest_processed_post_bundle_time_millis(), TimeMillis::MAX);
 
         // First fetch — processes id[0] at 3M
-        let _posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("4M")?, 20, 5, &bucket_durations_starting_at_monthly).await?;
+        let _posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("4M")?, 20, 5, bucket_durations_starting_at_monthly).await?;
         let oldest_after_first_fetch = multiple_timeline.oldest_processed_post_bundle_time_millis();
 
         // Second fetch — processes id[1] at 2M (older)
-        let _posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("4M")?, 20, 5, &bucket_durations_starting_at_monthly).await?;
+        let _posts = multiple_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("4M")?, 20, 5, bucket_durations_starting_at_monthly).await?;
         let oldest_after_second_fetch = multiple_timeline.oldest_processed_post_bundle_time_millis();
 
         // The oldest should have moved further back after processing id[1]

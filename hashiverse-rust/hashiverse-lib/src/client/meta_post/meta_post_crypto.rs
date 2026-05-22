@@ -41,7 +41,7 @@ pub async fn encrypt_private_section(key_locker: &dyn KeyLocker, salt: &Salt, pr
     let symmetric_key = derive_meta_post_encryption_key(key_locker, salt).await?;
     let plaintext = json::struct_to_bytes(private)?;
     let compressed = compression::compress_for_size(&plaintext)?.to_bytes();
-    let encrypted = encryption::encrypt_strong(&compressed, &vec![symmetric_key])?;
+    let encrypted = encryption::encrypt_strong(&compressed, &[symmetric_key])?;
     Ok(hex::encode(encrypted))
 }
 

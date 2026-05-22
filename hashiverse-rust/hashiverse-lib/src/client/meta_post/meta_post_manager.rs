@@ -275,7 +275,7 @@ impl MetaPostManager {
         let timestamp = self.now();
         let mut private = self.get_private().await?;
 
-        for (_key, field) in private.followed_client_ids.iter_mut() {
+        for field in private.followed_client_ids.values_mut() {
             if field.value == Some(true) {
                 *field = VersionedField::tombstone(timestamp);
             }
@@ -318,7 +318,7 @@ impl MetaPostManager {
         let timestamp = self.now();
         let mut private = self.get_private().await?;
 
-        for (_key, field) in private.followed_hashtags.iter_mut() {
+        for field in private.followed_hashtags.values_mut() {
             if field.value == Some(true) {
                 *field = VersionedField::tombstone(timestamp);
             }

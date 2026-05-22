@@ -28,6 +28,7 @@ use crate::protocol::posting::amplification;
 use crate::protocol::posting::encoded_post_feedback::EncodedPostFeedbackV1;
 use crate::tools::types::Id;
 
+#[allow(clippy::too_many_arguments)] // each arg is a distinct piece of the post-to-location operation; bundling adds indirection without simplifying call sites
 pub async fn post_to_location(
     runtime_services: &RuntimeServices,
     sponsor_id: &Id,

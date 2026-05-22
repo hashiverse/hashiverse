@@ -20,6 +20,14 @@ lazy_static! {
     static ref BYTES: Bytes = Bytes::from("test_request");
 }
 
+// Rustls 0.23+ requires a process-global CryptoProvider. Binaries install it from `main`
+// (see hashiverse-server/src/main.rs:26); library tests have no main, so each TLS-touching
+// test installs the provider itself. `install_default` is atomic and idempotent — `Err`
+// means another test already installed the same provider, which is fine.
+fn install_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 #[tokio::test]
 async fn test_server_client_rpc_mem() -> Result<()> {
     let factory: Arc<dyn TransportFactory> = MemTransportFactory::default();
@@ -36,6 +44,7 @@ async fn test_server_client_rpc_tcp() -> Result<()> {
 #[tokio::test]
 #[serial(http)]
 async fn test_server_client_rpc_http() -> Result<()> {
+    install_crypto_provider();
     let factory: Arc<dyn TransportFactory> = Arc::new(FullHttpsTransportFactory::new(NoopDdosProtection::default(), ManualBootstrapProvider::new_tcp_localhost()));
     test_server_client_rpc_single_message(factory, 37284).await
 }
@@ -98,6 +107,7 @@ async fn test_server_client_rpc_no_server_tcp() -> Result<()> {
 #[tokio::test]
 #[serial(http)]
 async fn test_server_client_rpc_no_server_http() -> Result<()> {
+    install_crypto_provider();
     let factory: Arc<dyn TransportFactory> = Arc::new(FullHttpsTransportFactory::new(NoopDdosProtection::default(), ManualBootstrapProvider::new_tcp_localhost()));
     test_server_client_rpc_no_server(factory, 18280).await
 }

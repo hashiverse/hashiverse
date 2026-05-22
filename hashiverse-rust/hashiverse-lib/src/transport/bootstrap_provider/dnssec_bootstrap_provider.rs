@@ -24,6 +24,12 @@ pub struct DnssecBootstrapProvider {
     resolvers: Vec<TokioResolver>,
 }
 
+impl Default for DnssecBootstrapProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DnssecBootstrapProvider {
     pub fn new() -> Self {
         let resolver_configs = [

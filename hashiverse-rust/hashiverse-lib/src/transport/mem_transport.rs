@@ -172,6 +172,7 @@ impl MemTransportFactory {
         }
     }
 
+    #[allow(clippy::should_implement_trait)] // wraps Arc<Self>, can't satisfy the Default trait
     pub fn default() -> Arc<Self> {
         Arc::new(Self::new(NoopDdosProtection::default(), ManualBootstrapProvider::new_mem_multiple()))
     }

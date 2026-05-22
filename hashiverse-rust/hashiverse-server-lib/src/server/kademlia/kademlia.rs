@@ -226,7 +226,7 @@ impl<ID: AsRef<[u8]> + PartialEq, PEER: Peer<ID> + std::fmt::Display> Kademlia<I
         };
 
         // Sort descending by agreement (closest first)
-        agreement_peers.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        agreement_peers.sort_unstable_by_key(|(agreement, _)| std::cmp::Reverse(*agreement));
 
         // Find the threshold: include all peers tied with the max_peers-th entry
         let min_agreement = if agreement_peers.len() <= max_peers {
@@ -275,7 +275,7 @@ pub mod tests {
 
     impl std::fmt::Display for Item {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", hex::encode(&self.id))
+            write!(f, "{}", hex::encode(self.id))
         }
     }
 
@@ -293,7 +293,7 @@ pub mod tests {
         fn score(&self, _time_millis: TimeMillis) -> f64 { self.id[0] as f64}
     }
 
-    fn get_closest_peer(id: &Item, peers: &Vec<Item>) -> Result<Item> {
+    fn get_closest_peer(id: &Item, peers: &[Item]) -> Result<Item> {
         let result = peers.iter().max_by(|a, b| {
             tools::leading_agreement_bits_xor(a.as_ref(), id.as_ref()).cmp(
                 &tools::leading_agreement_bits_xor(b.as_ref(), id.as_ref()),

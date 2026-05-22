@@ -68,7 +68,7 @@ impl Keys {
         let verification_key = signature_key.verification_key();
         let verification_key_bytes = verification_key.to_verification_key_bytes();
         let pq_commitment_bytes = match skip_pq_commitment_bytes {
-            false => pq_commitment_bytes_from_seed(&seed),
+            false => pq_commitment_bytes_from_seed(seed),
             true => Ok(PQCommitmentBytes::zero()),
         }?;
 

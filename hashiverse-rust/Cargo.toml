@@ -9,6 +9,16 @@ members = [
     "hashiverse-client-rust",
     "hashiverse-integration-tests",
 ]
+# Workspace-wide `cargo build` / `cargo test` / `cargo nextest run` only touches host-buildable
+# crates. The wasm/python/nodejs extension crates are still members (for cargo metadata, publish,
+# and explicit -p / --workspace invocations) but are skipped by the default selection — their
+# deps (wasm-bindgen, pyo3 extension-module, napi) don't link against the host target.
+default-members = [
+    "hashiverse-lib",
+    "hashiverse-server-lib",
+    "hashiverse-server",
+    "hashiverse-client-rust",
+]
 
 # Require newer resolver so features are handled per-package
 resolver = "2"

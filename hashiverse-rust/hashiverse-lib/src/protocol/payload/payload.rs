@@ -871,7 +871,7 @@ mod tests {
     #[tokio::test]
     #[allow(non_snake_case)]
     async fn test_to_from_GetPostBundleResponseV1() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
@@ -953,7 +953,7 @@ mod tests {
     #[tokio::test]
     #[allow(non_snake_case)]
     async fn test_SubmitPostClaimTokenV1_verify() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
@@ -966,7 +966,7 @@ mod tests {
     #[tokio::test]
     #[allow(non_snake_case)]
     async fn test_SubmitPostCommitTokenV1_verify() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
@@ -979,7 +979,7 @@ mod tests {
     #[tokio::test]
     #[allow(non_snake_case)]
     async fn test_to_from_HealPostBundleClaimV1() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let (header, _) = make_signed_header(&time_provider).await?;
 
         let bucket_location = make_bucket_location()?;
@@ -995,7 +995,7 @@ mod tests {
     #[tokio::test]
     #[allow(non_snake_case)]
     async fn test_to_from_HealPostBundleClaimResponseV1() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let (header, server_id) = make_signed_header(&time_provider).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
@@ -1020,7 +1020,7 @@ mod tests {
     #[tokio::test]
     #[allow(non_snake_case)]
     async fn test_HealPostBundleClaimTokenV1_verify() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let (header, server_id) = make_signed_header(&time_provider).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
@@ -1039,7 +1039,7 @@ mod tests {
     #[tokio::test]
     #[allow(non_snake_case)]
     async fn test_to_from_HealPostBundleCommitV1() -> anyhow::Result<()> {
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let (header, server_id) = make_signed_header(&time_provider).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
@@ -1080,7 +1080,7 @@ mod tests {
         use crate::protocol::payload::payload::CacheRequestTokenV1;
         use crate::tools::time::MILLIS_IN_MINUTE;
 
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
@@ -1099,7 +1099,7 @@ mod tests {
         use crate::protocol::payload::payload::{CachePostBundleV1, CacheRequestTokenV1};
         use crate::tools::time::MILLIS_IN_MINUTE;
 
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
@@ -1131,7 +1131,7 @@ mod tests {
         use crate::protocol::payload::payload::{CachePostBundleV1, CacheRequestTokenV1};
         use crate::tools::time::MILLIS_IN_MINUTE;
 
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
@@ -1154,7 +1154,7 @@ mod tests {
         use crate::protocol::payload::payload::{CachePostBundleFeedbackV1, CacheRequestTokenV1};
         use crate::tools::time::MILLIS_IN_MINUTE;
 
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
@@ -1459,7 +1459,7 @@ mod tests {
         use crate::protocol::payload::payload::PeerStatsResponseV1;
         use crate::tools::compression;
 
-        let time_provider = RealTimeProvider::default();
+        let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(4), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
