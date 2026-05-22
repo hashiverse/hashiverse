@@ -40,15 +40,36 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan codeberg.org >> ~/.ssh/known_hosts
 
-      - name: Push branches and tags to Codeberg
+      - name: Configure SSH keepalive for codeberg.org
+        run: |
+          mkdir -p ~/.ssh
+          cat >> ~/.ssh/config <<'EOF'
+          Host codeberg.org
+            ServerAliveInterval 30
+            ServerAliveCountMax 20
+            TCPKeepAlive yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Push branches and tags to Codeberg (with retry)
         env:
           REPO: git@codeberg.org:hashiverse/${{ matrix.target.repo }}.git
         run: |
-          git -C mirror push --prune "$REPO" \
-            "+refs/heads/*:refs/heads/*" \
-            "+refs/tags/*:refs/tags/*"
+          cd mirror
+          for attempt in 1 2 3; do
+            if git push --prune "$REPO" \
+                 "+refs/heads/*:refs/heads/*" \
+                 "+refs/tags/*:refs/tags/*"; then
+              echo "Push succeeded on attempt $attempt."
+              exit 0
+            fi
+            echo "Push attempt $attempt failed; sleeping 30s." >&2
+            sleep 30
+          done
+          echo "Push failed after 3 attempts." >&2
+          exit 1
 
-      - name: Build pages branch with .domains and push
+      - name: Build pages branch with .domains and push (with retry)
         env:
           REPO: git@codeberg.org:hashiverse/${{ matrix.target.repo }}.git
           DOMAIN: ${{ matrix.target.domain }}
@@ -59,4 +80,13 @@ jobs:
           echo "$DOMAIN" > .domains
           git add .domains
           git commit -m "Add .domains for Codeberg Pages ($DOMAIN)"
-          git push --force "$REPO" HEAD:refs/heads/pages
+          for attempt in 1 2 3; do
+            if git push --force "$REPO" HEAD:refs/heads/pages; then
+              echo "Pages push succeeded on attempt $attempt."
+              exit 0
+            fi
+            echo "Pages push attempt $attempt failed; sleeping 30s." >&2
+            sleep 30
+          done
+          echo "Pages push failed after 3 attempts." >&2
+          exit 1
