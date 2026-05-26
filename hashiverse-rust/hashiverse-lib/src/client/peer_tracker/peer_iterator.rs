@@ -86,10 +86,22 @@ impl<'a> PeerIterator<'a> {
                     if !any_unvisited {
                         return None;
                     }
-                    // Allow the next ring of closer peers and retry.
-                    {
-                        let r = &mut self.cache_radius?;
-                        *r = (*r + 1).min(256)
+                    // Allow the next ring of closer peers and retry. If the cap is already
+                    // hit, incrementing is a no-op and we'd spin forever; drop the filter
+                    // so the unvisited peers (whose lab must be == 256) become eligible.
+                    let r = &mut self.cache_radius?;
+                    let new_r = (*r + 1).min(256);
+                    if new_r == *r {
+                        warn!(
+                            "PeerIterator: cache_radius cap hit at {} with unvisited peers remaining — dropping filter. bucket_location_id={} unvisited_count={}",
+                            *r,
+                            self.bucket_location_id,
+                            self.tracker.peers().iter().filter(|p| !self.peers_already_queried.contains(&p.id)).count(),
+                        );
+                        self.cache_radius = None;
+                    }
+                    else {
+                        *r = new_r;
                     }
                 }
             }
