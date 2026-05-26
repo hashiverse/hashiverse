@@ -58,7 +58,8 @@ cargo nextest run --cargo-profile profiling -p hashiverse-lib
 cargo nextest run --cargo-profile profiling -p hashiverse-server
 
 # Slow integration tests — opt in explicitly; only worth running for major refactors
-cargo nextest run --cargo-profile -p hashiverse-integration-tests
+# Slow integration tests — opt in explicitly; only worth running for major refactors
+cargo nextest run --cargo-profile profiling -p hashiverse-integration-tests
 
 # Run a single test by name
 cargo nextest run --cargo-profile profiling -p hashiverse-lib <test_name>
