@@ -51,17 +51,17 @@ The workspace `default-members` are the host-buildable crates (`hashiverse-lib`,
 cargo check
 
 # Default test run — host-buildable crates only
-cargo nextest run
+cargo nextest run --cargo-profile profiling
 
 # Run tests for a specific crate
-cargo nextest run -p hashiverse-lib
-cargo nextest run -p hashiverse-server
+cargo nextest run --cargo-profile profiling -p hashiverse-lib
+cargo nextest run --cargo-profile profiling -p hashiverse-server
 
 # Slow integration tests — opt in explicitly; only worth running for major refactors
-cargo nextest run -p hashiverse-integration-tests
+cargo nextest run --cargo-profile -p hashiverse-integration-tests
 
 # Run a single test by name
-cargo nextest run -p hashiverse-lib <test_name>
+cargo nextest run --cargo-profile profiling -p hashiverse-lib <test_name>
 
 # WASM lib tests (wasmtime runner is configured in .cargo/config.toml)
 cargo nextest run --target wasm32-wasip1 -p hashiverse-lib
@@ -81,7 +81,7 @@ cargo build
 # only useful for sanity-checking workspace metadata, not for normal dev).
 cargo build --workspace
 
-# Run the server binary (starts 1 primary + 5 secondary servers + 1 client)
+# Run a simulation binary (starts 1 primary + 5 secondary servers + 10 clients)
 cargo run -p hashiverse-integration-tests
 ```
 
