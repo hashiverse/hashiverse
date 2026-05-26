@@ -28,8 +28,12 @@ type PowRequest = {
 			return;
 		}
 		const { iteration_limit, pow_min, data_hash_hex } = event.data;
-		const result = pow_compute_batch(iteration_limit, pow_min, data_hash_hex);
-		reply_port.postMessage({ result });
+		try {
+			const result = pow_compute_batch(iteration_limit, pow_min, data_hash_hex);
+			reply_port.postMessage({ result });
+		} catch (error) {
+			reply_port.postMessage({ error: error instanceof Error ? error.message : String(error) });
+		}
 	};
 
 	self.postMessage({ type: "ready" });

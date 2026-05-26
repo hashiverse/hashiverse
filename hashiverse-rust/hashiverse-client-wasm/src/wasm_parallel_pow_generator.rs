@@ -76,6 +76,12 @@ impl PowGenerator for WasmParallelPowGenerator {
 
             let response_data = JsFuture::from(promise).await.map_err(|e| anyhow::anyhow!("Pow worker response error: {:?}", e))?;
 
+            // The TS worker posts either `{ result: "salt:pow:hash" }` on success or
+            // `{ error: "..." }` if `pow_compute_batch` threw. Surface the error end-to-end.
+            if let Some(error_message) = Reflect::get(&response_data, &JsValue::from_str("error")).ok().and_then(|v| v.as_string()) {
+                anyhow::bail!("Pow worker error: {}", error_message);
+            }
+
             let result_str = Reflect::get(&response_data, &JsValue::from_str("result"))
                 .ok()
                 .and_then(|v| v.as_string())
