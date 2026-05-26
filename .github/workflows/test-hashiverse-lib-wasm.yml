@@ -35,5 +35,9 @@ jobs:
         with:
           shared-key: "hashiverse-rust-wasm"
           workspaces: hashiverse-rust -> target
+      # `--profile profiling` (release optimisations + debug_assertions=on) keeps
+      # `config::TESTING` true so `POW_REDUCTION_FACTOR = 16` stays in effect.
+      # cargo-nextest is not used here: it can't introspect the wasm32-wasip1 test
+      # binary the same way it does for native libtest.
       - name: Run tests
-        run: cargo test --release --target wasm32-wasip1 -p hashiverse-lib
+        run: cargo test --profile profiling --target wasm32-wasip1 -p hashiverse-lib

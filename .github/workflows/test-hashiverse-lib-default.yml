@@ -32,5 +32,10 @@ jobs:
         with:
           shared-key: "hashiverse-rust"
           workspaces: hashiverse-rust -> target
+      - uses: taiki-e/install-action@nextest
+      # `--profile profiling` (release optimisations + debug_assertions=on) keeps
+      # `config::TESTING` true, so `POW_REDUCTION_FACTOR = 16` stays in effect and
+      # PoW-bound tests don't hang for hours. Plain `--release` makes TESTING false
+      # in the dep view (e.g. doctests) and PoW reverts to full production strength.
       - name: Run tests
-        run: cargo test --release -p hashiverse-lib
+        run: cargo nextest run --cargo-profile profiling -p hashiverse-lib
