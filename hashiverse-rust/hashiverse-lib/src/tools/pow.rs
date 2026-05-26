@@ -2,14 +2,11 @@
 //! Given that Hashiverse is predominantly built upon proof of work, we want to put in some effort to make it difficult to cheat as a spammer or sybil using GPU or ASIC advantages.
 //! To this effect we cobble together a chain of different hashing algorithms with different repetition counts - all of which are pseudorandomly chosen based on the initial salt and each subsequent hashing round.
 
-use crate::tools::pow_required_estimator::PowRequiredEstimator;
-use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
 use crate::tools::types::{Hash, Pow, Salt};
 use crate::tools::{hashing, tools};
 use digest::consts::{U32, U64};
 
 use digest::Digest;
-use log::trace;
 
 fn apply_hash<H>(data: &Hash) -> anyhow::Result<Hash>
 where H: Digest
@@ -55,7 +52,7 @@ fn apply_chained_hash(algo_index: usize, hash_current: Hash) -> anyhow::Result<H
 /// Pre-hash all input data into a single 32-byte `Hash`.
 ///
 /// Call this once before the iteration loop; pass the result to
-/// `pow_measure_from_data_hash` / `pow_generate_with_iteration_limit` so that
+/// `pow_measure_from_data_hash` (and to `PowGenerator::generate*`) so that
 /// workers only receive 32 bytes instead of the full raw data.
 pub fn pow_compute_data_hash(datas: &[&[u8]]) -> Hash {
     hashing::hash_multiple(datas)
@@ -89,52 +86,9 @@ pub fn pow_measure(datas: &[&[u8]], salt: &Salt) -> anyhow::Result<(Pow, Hash)> 
     pow_measure_from_data_hash(&pow_compute_data_hash(datas), salt)
 }
 
-/// Try find a sufficient PoW.
-///
-/// It will return the best so far if is it unsuccessful after the `iteration_limit`
-pub async fn pow_generate_with_iteration_limit(iteration_limit: usize, pow_min: Pow, data_hash: &Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
-    let mut salt: Salt;
-    let mut pow_best_so_far = (Salt::zero(), Pow(0), Hash::zero());
-
-    for _ in 0..iteration_limit {
-        salt = Salt::random();
-        let (pow, hash) = pow_measure_from_data_hash(data_hash, &salt)?;
-
-        if pow >= pow_min {
-            return Ok((salt, pow, hash));
-        }
-
-        if pow > pow_best_so_far.1 {
-            pow_best_so_far = (salt, pow, hash);
-        }
-    }
-
-    Ok(pow_best_so_far)
-}
-
-/// Try forever until a valid PoW is found.
-///
-/// This method "yields" occasionally so that other tokio processes can make progress.
-pub async fn pow_generate(pow_required: Pow, datas: &[&[u8]]) -> anyhow::Result<(Salt, Pow, Hash)> {
-    const BATCH_SIZE: usize = 64 * 1024;
-    let real_time_provider = RealTimeProvider;
-    let mut estimator = PowRequiredEstimator::new(real_time_provider.current_time_millis(), "pow_generate", pow_required);
-    let data_hash = pow_compute_data_hash(datas);
-    loop {
-        let result = pow_generate_with_iteration_limit(BATCH_SIZE, pow_required, &data_hash).await?;
-        if result.1 >= pow_required {
-            return Ok(result);
-        }
-
-        let progress = estimator.record_batch_and_estimate(real_time_provider.current_time_millis(), BATCH_SIZE, result.1);
-        trace!("{}", progress);
-        tools::yield_now().await;
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::tools::pow::{pow_compute_data_hash, pow_generate, pow_measure, pow_measure_from_data_hash};
+    use crate::tools::pow::{pow_compute_data_hash, pow_measure, pow_measure_from_data_hash};
     use crate::tools::tools;
     use crate::tools::types::{Pow, Salt};
 
@@ -235,19 +189,6 @@ mod tests {
             let salt = Salt::random();
             let _pow = pow_measure(&[&data1, &data2], &salt);
         }
-    }
-
-    #[tokio::test]
-    async fn pow_generate_test() -> anyhow::Result<()> {
-        const POW_MIN: Pow = Pow(16);
-
-        let mut data = [0u8; 1024];
-        tools::random_fill_bytes(&mut data);
-        let (salt, _, _) = pow_generate(POW_MIN, &[&data]).await?;
-        let (pow, _) = pow_measure(&[&data], &salt)?;
-        assert!(pow >= POW_MIN);
-
-        Ok(())
     }
 
     /// `pow_measure` must produce the same result as pre-hashing then calling

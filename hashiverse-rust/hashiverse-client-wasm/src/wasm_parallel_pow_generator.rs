@@ -1,4 +1,4 @@
-use hashiverse_lib::tools::pow_generator::pow_generator::{generate_loop, JobTracker, PowGenerator, PowJobStatus};
+use hashiverse_lib::tools::pow_generator::pow_generator::{JobTracker, PowGenerator};
 use hashiverse_lib::tools::types::{Hash, Pow, Salt};
 use js_sys::{Array, Object, Reflect};
 use log::{info, warn};
@@ -8,9 +8,11 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{MessageChannel, MessageEvent, Worker};
 
-/// A `PowGenerator` that distributes PoW work across pre-created Web Workers.
+/// A `PowGenerator` that dispatches chunks to pre-created Web Workers.
 /// The TypeScript side is responsible for spawning and initializing the workers;
-/// this struct simply receives the ready `Worker` handles.
+/// this struct simply receives the ready `Worker` handles and exposes one slot per worker.
+/// All scheduling — work-stealing refeed, early exit, tracker registration — lives in the
+/// shared `run_pool` dispatcher in `hashiverse-lib`.
 pub struct WasmParallelPowGenerator {
     tracker: Arc<Mutex<JobTracker>>,
     workers: Vec<Worker>,
@@ -34,83 +36,55 @@ impl WasmParallelPowGenerator {
 
 #[async_trait::async_trait]
 impl PowGenerator for WasmParallelPowGenerator {
-    async fn generate_best_effort(&self, _label: &str, iteration_limit: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
+    fn pool_size(&self) -> usize {
+        self.workers.len()
+    }
+
+    async fn run_chunk(&self, slot: usize, chunk_iterations: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
         if self.workers.is_empty() {
             anyhow::bail!("No pow workers available");
         }
-
-        let num_workers = self.workers.len();
-        let per_worker = (iteration_limit / num_workers).max(1);
+        
+        let worker = self.workers.get(slot).ok_or_else(|| anyhow::anyhow!("Invalid pow worker slot {}", slot))?;
         let data_hash_hex = hex::encode(data_hash);
 
-        // We need SendWrapper because JsFuture and Worker are !Send, but the
-        // trait requires Send futures. In WASM everything is single-threaded.
+        // JsFuture / Worker are !Send; in WASM everything is single-threaded so wrap the
+        // !Send call in SendWrapper to satisfy the async-trait Send bound.
         let inner = async {
-            // Dispatch work to all workers using a MessageChannel per worker.
-            // Each call gets its own isolated ports, so concurrent generate_best_effort
-            // calls don't clobber each other's onmessage handlers.
-            let mut response_futures = Vec::with_capacity(num_workers);
-            for worker in &self.workers {
-                let channel = MessageChannel::new()
-                    .map_err(|e| anyhow::anyhow!("Failed to create MessageChannel: {:?}", e))?;
+            let channel = MessageChannel::new().map_err(|e| anyhow::anyhow!("Failed to create MessageChannel: {:?}", e))?;
+            let port1 = channel.port1();
+            let port2 = channel.port2();
 
-                let port1 = channel.port1();
-                let port2 = channel.port2();
-
-                // Listen for the response on port1
-                let promise = js_sys::Promise::new(&mut |resolve, _reject| {
-                    let resolve_clone = resolve.clone();
-                    let onmessage = Closure::once_into_js(move |event: MessageEvent| {
-                        resolve_clone.call1(&JsValue::NULL, &event.data()).ok();
-                    });
-                    port1.set_onmessage(Some(onmessage.unchecked_ref()));
+            let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+                let resolve_clone = resolve.clone();
+                let onmessage = Closure::once_into_js(move |event: MessageEvent| {
+                    resolve_clone.call1(&JsValue::NULL, &event.data()).ok();
                 });
+                port1.set_onmessage(Some(onmessage.unchecked_ref()));
+            });
 
-                // Build the request message
-                let msg = Object::new();
-                Reflect::set(&msg, &JsValue::from_str("iteration_limit"), &JsValue::from_f64(per_worker as f64)).ok();
-                Reflect::set(&msg, &JsValue::from_str("pow_min"), &JsValue::from_f64(pow_min.0 as f64)).ok();
-                Reflect::set(&msg, &JsValue::from_str("data_hash_hex"), &JsValue::from_str(&data_hash_hex)).ok();
+            let msg = Object::new();
+            Reflect::set(&msg, &JsValue::from_str("iteration_limit"), &JsValue::from_f64(chunk_iterations as f64)).ok();
+            Reflect::set(&msg, &JsValue::from_str("pow_min"), &JsValue::from_f64(pow_min.0 as f64)).ok();
+            Reflect::set(&msg, &JsValue::from_str("data_hash_hex"), &JsValue::from_str(&data_hash_hex)).ok();
 
-                // Transfer port2 to the worker so it can reply on it
-                let transfer = Array::new();
-                transfer.push(&port2);
-                worker.post_message_with_transfer(&msg, &transfer)
-                    .map_err(|e| anyhow::anyhow!("Failed to post message to pow worker: {:?}", e))?;
+            let transfer = Array::new();
+            transfer.push(&port2);
+            worker
+                .post_message_with_transfer(&msg, &transfer)
+                .map_err(|e| anyhow::anyhow!("Failed to post message to pow worker: {:?}", e))?;
 
-                response_futures.push(JsFuture::from(promise));
-            }
+            let response_data = JsFuture::from(promise).await.map_err(|e| anyhow::anyhow!("Pow worker response error: {:?}", e))?;
 
-            // Await all responses and pick the best result
-            let mut best = (Salt::zero(), Pow(0), Hash::zero());
-            for future in response_futures {
-                let response_data = future.await
-                    .map_err(|e| anyhow::anyhow!("Pow worker response error: {:?}", e))?;
+            let result_str = Reflect::get(&response_data, &JsValue::from_str("result"))
+                .ok()
+                .and_then(|v| v.as_string())
+                .ok_or_else(|| anyhow::anyhow!("Pow worker reply missing `result` string"))?;
 
-                if let Some(result_str) = Reflect::get(&response_data, &JsValue::from_str("result"))
-                    .ok()
-                    .and_then(|v| v.as_string())
-                {
-                    if let Some(parsed) = parse_batch_result(&result_str) {
-                        if parsed.1 > best.1 {
-                            best = parsed;
-                        }
-                    }
-                }
-            }
-
-            Ok::<_, anyhow::Error>(best)
+            parse_batch_result(&result_str).ok_or_else(|| anyhow::anyhow!("Invalid pow_compute_batch result format: {}", result_str))
         };
 
         SendWrapper::new(inner).await
-    }
-
-    async fn generate(&self, label: &str, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
-        generate_loop(self, &self.tracker, label, pow_min, data_hash).await
-    }
-
-    fn active_jobs(&self) -> Vec<PowJobStatus> {
-        self.tracker.lock().unwrap().snapshot()
     }
 
     fn tracker(&self) -> &Arc<Mutex<JobTracker>> {

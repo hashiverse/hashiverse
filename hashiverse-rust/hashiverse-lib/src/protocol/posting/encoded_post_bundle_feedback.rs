@@ -231,6 +231,7 @@ mod tests {
     use crate::tools::server_id::ServerId;
     use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
     use crate::tools::pow;
+    use crate::tools::pow_generator::pow_generator::PowGenerator;
     use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
 
     /// Builds a valid single-entry feedback bundle.
@@ -244,7 +245,7 @@ mod tests {
         let feedback_type = 1u8;
         // One iteration with Pow(0) always succeeds immediately — cheap in tests
         let data_hash = pow::pow_compute_data_hash(&[post_id.as_bytes(), &[feedback_type]]);
-        let (salt, achieved_pow, _) = pow::pow_generate_with_iteration_limit(1, Pow(0), &data_hash).await?;
+        let (salt, achieved_pow, _) = pow_generator.generate_best_effort("make_valid_bundle_feedback", 1, Pow(0), data_hash).await?;
         let feedback = EncodedPostFeedbackV1::new(post_id, feedback_type, salt, achieved_pow);
 
         let mut feedbacks_bytes_mut = Vec::new();

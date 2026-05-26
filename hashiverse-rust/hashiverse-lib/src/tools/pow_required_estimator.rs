@@ -15,11 +15,12 @@
 //! expected maximum leading-zero count is `log2(n) - 0.83`. A value wildly below that
 //! suggests a broken RNG or hash chain.
 
-use crate::tools::time::{DurationMillis, TimeMillis, MILLIS_IN_MILLISECOND};
+use crate::tools::time::{DurationMillis, TimeMillis, MILLIS_IN_MILLISECOND, MILLIS_IN_SECOND};
 use crate::tools::types::Pow;
 
-/// Tracks progress across repeated calls to `pow_generate_with_iteration_limit`
-/// and produces a log-friendly ETA estimate.
+/// Tracks progress across repeated chunks inside
+/// [`crate::tools::pow_generator::pow_generator::run_pool`] and produces a log-friendly
+/// ETA estimate.
 ///
 /// PoW search is a memoryless geometric process: the *expected remaining* attempts
 /// is always `2^pow_required` regardless of how many have already been tried.
@@ -36,7 +37,10 @@ pub struct PowRequiredEstimator {
     total_iterations: usize,
     best_pow_so_far: Pow,
     started_at_millis: TimeMillis,
+    next_report_millis: TimeMillis,
 }
+
+const REPORTING_PERIOD_MILLIS: DurationMillis = MILLIS_IN_SECOND.const_mul(1);
 
 impl PowRequiredEstimator {
     pub fn new(started_at_millis: TimeMillis, description: &str, pow_required: Pow) -> Self {
@@ -46,6 +50,7 @@ impl PowRequiredEstimator {
             total_iterations: 0,
             best_pow_so_far: Pow(0),
             started_at_millis,
+            next_report_millis: started_at_millis + REPORTING_PERIOD_MILLIS,
         }
     }
 
@@ -66,23 +71,29 @@ impl PowRequiredEstimator {
     }
 
     /// Record the results of one batch and return a progress string suitable for logging.
-    pub fn record_batch_and_estimate(&mut self, current_time_millis: TimeMillis, iterations_in_batch: usize, best_pow_in_batch: Pow) -> String {
+    pub fn record_batch_and_estimate(&mut self, current_time_millis: TimeMillis, iterations_in_batch: usize, best_pow_in_batch: Pow) -> Option<String> {
         self.total_iterations += iterations_in_batch;
         if best_pow_in_batch > self.best_pow_so_far {
             self.best_pow_so_far = best_pow_in_batch;
         }
 
+        // Throttle reporting
+        if current_time_millis < self.next_report_millis {
+            return None;
+        }
+        self.next_report_millis = current_time_millis + REPORTING_PERIOD_MILLIS;
+
         let elapsed_duration_millis = current_time_millis - self.started_at_millis;
 
         if elapsed_duration_millis < MILLIS_IN_MILLISECOND || self.total_iterations == 0 {
-            return format!(
+            return Some(format!(
                 "{}: PoW {}/{} bits | {} | {} iters | too early to estimate",
                 self.description,
                 self.best_pow_so_far.0,
                 self.pow_required.0,
                 elapsed_duration_millis,
                 Self::report_large_number(self.total_iterations)
-            );
+            ));
         }
 
         let iterations_per_second = 1000.0 * self.total_iterations as f64 / elapsed_duration_millis.0 as f64;
@@ -94,7 +105,7 @@ impl PowRequiredEstimator {
         let eta_one_sigma = expected_total_duration;
         let progress_pct = self.total_iterations as f64 / expected_total_iterations * 100.0;
 
-        format!(
+        Some(format!(
             "{}: PoW {}/{} bits | {} | {} iters | {}/s | {:.1}% of expected | ETA ~{} \u{00b1}{}",
             self.description,
             self.best_pow_so_far.0,
@@ -105,7 +116,7 @@ impl PowRequiredEstimator {
             progress_pct,
             eta_remaining_millis,
             eta_one_sigma,
-        )
+        ))
     }
 }
 
@@ -138,7 +149,9 @@ mod tests {
     fn progress_string_contains_key_fields() {
         let mut estimator = make_estimator();
         let output = estimator.record_batch_and_estimate(TimeMillis(1000), 65536, Pow(18));
+        assert!(output.is_some());
 
+        let output = output.unwrap();
         assert!(output.contains("test"), "should include description: {}", output);
         assert!(output.contains("18/24"), "should show best/required bits: {}", output);
         assert!(output.contains("1s"), "should show elapsed time: {}", output);
@@ -149,7 +162,7 @@ mod tests {
     #[test]
     fn progress_string_before_any_elapsed_time() {
         let mut estimator = make_estimator();
-        let output = estimator.record_batch_and_estimate(TimeMillis(0), 1024, Pow(5));
-        assert!(output.contains("too early"), "{}", output);
+        let output = estimator.record_batch_and_estimate(TimeMillis(100), 1024, Pow(5));
+        assert!(output.is_none());
     }
 }

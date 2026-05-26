@@ -9,7 +9,7 @@ pub mod with_js_context;
 pub mod hashiverse_client_wasm;
 pub mod wasm_try;
 
-use hashiverse_lib::tools::pow::pow_measure_from_data_hash;
+use hashiverse_lib::tools::pow_generator::pow_generator;
 use hashiverse_lib::tools::types::{Hash, Pow, Salt};
 use log::{info, trace};
 use std::sync::Arc;
@@ -55,21 +55,10 @@ pub fn pow_compute_batch(iteration_limit: u32, pow_min: u8, data_hash_hex: Strin
         None => return format!("{}:0:{}", hex::encode(Salt::zero()), hex::encode(Hash::zero())),
     };
 
-    let pow_min = Pow(pow_min);
-    let mut best = (Salt::zero(), Pow(0), Hash::zero());
-
-    for _ in 0..iteration_limit {
-        let salt = Salt::random();
-        if let Ok((pow, hash)) = pow_measure_from_data_hash(&data_hash, &salt) {
-            if pow > best.1 {
-                best = (salt, pow, hash);
-                if pow >= pow_min {
-                    break;
-                }
-            }
-        }
+    match pow_generator::run_pool_chunk(iteration_limit as usize, Pow(pow_min), data_hash) {
+        Ok((salt, pow, hash)) => format!("{}:{}:{}", hex::encode(salt), pow.0, hex::encode(hash)),
+        Err(_) => format!("{}:0:{}", hex::encode(Salt::zero()), hex::encode(Hash::zero())),
     }
-    format!("{}:{}:{}", hex::encode(best.0), best.1 .0, hex::encode(best.2))
 }
 
 /// Global storage for the WasmParallelPowGenerator singleton.

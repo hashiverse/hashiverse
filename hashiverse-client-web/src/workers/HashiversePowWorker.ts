@@ -29,12 +29,7 @@ type PowRequest = {
 		}
 		const { iteration_limit, pow_min, data_hash_hex } = event.data;
 		const result = pow_compute_batch(iteration_limit, pow_min, data_hash_hex);
-		// Delay the reply so this worker thread idles for 5ms per chunk. The Rust dispatcher
-		// only sends the next chunk in response to this reply, so the delay gives the OS
-		// scheduler a window for UI repaints / other processes on weaker devices.
-		setTimeout(() => {
-			reply_port.postMessage({ result });
-		}, 5);
+		reply_port.postMessage({ result });
 	};
 
 	self.postMessage({ type: "ready" });

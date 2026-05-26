@@ -1,12 +1,16 @@
 //! Multi-core PoW search for non-WASM targets.
 //!
-//! Uses `rayon` inside `tokio::task::spawn_blocking` to saturate every available CPU
-//! core. Each parallel worker scans its slice of the `iteration_limit` and the reducer
-//! picks the highest pow found across all of them.
+//! Each `run_chunk` call runs on a `tokio::task::spawn_blocking` thread; the shared
+//! [`crate::tools::pow_generator::pow_generator::run_pool`] dispatcher fires
+//! `pool_size()` of them concurrently and refeeds whichever slot completes first. With
+//! homogeneous server cores this is roughly equivalent to the previous rayon fan-out;
+//! on heterogeneous CPUs (Apple Silicon P+E, Intel hybrid) it stops fast cores from
+//! idling while a slow core finishes its slice.
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use crate::tools::pow_generator::pow_generator::{generate_loop, JobTracker, PowGenerator, PowJobStatus};
+use crate::tools::pow_generator::pow_generator;
+use crate::tools::pow_generator::pow_generator::{JobTracker, PowGenerator};
 use crate::tools::types::{Hash, Pow, Salt};
 use std::sync::{Arc, Mutex};
 
@@ -26,43 +30,17 @@ impl Default for NativeParallelPowGenerator {
 
 #[async_trait::async_trait]
 impl PowGenerator for NativeParallelPowGenerator {
-    async fn generate_best_effort(&self, _label: &str, iteration_limit: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
-        let num_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
-        let per_thread = (iteration_limit / num_threads).max(1);
-        let result = tokio::task::spawn_blocking(move || {
-            use rayon::prelude::*;
-            (0..num_threads)
-                .into_par_iter()
-                .map(|_| {
-                    let mut best = (Salt::zero(), Pow(0), Hash::zero());
-                    for _ in 0..per_thread {
-                        let salt = Salt::random();
-                        if let Ok((pow, hash)) = crate::tools::pow::pow_measure_from_data_hash(&data_hash, &salt) {
-                            if pow > best.1 {
-                                best = (salt, pow, hash);
-                                if pow >= pow_min {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    best
-                })
-                .reduce(
-                    || (Salt::zero(), Pow(0), Hash::zero()),
-                    |a, b| if b.1 > a.1 { b } else { a },
-                )
+    fn pool_size(&self) -> usize {
+        std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
+    }
+
+    async fn run_chunk(&self, _slot: usize, chunk_iterations: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
+        let result = tokio::task::spawn_blocking(move || -> anyhow::Result<(Salt, Pow, Hash)> {
+            pow_generator::run_pool_chunk(chunk_iterations, pow_min, data_hash)
         })
-        .await?;
+        .await??;
+
         Ok(result)
-    }
-
-    async fn generate(&self, label: &str, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
-        generate_loop(self, &self.tracker, label, pow_min, data_hash).await
-    }
-
-    fn active_jobs(&self) -> Vec<PowJobStatus> {
-        self.tracker.lock().unwrap().snapshot()
     }
 
     fn tracker(&self) -> &Arc<Mutex<JobTracker>> {
