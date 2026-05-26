@@ -44,23 +44,41 @@ impl PowGenerator for WasmParallelPowGenerator {
         if self.workers.is_empty() {
             anyhow::bail!("No pow workers available");
         }
-        
-        let worker = self.workers.get(slot).ok_or_else(|| anyhow::anyhow!("Invalid pow worker slot {}", slot))?;
+
+        let worker = self.workers.get(slot).ok_or_else(|| anyhow::anyhow!("Invalid pow worker slot {}", slot))?.clone();
         let data_hash_hex = hex::encode(data_hash);
 
         // JsFuture / Worker are !Send; in WASM everything is single-threaded so wrap the
         // !Send call in SendWrapper to satisfy the async-trait Send bound.
-        let inner = async {
+        let inner = async move {
             let channel = MessageChannel::new().map_err(|e| anyhow::anyhow!("Failed to create MessageChannel: {:?}", e))?;
             let port1 = channel.port1();
             let port2 = channel.port2();
 
-            let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+            // Three independent paths can end the Promise:
+            //   - port1.onmessage          → success, resolve with the reply payload
+            //   - port1.onmessageerror     → reply failed structured clone, reject
+            //   - worker.onerror           → worker uncaught throw / load failure, reject
+            // Without the two rejection paths the awaiter hangs forever if the worker dies
+            // before it can post `{ error: ... }`.
+            let promise = js_sys::Promise::new(&mut |resolve, reject| {
                 let resolve_clone = resolve.clone();
                 let onmessage = Closure::once_into_js(move |event: MessageEvent| {
                     resolve_clone.call1(&JsValue::NULL, &event.data()).ok();
                 });
                 port1.set_onmessage(Some(onmessage.unchecked_ref()));
+
+                let reject_clone = reject.clone();
+                let onmessageerror = Closure::once_into_js(move |_event: MessageEvent| {
+                    reject_clone.call1(&JsValue::NULL, &JsValue::from_str("pow worker reply failed structured clone (onmessageerror)")).ok();
+                });
+                port1.set_onmessageerror(Some(onmessageerror.unchecked_ref()));
+
+                let reject_clone = reject.clone();
+                let onerror = Closure::once_into_js(move |event: JsValue| {
+                    reject_clone.call1(&JsValue::NULL, &JsValue::from_str(&format!("pow worker error event: {:?}", event))).ok();
+                });
+                worker.set_onerror(Some(onerror.unchecked_ref()));
             });
 
             let msg = Object::new();
@@ -74,7 +92,18 @@ impl PowGenerator for WasmParallelPowGenerator {
                 .post_message_with_transfer(&msg, &transfer)
                 .map_err(|e| anyhow::anyhow!("Failed to post message to pow worker: {:?}", e))?;
 
-            let response_data = JsFuture::from(promise).await.map_err(|e| anyhow::anyhow!("Pow worker response error: {:?}", e))?;
+            let result = JsFuture::from(promise).await;
+
+            // Cleanup regardless of outcome: clearing worker.onerror matters most — the
+            // worker is shared across run_chunk calls, so a leftover handler would mis-
+            // route the next chunk's error. port1.close() releases the channel; port2
+            // was transferred to the worker and is no longer ours to close.
+            port1.set_onmessage(None);
+            port1.set_onmessageerror(None);
+            worker.set_onerror(None);
+            port1.close();
+
+            let response_data = result.map_err(|e| anyhow::anyhow!("Pow worker response error: {:?}", e))?;
 
             // The TS worker posts either `{ result: "salt:pow:hash" }` on success or
             // `{ error: "..." }` if `pow_compute_batch` threw. Surface the error end-to-end.
