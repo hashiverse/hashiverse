@@ -87,10 +87,15 @@ impl<'a> PeerIterator<'a> {
                         return None;
                     }
                     // Allow the next ring of closer peers and retry.
-                    {
-                        let r = &mut self.cache_radius?;
-                        *r = (*r + 1).min(256)
-                    }
+                    //
+                    // NOTE: must take `&mut` via `as_mut()`, NOT `&mut self.cache_radius?`.
+                    // The latter applies `?` first, which copies the inner `i32` out (because
+                    // `LeadingAgreementBits: Copy`), so `&mut` then borrows a stack temporary
+                    // and the mutation never reaches `self.cache_radius`. That regression
+                    // (introduced in commit c1e734e) caused an infinite loop whenever the
+                    // initial cache_radius was 0.
+                    let r = self.cache_radius.as_mut()?;
+                    *r = (*r + 1).min(256);
                 }
             }
         }
