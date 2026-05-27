@@ -104,7 +104,7 @@ function initPowWorkers(): Promise<void> {
 	return new Promise((resolve) => {
 		// How many PoW workers shall we allow?
 		const IS_PRODUCTION = Tools.is_release_build();
-		const GET_WORKER_COUNT = (MAX_WORKERS: number) => Math.min(MAX_WORKERS, Math.max((navigator.hardwareConcurrency || 1) - 1, 1));
+		const GET_WORKER_COUNT = (MAX_WORKERS: number) => Math.min(MAX_WORKERS, Math.max((navigator.hardwareConcurrency || 1) - 2, 1));
 		const MAX_WORKERS_DEV = 4;
 		const MAX_WORKERS_PROD = 16;
 		const numWorkers = IS_PRODUCTION ? GET_WORKER_COUNT(MAX_WORKERS_PROD) : GET_WORKER_COUNT(MAX_WORKERS_DEV);

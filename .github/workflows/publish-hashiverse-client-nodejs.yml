@@ -47,6 +47,10 @@ jobs:
 
       - uses: ./.github/actions/set-cargo-version-from-tag
 
+      - uses: ./.github/actions/set-npm-version-from-tag
+        with:
+          working-directory: ${{ env.PACKAGE_DIR }}
+
       - uses: ./.github/actions/install-rust-toolchain
         with:
           targets: ${{ matrix.settings.target }}
@@ -90,6 +94,10 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/set-cargo-version-from-tag
+
+      - uses: ./.github/actions/set-npm-version-from-tag
+        with:
+          working-directory: ${{ env.PACKAGE_DIR }}
 
       - uses: actions/setup-node@v5
         with:
@@ -142,6 +150,10 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/set-cargo-version-from-tag
+
+      - uses: ./.github/actions/set-npm-version-from-tag
+        with:
+          working-directory: ${{ env.PACKAGE_DIR }}
 
       - uses: actions/setup-node@v5
         with:

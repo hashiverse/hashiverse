@@ -1,13 +1,16 @@
 //! Single-threaded PoW search that works on every target.
 //!
-//! No `rayon`, no `spawn_blocking`, no Web Workers — just `pow_generate_with_iteration_limit`
-//! called serially. WASM clients use this directly (with a relaxed `pow_min`); native
-//! callers can use it in unit tests where setting up a thread pool would be overkill.
+//! No `spawn_blocking`, no Web Workers — `run_chunk` just runs the PoW measurement loop
+//! inline. WASM clients use this directly (with a relaxed `pow_min`) before workers are
+//! wired up; native callers can use it in unit tests where setting up a thread pool would
+//! be overkill.
 //!
 //! Despite the simplicity, this generator does real PoW work — it is not a no-op stub.
+//! All the orchestration (work-stealing, early-exit, tracker registration) lives in the
+//! shared [`crate::tools::pow_generator::pow_generator::run_pool`] dispatcher.
 
-use crate::tools::pow::pow_generate_with_iteration_limit;
-use crate::tools::pow_generator::pow_generator::{generate_loop, JobTracker, PowGenerator, PowJobStatus};
+use crate::tools::pow_generator::pow_generator;
+use crate::tools::pow_generator::pow_generator::{JobTracker, PowGenerator};
 use crate::tools::types::{Hash, Pow, Salt};
 use std::sync::{Arc, Mutex};
 
@@ -27,16 +30,10 @@ impl Default for SingleThreadedPowGenerator {
 
 #[async_trait::async_trait]
 impl PowGenerator for SingleThreadedPowGenerator {
-    async fn generate_best_effort(&self, _label: &str, iteration_limit: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
-        pow_generate_with_iteration_limit(iteration_limit, pow_min, &data_hash).await
-    }
+    fn pool_size(&self) -> usize { 1 }
 
-    async fn generate(&self, label: &str, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
-        generate_loop(self, &self.tracker, label, pow_min, data_hash).await
-    }
-
-    fn active_jobs(&self) -> Vec<PowJobStatus> {
-        self.tracker.lock().unwrap().snapshot()
+    async fn run_chunk(&self, _slot: usize, chunk_iterations: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
+        pow_generator::run_pool_chunk(chunk_iterations, pow_min, data_hash)
     }
 
     fn tracker(&self) -> &Arc<Mutex<JobTracker>> {

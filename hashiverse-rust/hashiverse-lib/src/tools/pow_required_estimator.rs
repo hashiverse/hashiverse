@@ -15,17 +15,22 @@
 //! expected maximum leading-zero count is `log2(n) - 0.83`. A value wildly below that
 //! suggests a broken RNG or hash chain.
 
-use crate::tools::time::{DurationMillis, TimeMillis, MILLIS_IN_MILLISECOND};
+use crate::tools::time::{DurationMillis, TimeMillis, MILLIS_IN_MILLISECOND, MILLIS_IN_SECOND};
 use crate::tools::types::Pow;
 
-/// Tracks progress across repeated calls to `pow_generate_with_iteration_limit`
-/// and produces a log-friendly ETA estimate.
+/// Tracks progress across repeated chunks inside
+/// [`crate::tools::pow_generator::pow_generator::run_pool`] and produces a log-friendly
+/// ETA estimate.
 ///
 /// PoW search is a memoryless geometric process: the *expected remaining* attempts
 /// is always `2^pow_required` regardless of how many have already been tried.
 /// Consequently:
-///   ETA_remaining = 2^pow_required / rate - elapsed
+///   ETA_remaining = 2^pow_required / rate
 ///   std_deviation  = 2^pow_required / rate  (equals the mean for a geometric distribution)
+///
+/// We deliberately do *not* subtract elapsed: doing so would make ETA go negative on
+/// unlucky runs that have already exceeded their expectation, which contradicts the
+/// memoryless property.
 ///
 /// `best_pow_so_far` is a sanity check: after `n` iterations the expected maximum
 /// leading-zero count is `log2(n) - 0.83`.  A value far below that suggests a
@@ -36,7 +41,10 @@ pub struct PowRequiredEstimator {
     total_iterations: usize,
     best_pow_so_far: Pow,
     started_at_millis: TimeMillis,
+    next_report_millis: TimeMillis,
 }
+
+const REPORTING_PERIOD_MILLIS: DurationMillis = MILLIS_IN_SECOND.const_mul(1);
 
 impl PowRequiredEstimator {
     pub fn new(started_at_millis: TimeMillis, description: &str, pow_required: Pow) -> Self {
@@ -46,6 +54,7 @@ impl PowRequiredEstimator {
             total_iterations: 0,
             best_pow_so_far: Pow(0),
             started_at_millis,
+            next_report_millis: started_at_millis + REPORTING_PERIOD_MILLIS,
         }
     }
 
@@ -66,35 +75,42 @@ impl PowRequiredEstimator {
     }
 
     /// Record the results of one batch and return a progress string suitable for logging.
-    pub fn record_batch_and_estimate(&mut self, current_time_millis: TimeMillis, iterations_in_batch: usize, best_pow_in_batch: Pow) -> String {
+    pub fn record_batch_and_estimate(&mut self, current_time_millis: TimeMillis, iterations_in_batch: usize, best_pow_in_batch: Pow) -> Option<String> {
         self.total_iterations += iterations_in_batch;
         if best_pow_in_batch > self.best_pow_so_far {
             self.best_pow_so_far = best_pow_in_batch;
         }
 
+        // Throttle reporting
+        if current_time_millis < self.next_report_millis {
+            return None;
+        }
+        self.next_report_millis = current_time_millis + REPORTING_PERIOD_MILLIS;
+
         let elapsed_duration_millis = current_time_millis - self.started_at_millis;
 
         if elapsed_duration_millis < MILLIS_IN_MILLISECOND || self.total_iterations == 0 {
-            return format!(
+            return Some(format!(
                 "{}: PoW {}/{} bits | {} | {} iters | too early to estimate",
                 self.description,
                 self.best_pow_so_far.0,
                 self.pow_required.0,
                 elapsed_duration_millis,
                 Self::report_large_number(self.total_iterations)
-            );
+            ));
         }
 
         let iterations_per_second = 1000.0 * self.total_iterations as f64 / elapsed_duration_millis.0 as f64;
-        // Remaining ETA: memoryless property means expected remaining = 2^pow_required
+        // Memoryless: expected remaining attempts is always 2^pow_required, independent of
+        // attempts already made. Do NOT subtract elapsed — that would drive ETA negative for
+        // unlucky runs past their expectation.
         let expected_total_iterations = (2.0f64).powi(self.pow_required.0 as i32);
-        let expected_total_duration = DurationMillis((1000.0 * expected_total_iterations / iterations_per_second) as i64);
-        let eta_remaining_millis = expected_total_duration - elapsed_duration_millis;
+        let expected_remaining_duration = DurationMillis((1000.0 * expected_total_iterations / iterations_per_second) as i64);
         // Std deviation of a geometric distribution equals its mean
-        let eta_one_sigma = expected_total_duration;
+        let eta_one_sigma = expected_remaining_duration;
         let progress_pct = self.total_iterations as f64 / expected_total_iterations * 100.0;
 
-        format!(
+        Some(format!(
             "{}: PoW {}/{} bits | {} | {} iters | {}/s | {:.1}% of expected | ETA ~{} \u{00b1}{}",
             self.description,
             self.best_pow_so_far.0,
@@ -103,9 +119,9 @@ impl PowRequiredEstimator {
             Self::report_large_number(self.total_iterations),
             Self::report_large_number(iterations_per_second as usize),
             progress_pct,
-            eta_remaining_millis,
+            expected_remaining_duration,
             eta_one_sigma,
-        )
+        ))
     }
 }
 
@@ -138,7 +154,9 @@ mod tests {
     fn progress_string_contains_key_fields() {
         let mut estimator = make_estimator();
         let output = estimator.record_batch_and_estimate(TimeMillis(1000), 65536, Pow(18));
+        assert!(output.is_some());
 
+        let output = output.unwrap();
         assert!(output.contains("test"), "should include description: {}", output);
         assert!(output.contains("18/24"), "should show best/required bits: {}", output);
         assert!(output.contains("1s"), "should show elapsed time: {}", output);
@@ -149,7 +167,24 @@ mod tests {
     #[test]
     fn progress_string_before_any_elapsed_time() {
         let mut estimator = make_estimator();
-        let output = estimator.record_batch_and_estimate(TimeMillis(0), 1024, Pow(5));
-        assert!(output.contains("too early"), "{}", output);
+        let output = estimator.record_batch_and_estimate(TimeMillis(100), 1024, Pow(5));
+        assert!(output.is_none());
+    }
+
+    #[test]
+    fn eta_stays_non_negative_past_expected_iterations() {
+        // pow_required = 4 -> expected total iterations = 16. Push well past that to simulate
+        // an unlucky run; the memoryless ETA must still be non-negative.
+        let mut estimator = PowRequiredEstimator::new(TimeMillis(0), "test", Pow(4));
+
+        let output = estimator
+            .record_batch_and_estimate(TimeMillis(1000), 100, Pow(3))
+            .expect("should emit a report once the reporting period has elapsed");
+
+        let after_eta = output.split("ETA ~").nth(1).expect("output should contain ETA marker");
+        let eta_str = after_eta.split(' ').next().expect("ETA value should be the first token after the marker");
+        let eta = DurationMillis::parse(eta_str).expect("ETA value should parse as a DurationMillis");
+
+        assert!(eta.0 >= 0, "ETA must be non-negative past expected iterations; got {:?} in {:?}", eta_str, output);
     }
 }

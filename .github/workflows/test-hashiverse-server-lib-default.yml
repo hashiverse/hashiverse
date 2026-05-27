@@ -35,9 +35,10 @@ jobs:
         with:
           shared-key: "hashiverse-rust"
           workspaces: hashiverse-rust -> target
+      - uses: taiki-e/install-action@nextest
       # `--profile profiling` (release optimisations + debug_assertions=on) keeps
       # `config::TESTING` true inside the `hashiverse-lib` dependency, so PoW thresholds
       # stay at test-scaled values. Plain `--release` makes `SERVER_KEY_POW_MIN = Pow(32)`
       # in the dep and `peer_stats::*` tests would hang for ~5 hours generating a server id.
       - name: Run tests
-        run: cargo test --profile profiling -p hashiverse-server-lib
+        run: cargo nextest run --cargo-profile profiling -p hashiverse-server-lib

@@ -9,8 +9,8 @@ pub mod with_js_context;
 pub mod hashiverse_client_wasm;
 pub mod wasm_try;
 
-use hashiverse_lib::tools::pow::pow_measure_from_data_hash;
-use hashiverse_lib::tools::types::{Hash, Pow, Salt};
+use hashiverse_lib::tools::pow_generator::pow_generator;
+use hashiverse_lib::tools::types::{Hash, Pow};
 use log::{info, trace};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
@@ -49,27 +49,14 @@ pub fn wasm_init(verbose: bool) {
 ///
 /// Returns a colon-separated string: `salt_hex:pow_u8:hash_hex`
 #[wasm_bindgen]
-pub fn pow_compute_batch(iteration_limit: u32, pow_min: u8, data_hash_hex: String) -> String {
-    let data_hash = match hex::decode(&data_hash_hex).ok().and_then(|b| Hash::from_slice(&b).ok()) {
-        Some(h) => h,
-        None => return format!("{}:0:{}", hex::encode(Salt::zero()), hex::encode(Hash::zero())),
+pub fn pow_compute_batch(iteration_limit: u32, pow_min: u8, data_hash_hex: String) -> Result<String, JsValue> {
+    let result: anyhow::Result<String> = try {
+        let data_hash_bytes = hex::decode(&data_hash_hex).map_err(|e| anyhow::anyhow!("Invalid data_hash_hex: {}", e))?;
+        let data_hash = Hash::from_slice(&data_hash_bytes)?;
+        let (salt, pow, hash) = pow_generator::run_pool_chunk(iteration_limit as usize, Pow(pow_min), data_hash)?;
+        format!("{}:{}:{}", hex::encode(salt), pow.0, hex::encode(hash))
     };
-
-    let pow_min = Pow(pow_min);
-    let mut best = (Salt::zero(), Pow(0), Hash::zero());
-
-    for _ in 0..iteration_limit {
-        let salt = Salt::random();
-        if let Ok((pow, hash)) = pow_measure_from_data_hash(&data_hash, &salt) {
-            if pow > best.1 {
-                best = (salt, pow, hash);
-                if pow >= pow_min {
-                    break;
-                }
-            }
-        }
-    }
-    format!("{}:{}:{}", hex::encode(best.0), best.1 .0, hex::encode(best.2))
+    result.map_err(wasm_try::anyhow_to_js)
 }
 
 /// Global storage for the WasmParallelPowGenerator singleton.

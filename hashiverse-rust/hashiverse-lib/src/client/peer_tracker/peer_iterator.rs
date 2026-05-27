@@ -87,10 +87,15 @@ impl<'a> PeerIterator<'a> {
                         return None;
                     }
                     // Allow the next ring of closer peers and retry.
-                    {
-                        let r = &mut self.cache_radius?;
-                        *r = (*r + 1).min(256)
-                    }
+                    //
+                    // NOTE: must take `&mut` via `as_mut()`, NOT `&mut self.cache_radius?`.
+                    // The latter applies `?` first, which copies the inner `i32` out (because
+                    // `LeadingAgreementBits: Copy`), so `&mut` then borrows a stack temporary
+                    // and the mutation never reaches `self.cache_radius`. That regression
+                    // (introduced in commit c1e734e) caused an infinite loop whenever the
+                    // initial cache_radius was 0.
+                    let r = self.cache_radius.as_mut()?;
+                    *r = (*r + 1).min(256);
                 }
             }
         }
@@ -129,93 +134,14 @@ mod tests {
     use crate::client::peer_tracker::peer_tracker::PeerTracker;
     use crate::tools::buckets::{BUCKET_DURATIONS, BucketLocation, BucketType, generate_bucket_location};
     use crate::tools::config;
-    use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
     use crate::tools::runtime_services::RuntimeServices;
     use crate::tools::server_id::ServerId;
     use crate::tools::time::{DurationMillis, TimeMillis};
-    use crate::tools::time_provider::time_provider::RealTimeProvider;
-    use crate::tools::types::{Id, Pow};
-    use crate::transport::mem_transport::MemTransportFactory;
-    use std::sync::Arc;
-
-    fn get_test_runtime_services() -> Arc<RuntimeServices> {
-        Arc::new(RuntimeServices {
-            time_provider: Arc::new(RealTimeProvider),
-            transport_factory: MemTransportFactory::default(),
-            pow_generator: Arc::new(SingleThreadedPowGenerator::new()),
-        })
-    }
-
-    #[tokio::test]
-    async fn general_tests() -> anyhow::Result<()> {
-        let runtime_services = RuntimeServices::default_for_testing();
-        let client_storage = MemClientStorage::new().await?;
-        let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
-
-        assert!(peer_tracker.is_empty());
-        assert_eq!(0, peer_tracker.len());
-
-        // Dont accept insufficient pow
-        {
-            loop {
-                let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), Pow(config::SERVER_KEY_POW_MIN.0 / 2), true, runtime_services.pow_generator.as_ref()).await?;
-                if server_id.pow >= config::SERVER_KEY_POW_MIN {
-                    continue;
-                }
-                let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-                let result = peer_tracker.add_peer(peer);
-                assert!(result.is_err());
-                assert_eq!(0, peer_tracker.len());
-                break;
-            }
-        }
-
-        // Add an individual
-        {
-            let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
-            let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-            let result = peer_tracker.add_peer(peer);
-            assert!(result.is_ok());
-            assert_eq!(1, peer_tracker.len());
-        }
-
-        // Cant add individual twice
-        {
-            let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
-            let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-            let result = peer_tracker.add_peer(peer.clone());
-            assert!(result.is_ok());
-            assert_eq!(2, peer_tracker.len());
-            let result = peer_tracker.add_peer(peer.clone());
-            assert!(result.is_ok());
-            assert_eq!(2, peer_tracker.len());
-        }
-
-        // Add an individual, then remove it
-        {
-            let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
-            let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-            let result = peer_tracker.add_peer(peer.clone());
-            assert!(result.is_ok());
-            assert_eq!(3, peer_tracker.len());
-            peer_tracker.remove_peer(&peer);
-            assert_eq!(2, peer_tracker.len());
-        }
-
-        // Remove an unknown individual
-        {
-            let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
-            let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-            peer_tracker.remove_peer(&peer);
-            assert_eq!(2, peer_tracker.len());
-        }
-
-        Ok(())
-    }
+    use crate::tools::types::Id;
 
     #[tokio::test]
     async fn converge_basics_test() -> anyhow::Result<()> {
-        let runtime_services = get_test_runtime_services();
+        let runtime_services = RuntimeServices::default_for_testing();
         let client_storage = MemClientStorage::new().await?;
         let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
 
@@ -272,7 +198,7 @@ mod tests {
 
     #[tokio::test]
     async fn converge_termination_test() -> anyhow::Result<()> {
-        let runtime_services = get_test_runtime_services();
+        let runtime_services = RuntimeServices::default_for_testing();
         let client_storage = MemClientStorage::new().await?;
         let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
 
@@ -302,7 +228,7 @@ mod tests {
 
     #[tokio::test]
     async fn converge_insertions_test() -> anyhow::Result<()> {
-        let runtime_services = get_test_runtime_services();
+        let runtime_services = RuntimeServices::default_for_testing();
         let client_storage = MemClientStorage::new().await?;
         let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
 
@@ -345,7 +271,7 @@ mod tests {
 
     #[tokio::test]
     async fn converge_targeting_test() -> anyhow::Result<()> {
-        let runtime_services = get_test_runtime_services();
+        let runtime_services = RuntimeServices::default_for_testing();
         let client_storage = MemClientStorage::new().await?;
         let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
 
@@ -411,22 +337,11 @@ mod tests {
     /// one ring per step so that closer peers are eventually visited too.
     #[tokio::test]
     async fn converge_cache_radius_test() -> anyhow::Result<()> {
-        let runtime_services = get_test_runtime_services();
+        let runtime_services = RuntimeServices::default_for_testing();
         let client_storage = MemClientStorage::new().await?;
         let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
 
         let location_id = Id::zero();
-
-        let make_peer_with_lab = |lab_bits: usize| -> anyhow::Result<crate::protocol::peer::Peer> {
-            let mut id_bytes = [0u8; 32];
-            let byte_idx = lab_bits / 8;
-            let bit_idx = 7 - (lab_bits % 8);
-            id_bytes[byte_idx] = 1u8 << bit_idx;
-            let id = Id(id_bytes);
-            let _ = id;
-            anyhow::bail!("use direct ServerId below")
-        };
-        let _ = make_peer_with_lab;
 
         const NUM_PEERS: usize = 100;
         let mut labs_added: Vec<crate::tools::tools::LeadingAgreementBits> = Vec::new();

@@ -1,18 +1,26 @@
-//! Trait, observability primitives, and shared batching loop for the PoW search engine.
+//! Trait, observability primitives, and shared work-stealing dispatcher for the PoW search engine.
 //!
 //! See [`crate::tools::pow_generator`] for the broader module overview. This file holds:
 //!
-//! - [`PowGenerator`] — the trait every concrete generator implements.
+//! - [`PowGenerator`] — the trait every concrete generator implements. Backends only have to
+//!   provide [`PowGenerator::pool_size`] and [`PowGenerator::run_chunk`]; the shared
+//!   dispatcher does the rest.
 //! - [`JobTracker`] + [`PowJobStatus`] — the in-flight job registry surfaced via
 //!   `PowGenerator::active_jobs()` so the UI can show users why an action is slow.
-//! - [`generate_loop`] — the one shared batching loop both implementations use.
+//! - [`run_pool`] — the one shared work-stealing dispatcher both [`PowGenerator::generate`]
+//!   and [`PowGenerator::generate_best_effort`] use. Tracks the job, refeeds each pool slot
+//!   independently as it completes, and returns the instant any chunk meets `pow_min`
+//!   (discarding any in-flight chunks).
 
+use crate::tools::pow::pow_measure_from_data_hash;
 use crate::tools::pow_required_estimator::PowRequiredEstimator;
 use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
-use crate::tools::tools;
 use crate::tools::types::{Hash, Pow, Salt};
+use futures::stream::{FuturesUnordered, StreamExt};
 use log::trace;
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 pub struct PowJobStatus {
@@ -94,79 +102,195 @@ impl Drop for TrackedJobGuard {
 /// calling code stays platform-agnostic:
 ///
 /// - [`crate::tools::pow_generator::native_parallel_pow_generator::NativeParallelPowGenerator`]
-///   uses `rayon` + `tokio::task::spawn_blocking` to pin the search across all CPU cores on
-///   native targets.
+///   runs chunks via `tokio::task::spawn_blocking`, one per CPU.
 /// - [`crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator`]
-///   is a single-threaded fallback that works on every target, including WASM. Browser clients
-///   use this (with a relaxed `pow_min`) because Web Workers do not expose `rayon` / threads
-///   directly.
+///   runs chunks serially. Works on every target including WASM and is used as the fallback in
+///   tests and the in-browser default before workers are wired up.
+/// - `WasmParallelPowGenerator` (in `hashiverse-client-wasm`) dispatches chunks to pre-spawned
+///   Web Workers, one per worker.
 ///
-/// Implementations must also maintain the `active_jobs()` observability view — the UI surfaces
-/// in-progress PoW searches to end users so they understand why an action is slow.
+/// Backends only have to answer two questions — how many chunks may run in parallel
+/// ([`Self::pool_size`]) and how to run one chunk on a given slot ([`Self::run_chunk`]) — and
+/// the shared [`run_pool`] dispatcher handles the rest: work-stealing refeed of fast slots,
+/// early exit the moment `pow_min` is met, and per-chunk cooperative yield. This is what
+/// keeps heterogeneous CPUs (Apple Silicon P+E, Intel hybrid, ARM big.LITTLE) from
+/// collapsing to slow-core throughput.
+///
+/// Implementations must also maintain the `active_jobs()` observability view — the UI
+/// surfaces in-progress PoW searches to end users so they understand why an action is slow.
 #[async_trait::async_trait]
 pub trait PowGenerator: Send + Sync {
-    /// Run up to `iteration_limit` hash attempts and return the best `(Salt, Pow, Hash)` found.
-    /// Exits early if `pow >= pow_min` is achieved.
-    ///
-    /// `label` is a human-readable job name for observability (e.g. `"rpc:AnnounceV1"`, `"feedback"`).
-    /// `data_hash` must be pre-computed via `pow_compute_data_hash` before calling.
-    ///
-    /// Note: this method does NOT register the job with the tracker. Use it only from inside
-    /// `generate_loop` (which manages its own tracker entry across batches). Direct callers
-    /// that want their single-batch search to show up in `active_jobs()` should use
-    /// [`Self::generate_best_effort_tracked`] instead.
-    async fn generate_best_effort(&self, label: &str, iteration_limit: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)>;
+    /// How many `run_chunk` calls the dispatcher may have in flight concurrently.
+    /// `WasmParallelPowGenerator` returns its `workers.len()`; the native backend returns
+    /// the CPU count; the single-threaded backend returns 1.
+    fn pool_size(&self) -> usize;
 
-    /// Loop `generate_best_effort` in batches until `pow >= pow_min` is achieved.
-    async fn generate(&self, label: &str, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)>;
+    /// Run `chunk_iterations` PoW attempts on one parallel slot. `slot` is an opaque index
+    /// in `0..pool_size()` — the wasm backend uses it to address `self.workers[slot]`; the
+    /// native and single-threaded backends ignore it. May short-circuit inside the chunk
+    /// when `pow_min` is reached (`pow_compute_batch` already does this in
+    /// `hashiverse-client-wasm/src/lib.rs`).
+    async fn run_chunk(&self, slot: usize, chunk_iterations: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)>;
 
-    /// Snapshot of all concurrently in-flight tracked jobs.
-    fn active_jobs(&self) -> Vec<PowJobStatus>;
-
-    /// Accessor for the impl's `JobTracker`. Exists so the default `generate_best_effort_tracked`
-    /// implementation can register the job without each impl having to duplicate the wrapping.
+    /// Accessor for the impl's `JobTracker`. Used by the default `generate` /
+    /// `generate_best_effort` impls to register the in-flight job, and by `active_jobs()`
+    /// to snapshot it for the UI.
     fn tracker(&self) -> &Arc<Mutex<JobTracker>>;
 
-    /// `generate_best_effort` plus tracker registration for the duration of the call.
-    /// Use this when a single-batch PoW is run directly (i.e. not inside `generate_loop`),
-    /// otherwise the job is invisible to `active_jobs()`.
-    async fn generate_best_effort_tracked(&self, label: &str, iteration_limit: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
-        let _guard = TrackedJobGuard::new(self.tracker().clone(), label, pow_min);
-        self.generate_best_effort(label, iteration_limit, pow_min, data_hash).await
+    /// Snapshot of all concurrently in-flight tracked jobs.
+    fn active_jobs(&self) -> Vec<PowJobStatus> {
+        self.tracker().lock().unwrap().snapshot()
+    }
+
+    /// Run up to `iteration_limit` attempts via the work-stealing pool. Registers the job
+    /// in the tracker at entry. Returns the moment any chunk produces `pow >= pow_min`
+    /// (discarding chunks still in flight); otherwise returns the best result found
+    /// within `iteration_limit`.
+    async fn generate_best_effort(&self, label: &str, iteration_limit: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
+        run_pool(self, label, Some(iteration_limit), pow_min, data_hash).await
+    }
+
+    /// Run the pool unbounded until `pow >= pow_min` is found. Registers the job in the
+    /// tracker at entry.
+    async fn generate(&self, label: &str, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
+        run_pool(self, label, None, pow_min, data_hash).await
     }
 }
 
-/// Shared loop logic for `generate`: repeatedly calls `generate_best_effort` in
-/// `BATCH_SIZE` batches until `pow >= pow_min`, tracking progress via `JobTracker`.
+/// Per-chunk grain size for the dispatcher. Smaller = less wasted work on early-exit and
+/// finer cooperative yield, but more per-chunk dispatch overhead. With ~7 chained hashes per
+/// attempt, 4K iterations is a few tens to a couple hundred ms per chunk on commodity
+/// hardware — small enough that a slow-core chunk finishing after a winner is found wastes
+/// at most one chunk-time of background CPU per pool slot.
+const CHUNK_ITERATIONS: usize = 4 * 1024;
+
+type SlotFuture<'a> = Pin<Box<dyn Future<Output = (usize, usize, anyhow::Result<(Salt, Pow, Hash)>)> + Send + 'a>>;
+
+/// Work-stealing dispatcher shared by both `generate` and `generate_best_effort`.
 ///
-/// Future optimization: the current batch-and-wait approach dispatches to all N workers,
-/// then waits for all N to respond before dispatching the next batch. This means fast
-/// workers sit idle while the slowest worker finishes. A better design would feed workers
-/// individually as they complete (work-stealing / pool-style), maintaining a shared
-/// "best result so far" per job and checking pow_min after each worker result. This would
-/// also allow concurrent generate() calls to have their batches truly interleaved at the
-/// individual-worker level rather than at the batch level.
-pub async fn generate_loop(
-    generator: &(dyn PowGenerator + '_),
-    tracker: &Arc<Mutex<JobTracker>>,
-    label: &str,
+/// Algorithm:
+/// 1. Register the job in the tracker (RAII so panic / cancel still cleans up).
+/// 2. Initial fill: push one chunk onto each of `pool_size()` slots, clamped by
+///    `iteration_cap` when bounded.
+/// 3. As each chunk completes, merge its best result. If `pow_min` is met, return
+///    immediately — the `FuturesUnordered` is dropped, discarding any in-flight chunks
+///    (the underlying worker / blocking thread continues silently and its result is lost).
+/// 4. Otherwise, update the tracker / progress estimator, cooperatively yield, and refeed
+///    only the slot that just freed up. Fast slots end up processing more chunks than slow
+///    ones — no idle waiting on the slowest core.
+pub async fn run_pool<'a, G: PowGenerator + ?Sized>(
+    generator: &'a G,
+    label: &'a str,
+    iteration_cap: Option<usize>,
     pow_min: Pow,
     data_hash: Hash,
 ) -> anyhow::Result<(Salt, Pow, Hash)> {
-    const BATCH_SIZE: usize = 64 * 1024;
+    let tracker = generator.tracker().clone();
+    let guard = TrackedJobGuard::new(tracker, label, pow_min);
+
     let real_time_provider = RealTimeProvider;
     let mut estimator = PowRequiredEstimator::new(real_time_provider.current_time_millis(), label, pow_min);
-    let guard = TrackedJobGuard::new(tracker.clone(), label, pow_min);
-    loop {
-        let result = generator.generate_best_effort(label, BATCH_SIZE, pow_min, data_hash).await?;
-        if result.1 >= pow_min {
-            return Ok(result);
-        }
-        guard.update(result.1);
-        let progress = estimator.record_batch_and_estimate(real_time_provider.current_time_millis(), BATCH_SIZE, result.1);
-        trace!("{}", progress);
-        tools::yield_now().await;
+
+    let pool_size = generator.pool_size().max(1);
+    let mut remaining_iterations: Option<usize> = iteration_cap;
+
+    // Seed `best` with one real PoW sample so the in-flight loop's strict `>` check is
+    // always meaningful (no zero-init placeholder to distinguish from a real Pow(0)
+    // chunk). One synchronous measurement on the dispatcher thread is cheap and
+    // guarantees the returned (salt, pow) pair satisfies pow_measure(salt) == pow.
+    // For iteration_cap == Some(0) callers, we still do this one seed PoW — it's the
+    // minimum work that yields a self-consistent result.
+    let mut best = {
+        let seed_salt = Salt::random();
+        let (seed_pow, seed_hash) = pow_measure_from_data_hash(&data_hash, &seed_salt)?;
+        (seed_salt, seed_pow, seed_hash)
+    };
+
+    guard.update(best.1);
+
+    // Were we lucky?
+    if best.1 >= pow_min {
+        return Ok(best);
     }
+
+    let mut in_flight: FuturesUnordered<SlotFuture<'a>> = FuturesUnordered::new();
+
+    // Kick off the threads
+    for slot in 0..pool_size {
+        let chunk_size = pick_next_chunk_size(&mut remaining_iterations);
+        if chunk_size == 0 {
+            break;
+        }
+
+        in_flight.push(Box::pin(async move {
+            let chunk_result = generator.run_chunk(slot, chunk_size, pow_min, data_hash).await;
+            (slot, chunk_size, chunk_result)
+        }));
+    }
+
+    // Then, as each thread finishes, see if there is more work to do and repeat...
+    while let Some((slot, chunk_size, chunk_result)) = in_flight.next().await {
+        let chunk_best = chunk_result?;
+        if chunk_best.1 > best.1 {
+            best = chunk_best;
+            guard.update(best.1);
+        }
+        if best.1 >= pow_min {
+            return Ok(best);
+        }
+        if let Some(progress) = estimator.record_batch_and_estimate(real_time_provider.current_time_millis(), chunk_size, best.1) {
+            trace!("{}", progress);
+        }
+
+        let next_chunk_size = pick_next_chunk_size(&mut remaining_iterations);
+        if next_chunk_size == 0 {
+            continue;
+        }
+        
+        in_flight.push(Box::pin(async move {
+            let chunk_result = generator.run_chunk(slot, next_chunk_size, pow_min, data_hash).await;
+            (slot, next_chunk_size, chunk_result)
+        }));
+    }
+
+    Ok(best)
+}
+
+fn pick_next_chunk_size(remaining_iterations: &mut Option<usize>) -> usize {
+    match remaining_iterations {
+        Some(0) => 0,
+        Some(remaining) => {
+            let chunk_size = (*remaining).min(CHUNK_ITERATIONS);
+            *remaining -= chunk_size;
+            chunk_size
+        }
+        None => CHUNK_ITERATIONS,
+    }
+}
+
+pub fn run_pool_chunk(chunk_iterations: usize, pow_min: Pow, data_hash: Hash) -> anyhow::Result<(Salt, Pow, Hash)> {
+    let mut best = {
+        let salt = Salt::random();
+        let (pow, hash) = pow_measure_from_data_hash(&data_hash, &salt)?;
+        (salt, pow, hash)
+    };
+
+    if best.1 >= pow_min {
+        return Ok(best);
+    }
+
+    for _ in 1..chunk_iterations {
+        let salt = Salt::random();
+        let (pow, hash) = pow_measure_from_data_hash(&data_hash, &salt)?;
+        if pow > best.1 {
+            best = (salt, pow, hash);
+            if best.1 >= pow_min {
+                return Ok(best);
+            }
+        }
+    }
+
+    Ok(best)
 }
 
 #[cfg(test)]
@@ -226,5 +350,92 @@ mod tests {
         assert_eq!(snapshot[0].label, "rpc");
         assert_eq!(snapshot[0].pow_min, Pow(18));
         assert_eq!(snapshot[0].best_pow_so_far, Pow(42));
+    }
+
+    #[tokio::test]
+    async fn run_pool_returns_consistent_sample_when_iteration_limit_is_zero() {
+        use crate::tools::pow::{pow_compute_data_hash, pow_measure_from_data_hash};
+        use crate::tools::pow_generator::pow_generator::PowGenerator;
+        use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
+        use crate::tools::types::Pow;
+
+        // iteration_cap=0 means "no chunked work", but run_pool still does the one seed PoW
+        // so the returned (salt, pow) is always self-consistent under pow_measure.
+        let data_hash = pow_compute_data_hash(&[b"zero-budget"]);
+        let generator = SingleThreadedPowGenerator::new();
+        let (salt, achieved_pow, _) = generator.generate_best_effort("zero", 0, Pow(255), data_hash).await.unwrap();
+        let (recomputed_pow, _) = pow_measure_from_data_hash(&data_hash, &salt).unwrap();
+        assert_eq!(recomputed_pow, achieved_pow);
+    }
+
+    #[tokio::test]
+    async fn run_pool_tracker_clears_after_completion() {
+        use crate::tools::pow::pow_compute_data_hash;
+        use crate::tools::pow_generator::pow_generator::PowGenerator;
+        use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
+        use crate::tools::types::Pow;
+
+        let data_hash = pow_compute_data_hash(&[b"tracker-cleanup"]);
+        let generator = SingleThreadedPowGenerator::new();
+        // Pow(0) succeeds on the first attempt → fast.
+        let _ = generator.generate("clean", Pow(0), data_hash).await.unwrap();
+        assert!(generator.active_jobs().is_empty());
+    }
+
+    #[tokio::test]
+    async fn run_pool_returns_as_soon_as_pow_min_is_met() {
+        use crate::tools::pow::pow_compute_data_hash;
+        use crate::tools::pow_generator::pow_generator::PowGenerator;
+        use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
+        use crate::tools::types::Pow;
+
+        const POW_MIN: Pow = Pow(8);
+        let data_hash = pow_compute_data_hash(&[b"early-exit"]);
+        let generator = SingleThreadedPowGenerator::new();
+        let (_, achieved_pow, _) = generator.generate("early", POW_MIN, data_hash).await.unwrap();
+        assert!(achieved_pow >= POW_MIN);
+    }
+
+    /// Regression: with `pow_min = 0` and a tiny chunk, the sampled salt was being
+    /// dropped in favour of the zero-init placeholder whenever the sample happened to
+    /// yield Pow(0) — leaving the returned salt and pow inconsistent under `pow_measure`.
+    /// Uses a different `data_hash` per trial so the bug can't hide behind a coincidental
+    /// `pow_measure(Salt::zero(), data_hash) == Pow(0)` for any single fixed input.
+    #[tokio::test]
+    async fn run_pool_pow_min_zero_returns_consistent_salt_and_pow() {
+        use crate::tools::pow::{pow_compute_data_hash, pow_measure_from_data_hash};
+        use crate::tools::pow_generator::pow_generator::PowGenerator;
+        use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
+        use crate::tools::types::Pow;
+
+        let generator = SingleThreadedPowGenerator::new();
+        for trial in 0u32..256 {
+            let data_hash = pow_compute_data_hash(&[&trial.to_le_bytes()]);
+            let (salt, achieved_pow, _) = generator.generate_best_effort("regression", 1, Pow(0), data_hash).await.unwrap();
+            let (recomputed_pow, _) = pow_measure_from_data_hash(&data_hash, &salt).unwrap();
+            assert_eq!(recomputed_pow, achieved_pow, "trial {}: salt and pow drifted apart", trial);
+        }
+    }
+
+    /// Regression: when the entire iteration budget is spent without ever beating Pow(0),
+    /// run_pool used to return the zero-init placeholder (Salt::zero, Pow(0), Hash::zero)
+    /// because its `chunk_best.1 > best.1` check could never accept a chunk with pow == 0.
+    /// Now exercises both layers: run_chunk produces a real (salt, pow=0, hash) sample
+    /// (~50% of the time for tiny chunks), and run_pool must accept it.
+    #[tokio::test]
+    async fn run_pool_returns_consistent_sample_when_budget_exhausted() {
+        use crate::tools::pow::{pow_compute_data_hash, pow_measure_from_data_hash};
+        use crate::tools::pow_generator::pow_generator::PowGenerator;
+        use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
+        use crate::tools::types::Pow;
+
+        let generator = SingleThreadedPowGenerator::new();
+        for trial in 0u32..256 {
+            let data_hash = pow_compute_data_hash(&[b"exhaust", &trial.to_le_bytes()]);
+            // Pow(255) is unreachable in a single iteration → budget always exhausts.
+            let (salt, achieved_pow, _) = generator.generate_best_effort("exhaust", 1, Pow(255), data_hash).await.unwrap();
+            let (recomputed_pow, _) = pow_measure_from_data_hash(&data_hash, &salt).unwrap();
+            assert_eq!(recomputed_pow, achieved_pow, "trial {}: returned salt does not produce returned pow", trial);
+        }
     }
 }

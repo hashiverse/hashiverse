@@ -195,12 +195,10 @@ impl PeerTracker {
 mod tests {
     use crate::client::client_storage::mem_client_storage::MemClientStorage;
     use crate::client::peer_tracker::peer_tracker::PeerTracker;
-    use crate::tools::buckets::{generate_bucket_location, BucketLocation, BucketType, BUCKET_DURATIONS};
     use crate::tools::config;
     use crate::tools::runtime_services::RuntimeServices;
     use crate::tools::server_id::ServerId;
-    use crate::tools::time::{DurationMillis, TimeMillis};
-    use crate::tools::types::{Id, Pow};
+    use crate::tools::types::Pow;
 
     #[tokio::test]
     async fn general_tests() -> anyhow::Result<()> {
@@ -213,20 +211,15 @@ mod tests {
 
         // Dont accept insufficient pow
         {
-            // We have to loop because sometimes the diminished pow actually is sufficient by chance
             loop {
                 let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), Pow(config::SERVER_KEY_POW_MIN.0 / 2), true, runtime_services.pow_generator.as_ref()).await?;
-
-                // Check that we havent succeeded by statistical mistake
                 if server_id.pow >= config::SERVER_KEY_POW_MIN {
                     continue;
                 }
-
                 let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
                 let result = peer_tracker.add_peer(peer);
                 assert!(result.is_err());
                 assert_eq!(0, peer_tracker.len());
-
                 break;
             }
         }
@@ -235,277 +228,84 @@ mod tests {
         {
             let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
             let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-
-            {
-                let result = peer_tracker.add_peer(peer);
-                assert!(result.is_ok());
-                assert_eq!(1, peer_tracker.len());
-            }
+            let result = peer_tracker.add_peer(peer);
+            assert!(result.is_ok());
+            assert_eq!(1, peer_tracker.len());
         }
 
         // Cant add individual twice
         {
             let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
             let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-
-            {
-                let result = peer_tracker.add_peer(peer.clone());
-                assert!(result.is_ok());
-                assert_eq!(2, peer_tracker.len());
-            }
-            {
-                let result = peer_tracker.add_peer(peer.clone());
-                assert!(result.is_ok());
-                assert_eq!(2, peer_tracker.len());
-            }
+            let result = peer_tracker.add_peer(peer.clone());
+            assert!(result.is_ok());
+            assert_eq!(2, peer_tracker.len());
+            let result = peer_tracker.add_peer(peer.clone());
+            assert!(result.is_ok());
+            assert_eq!(2, peer_tracker.len());
         }
 
         // Add an individual, then remove it
         {
             let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
             let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-
-            {
-                let result = peer_tracker.add_peer(peer.clone());
-                assert!(result.is_ok());
-                assert_eq!(3, peer_tracker.len());
-            }
-
-            {
-                peer_tracker.remove_peer(&peer);
-                assert_eq!(2, peer_tracker.len());
-            }
+            let result = peer_tracker.add_peer(peer.clone());
+            assert!(result.is_ok());
+            assert_eq!(3, peer_tracker.len());
+            peer_tracker.remove_peer(&peer);
+            assert_eq!(2, peer_tracker.len());
         }
 
         // Remove an unknown individual
         {
             let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
             let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-
-            {
-                peer_tracker.remove_peer(&peer);
-                assert_eq!(2, peer_tracker.len());
-            }
+            peer_tracker.remove_peer(&peer);
+            assert_eq!(2, peer_tracker.len());
         }
 
         Ok(())
     }
 
+    /// A peer whose pow_initial has been mutated after signing must fail verify(),
+    /// so add_peer rejects it.
     #[tokio::test]
-    async fn converge_basics_test() -> anyhow::Result<()> {
+    async fn add_peer_rejects_tampered_pow_initial() -> anyhow::Result<()> {
         let runtime_services = RuntimeServices::default_for_testing();
         let client_storage = MemClientStorage::new().await?;
         let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
-        // configure_logging_with_time_provider("trace", runtime_services.time_provider.clone());
 
-        const NUM_PEERS: usize = 100;
+        let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+        let mut peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
 
-        {
-            for _ in 0..NUM_PEERS {
-                let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
-                let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-                peer_tracker.add_peer(peer)?;
-            }
-            assert_eq!(NUM_PEERS, peer_tracker.len());
-        }
+        peer.pow_initial.salt = crate::tools::types::Salt::zero();
 
-        {
-            let bucket_location = generate_bucket_location(BucketType::User, Id::random(), BUCKET_DURATIONS[0], runtime_services.time_provider.current_time_millis())?;
-            let mut count = 0;
-            let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, usize::MAX, None).await?;
-            while let Some(_peer) = peer_iter.next_peer() { count += 1; }
-            assert_eq!(NUM_PEERS, count);
-        };
-
-        {
-            let bucket_location = generate_bucket_location(BucketType::User, Id::random(), BUCKET_DURATIONS[0], runtime_services.time_provider.current_time_millis())?;
-            let mut count = 0;
-            let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, usize::MAX, None).await?;
-            if peer_iter.next_peer().is_some() { count += 1; }
-            assert_eq!(1, count);
-        };
-
-        {
-            let bucket_location = generate_bucket_location(BucketType::User, Id::random(), BUCKET_DURATIONS[0], runtime_services.time_provider.current_time_millis())?;
-            let mut count = 0;
-            let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, usize::MAX, None).await?;
-            while let Some((peer, _)) = peer_iter.next_peer() {
-                count += 1;
-                if 0 == count % 2 { peer_iter.remove_peer(&peer); }
-            }
-            assert_eq!(NUM_PEERS, count);
-            assert_eq!(NUM_PEERS / 2, peer_tracker.len());
-        }
+        let result = peer_tracker.add_peer(peer);
+        assert!(result.is_err(), "tampered peer should be rejected");
+        assert_eq!(0, peer_tracker.len());
 
         Ok(())
     }
 
+    /// peers() must stay sorted by id after arbitrary insertion order, because
+    /// add_peer uses binary_search_by_key to dedupe.
     #[tokio::test]
-    async fn converge_termination_test() -> anyhow::Result<()> {
+    async fn add_peer_keeps_peers_sorted_by_id() -> anyhow::Result<()> {
         let runtime_services = RuntimeServices::default_for_testing();
         let client_storage = MemClientStorage::new().await?;
         let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
 
-        const NUM_PEERS: usize = 100;
-
-        {
-            for _ in 0..NUM_PEERS {
-                let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
-                let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-                peer_tracker.add_peer(peer)?;
-            }
-            assert_eq!(NUM_PEERS, peer_tracker.len());
-        }
-
-        {
-            let bucket_location = generate_bucket_location(BucketType::User, Id::random(), BUCKET_DURATIONS[0], runtime_services.time_provider.current_time_millis())?;
-            let mut count = 0;
-            let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, 3, None).await?;
-            while let Some(_peer) = peer_iter.next_peer() { count += 1; }
-            assert_eq!(3 + 1, count);
-        }
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn converge_insertions_test() -> anyhow::Result<()> {
-        let runtime_services = RuntimeServices::default_for_testing();
-        let client_storage = MemClientStorage::new().await?;
-        let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
-
-        const NUM_PEERS: usize = 100;
-
-        {
-            for _ in 0..NUM_PEERS {
-                let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
-                let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-                peer_tracker.add_peer(peer)?;
-            }
-            assert_eq!(NUM_PEERS, peer_tracker.len());
-        }
-
-        {
-            let bucket_location = generate_bucket_location(BucketType::User, Id::random(), BUCKET_DURATIONS[0], runtime_services.time_provider.current_time_millis())?;
-            let mut count = 0;
-            let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, usize::MAX, None).await?;
-            while let Some(_peer) = peer_iter.next_peer() {
-                count += 1;
-                if 0 == count % 10 {
-                    let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
-                    let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-                    peer_iter.add_peers(vec![peer]);
-                }
-                if 50 == count { break; }
-            }
-            assert_eq!(50, count);
-            assert_eq!(NUM_PEERS + 5, peer_tracker.len());
-        }
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn converge_targeting_test() -> anyhow::Result<()> {
-        let runtime_services = RuntimeServices::default_for_testing();
-        let client_storage = MemClientStorage::new().await?;
-        let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
-
-        const NUM_PEERS: usize = 100;
-
-        {
-            for _ in 0..NUM_PEERS {
-                let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
-                let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-                peer_tracker.add_peer(peer)?;
-            }
-            assert_eq!(NUM_PEERS, peer_tracker.len());
-        }
-
-        let target_server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
-        let target_peer = target_server_id.to_peer(runtime_services.time_provider.as_ref())?;
-
-        {
-            const PEER_DISCOVERY_I: usize = 37usize;
-            const PEER_DISCOVERY_I_PLUS_1: usize = PEER_DISCOVERY_I + 1;
-
-            let bucket_location = {
-                let mut location_id = target_peer.id;
-                for i in 10..31 { location_id.0[i] = 0u8; }
-                BucketLocation {
-                    bucket_type: BucketType::User,
-                    base_id: location_id,
-                    duration: DurationMillis::zero(),
-                    bucket_time_millis: TimeMillis::zero(),
-                    location_id,
-                }
-            };
-
-            let mut count = 0;
-            let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, usize::MAX, None).await?;
-            while let Some((peer, _)) = peer_iter.next_peer() {
-                count += 1;
-                match count {
-                    PEER_DISCOVERY_I => { peer_iter.add_peers(vec![target_peer.clone()]); }
-                    PEER_DISCOVERY_I_PLUS_1 => {
-                        if peer.id != target_peer.id { anyhow::bail!("peer is not the one we expected"); }
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-            assert_eq!(PEER_DISCOVERY_I_PLUS_1, count);
-            assert_eq!(NUM_PEERS + 1, peer_tracker.len());
-        }
-
-        Ok(())
-    }
-
-    /// Verify that `cache_radius` starts by skipping peers inside the radius, then opens up
-    /// one ring per step so that closer peers are eventually visited too.
-    #[tokio::test]
-    async fn converge_cache_radius_test() -> anyhow::Result<()> {
-        let runtime_services = RuntimeServices::default_for_testing();
-        let client_storage = MemClientStorage::new().await?;
-        let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
-
-        let location_id = Id::zero();
-
-        let make_peer_with_lab = |lab_bits: usize| -> anyhow::Result<crate::protocol::peer::Peer> {
-            let mut id_bytes = [0u8; 32];
-            let byte_idx = lab_bits / 8;
-            let bit_idx = 7 - (lab_bits % 8);
-            id_bytes[byte_idx] = 1u8 << bit_idx;
-            let id = Id(id_bytes);
-            let _ = id;
-            anyhow::bail!("use direct ServerId below")
-        };
-        let _ = make_peer_with_lab;
-
-        const NUM_PEERS: usize = 100;
-        let mut labs_added: Vec<crate::tools::tools::LeadingAgreementBits> = Vec::new();
+        const NUM_PEERS: usize = 30;
         for _ in 0..NUM_PEERS {
             let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
             let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-            let lab = crate::tools::tools::leading_agreement_bits_xor(&location_id.0, &peer.id.0);
-            labs_added.push(lab);
             peer_tracker.add_peer(peer)?;
         }
-        assert_eq!(NUM_PEERS, peer_tracker.len());
 
-        let mut sorted_labs = labs_added.clone();
-        sorted_labs.sort();
-        let cache_radius = sorted_labs[NUM_PEERS / 2];
-
-        let mut labs_visited: Vec<crate::tools::tools::LeadingAgreementBits> = Vec::new();
-        let mut peer_iter = peer_tracker.iterate_to_location(location_id, usize::MAX, Some(cache_radius)).await?;
-        while let Some((_, lab)) = peer_iter.next_peer() { labs_visited.push(lab); }
-
-        assert_eq!(NUM_PEERS, labs_visited.len(), "all peers should be visited");
-
-        let has_outside_peers = labs_added.iter().any(|&lab| lab < cache_radius);
-        if has_outside_peers {
-            assert!(labs_visited[0] < cache_radius, "first peer should be outside the initial cache zone, got lab={} cache_radius={}", labs_visited[0], cache_radius);
+        let peers = peer_tracker.peers();
+        assert_eq!(NUM_PEERS, peers.len());
+        for window in peers.windows(2) {
+            assert!(window[0].id < window[1].id, "peers must be sorted by id; got {} then {}", window[0].id, window[1].id);
         }
 
         Ok(())
