@@ -24,6 +24,6 @@ runs:
       run: |
         tag="${{ github.event.release.tag_name }}"
         version="${tag#v}"
-        npm version --no-git-tag-version --allow-same-version "$version"
+        npm version --no-git-tag-version --allow-same-version --ignore-scripts "$version"
         echo "--- package.json after rewrite ---"
         grep -m1 '"version"' package.json
