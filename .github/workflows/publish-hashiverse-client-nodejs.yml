@@ -120,7 +120,7 @@ jobs:
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
           npx napi artifacts
-          npx napi prepublish -t github
+          npx napi prepublish --no-gh-release --skip-optional-publish
 
       - name: Dry-run publish all packages
         working-directory: ${{ env.PACKAGE_DIR }}
@@ -178,7 +178,9 @@ jobs:
 
       - name: napi prepublish (rewrite root optionalDependencies)
         working-directory: ${{ env.PACKAGE_DIR }}
-        run: npx napi prepublish -t github
+        # --no-gh-release: don't upload .node files as GitHub release assets (npm subpackages are the distribution channel).
+        # --skip-optional-publish: don't let napi run `npm publish` for the per-target subpackages — the loop below handles that with --provenance and the right --tag for prereleases.
+        run: npx napi prepublish --no-gh-release --skip-optional-publish
 
       - name: Publish all packages (platforms first, then root)
         working-directory: ${{ env.PACKAGE_DIR }}
