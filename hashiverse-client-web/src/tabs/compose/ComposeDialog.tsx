@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import type { HashiverseClientWasmProxy } from "../../Hashiverse.ts";
+import { redirect_to_login_with_return } from "../../tools/PostLoginRedirect.ts";
 import type { UserSettingsCache } from "../../tools/UserSettingsCache.ts";
 import { type ComposeOpenContext, register_compose_dialog } from "./ComposeDialogStore.ts";
 import { ComposeEditor, type ComposeEditorHandle } from "./ComposeEditor.tsx";
@@ -90,7 +91,7 @@ export const ComposeDialog: React.FC<Props> = ({ hashiverse, user_settings_cache
 					<Button
 						onClick={() => {
 							needs_login_close();
-							navigate("/login");
+							redirect_to_login_with_return(navigate, "/compose");
 						}}
 					>
 						{t("not_logged_in.log_in")}
