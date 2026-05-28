@@ -140,3 +140,61 @@ jobs:
         with:
           packages-dir: dist
           verbose: true
+
+  verify-published-pypi:
+    name: Smoke-install from PyPI
+    needs: publish-pypi
+    if: |
+      (github.event_name == 'release') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      # Rewrites hashiverse-rust/Cargo.toml on the runner so we can read the
+      # tag-derived version (no-op on workflow_dispatch).
+      - uses: ./.github/actions/set-cargo-version-from-tag
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install + import published version
+        shell: bash
+        run: |
+          # Read Cargo SemVer, convert to PEP 440 (1.0.6-rc1 -> 1.0.6rc1, etc.)
+          # to match maturin's normalization of the wheel filename on PyPI.
+          cargo_version=$(sed -nE '/^\[workspace\.package\]/,/^\[/{ s/^version = "([^"]+)"/\1/p; }' hashiverse-rust/Cargo.toml | head -1)
+          pep440_version=$(echo "$cargo_version" | sed -E 's/-rc\.?([0-9]+)/rc\1/; s/-beta\.?([0-9]+)/b\1/; s/-alpha\.?([0-9]+)/a\1/')
+          echo "Verifying hashiverse-client==$pep440_version (from cargo $cargo_version)"
+
+          scratch=$(mktemp -d)
+          cd "$scratch"
+          python -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --quiet --upgrade pip
+
+          # Retry briefly — PyPI propagation can lag a few seconds.
+          for i in 1 2 3 4 5; do
+            if pip install --pre "hashiverse-client==$pep440_version"; then
+              break
+            fi
+            echo "install attempt $i failed, retrying..."
+            sleep 5
+          done
+
+          python - <<'PY'
+          from importlib.metadata import version
+          from hashiverse_client import (
+              HashiverseClient,
+              HashiverseError,
+              convert_text_to_hashiverse_html_x_hashtag,
+          )
+          assert callable(HashiverseClient), "HashiverseClient missing"
+          assert issubclass(HashiverseError, Exception)
+          out = convert_text_to_hashiverse_html_x_hashtag("RuStLang")
+          assert 'hashtag="rustlang"' in out, f"helper broken: {out}"
+          print(f"ok: imported hashiverse-client=={version('hashiverse-client')} from PyPI")
+          PY
