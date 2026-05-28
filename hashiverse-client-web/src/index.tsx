@@ -286,7 +286,7 @@ if (!root) throw new Error("Missing #root element");
 createRoot(root).render(
 	<React.StrictMode>
 		<MantineProvider defaultColorScheme="dark" theme={theme}>
-			<Notifications position="top-right" />
+			<Notifications position="bottom-center" />
 			<PrereleaseBanner />
 			<App initial_hashiverse={hashiverse} initial_settings={initial_settings} />
 		</MantineProvider>
