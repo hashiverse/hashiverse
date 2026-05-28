@@ -99,6 +99,15 @@ jobs:
         with:
           working-directory: ${{ env.PACKAGE_DIR }}
 
+      - uses: ./.github/actions/install-rust-toolchain
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust"
+          workspaces: hashiverse-rust -> target
+
       - uses: actions/setup-node@v5
         with:
           node-version: lts/*
@@ -107,6 +116,16 @@ jobs:
       - name: npm ci
         working-directory: ${{ env.PACKAGE_DIR }}
         run: npm ci
+
+      # Build on this runner purely for the side effect of generating index.js +
+      # index.d.ts. The resulting host .node is discarded — per-target .node files
+      # for the sibling packages come from the matrix via download-artifact +
+      # napi artifacts below. Without this step, the root tarball's "files":
+      # ["index.js", "index.d.ts"] whitelist points at files that don't exist
+      # and npm publish silently ships an empty root (see 1.0.6 incident).
+      - name: napi build (regenerate index.js + index.d.ts from current source)
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: npx napi build --platform --release --target x86_64-unknown-linux-gnu
 
       - uses: actions/download-artifact@v5
         with:
@@ -121,6 +140,13 @@ jobs:
         run: |
           npx napi artifacts
           npx napi prepublish --no-gh-release --skip-optional-publish
+
+      - name: Assert root publish artefacts exist
+        working-directory: ${{ env.PACKAGE_DIR }}
+        shell: bash
+        run: |
+          test -f index.js   || { echo "missing index.js";   exit 1; }
+          test -f index.d.ts || { echo "missing index.d.ts"; exit 1; }
 
       - name: Dry-run publish all packages
         working-directory: ${{ env.PACKAGE_DIR }}
@@ -155,6 +181,15 @@ jobs:
         with:
           working-directory: ${{ env.PACKAGE_DIR }}
 
+      - uses: ./.github/actions/install-rust-toolchain
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-rust"
+          workspaces: hashiverse-rust -> target
+
       - uses: actions/setup-node@v5
         with:
           node-version: lts/*
@@ -163,6 +198,16 @@ jobs:
       - name: npm ci
         working-directory: ${{ env.PACKAGE_DIR }}
         run: npm ci
+
+      # Build on this runner purely for the side effect of generating index.js +
+      # index.d.ts. The resulting host .node is discarded — per-target .node files
+      # for the sibling packages come from the matrix via download-artifact +
+      # napi artifacts below. Without this step, the root tarball's "files":
+      # ["index.js", "index.d.ts"] whitelist points at files that don't exist
+      # and npm publish silently ships an empty root (see 1.0.6 incident).
+      - name: napi build (regenerate index.js + index.d.ts from current source)
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: npx napi build --platform --release --target x86_64-unknown-linux-gnu
 
       - uses: actions/download-artifact@v5
         with:
@@ -182,6 +227,13 @@ jobs:
         # --skip-optional-publish: don't let napi run `npm publish` for the per-target subpackages — the loop below handles that with --provenance and the right --tag for prereleases.
         run: npx napi prepublish --no-gh-release --skip-optional-publish
 
+      - name: Assert root publish artefacts exist
+        working-directory: ${{ env.PACKAGE_DIR }}
+        shell: bash
+        run: |
+          test -f index.js   || { echo "missing index.js";   exit 1; }
+          test -f index.d.ts || { echo "missing index.d.ts"; exit 1; }
+
       - name: Publish all packages (platforms first, then root)
         working-directory: ${{ env.PACKAGE_DIR }}
         shell: bash
@@ -198,3 +250,47 @@ jobs:
           done
           echo "--- publishing root ---"
           npm publish --access public --provenance $tag_flag
+
+  verify-published:
+    name: Smoke-install from npm
+    needs: publish
+    if: |
+      (github.event_name == 'release') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'npm')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/set-npm-version-from-tag
+        with:
+          working-directory: ${{ env.PACKAGE_DIR }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+
+      - name: Install + import published version
+        shell: bash
+        run: |
+          version=$(node -p "require('./${{ env.PACKAGE_DIR }}/package.json').version")
+          echo "Verifying @hashiverse/hashiverse-client-nodejs@$version"
+          scratch=$(mktemp -d)
+          cd "$scratch"
+          npm init -y >/dev/null
+          # Retry briefly — registry propagation can lag a few seconds.
+          for i in 1 2 3 4 5; do
+            if npm install "@hashiverse/hashiverse-client-nodejs@$version" --no-audit --no-fund; then
+              break
+            fi
+            echo "install attempt $i failed, retrying..."
+            sleep 5
+          done
+          node --input-type=module -e "
+            import { HashiverseClient, convertTextToHashiverseHtmlXHashtag } from '@hashiverse/hashiverse-client-nodejs';
+            if (typeof HashiverseClient !== 'function') throw new Error('HashiverseClient missing');
+            const out = convertTextToHashiverseHtmlXHashtag('RuStLang');
+            if (!out.includes('hashtag=\"rustlang\"')) throw new Error('helper broken: ' + out);
+            console.log('ok: imported ' + '$version' + ' from npm');
+          "
