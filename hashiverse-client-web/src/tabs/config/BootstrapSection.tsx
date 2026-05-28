@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CollapsiblePanel } from "../../tools/CollapsiblePanel.tsx";
 import { LOCAL_SETTINGS_KEY_BOOTSTRAP, local_settings_delete, local_settings_get, local_settings_set } from "../../tools/LocalSettings.ts";
+import { Toast } from "../../tools/Toast.ts";
 
 type BootstrapMode = "production" | "local" | "manual";
 
@@ -17,7 +18,6 @@ export const BootstrapSection: React.FC = () => {
 	const { t } = useTranslation();
 	const [mode, set_mode] = useState<BootstrapMode>("production");
 	const [manual_addresses, set_manual_addresses] = useState("");
-	const [saved, set_saved] = useState(false);
 
 	useEffect(() => {
 		local_settings_get(LOCAL_SETTINGS_KEY_BOOTSTRAP).then((value) => {
@@ -29,15 +29,19 @@ export const BootstrapSection: React.FC = () => {
 	}, []);
 
 	const handle_save = async () => {
-		if (mode === "production") {
-			await local_settings_delete(LOCAL_SETTINGS_KEY_BOOTSTRAP);
-		} else if (mode === "local") {
-			await local_settings_set(LOCAL_SETTINGS_KEY_BOOTSTRAP, "local");
-		} else {
-			await local_settings_set(LOCAL_SETTINGS_KEY_BOOTSTRAP, manual_addresses.trim());
+		try {
+			if (mode === "production") {
+				await local_settings_delete(LOCAL_SETTINGS_KEY_BOOTSTRAP);
+			} else if (mode === "local") {
+				await local_settings_set(LOCAL_SETTINGS_KEY_BOOTSTRAP, "local");
+			} else {
+				await local_settings_set(LOCAL_SETTINGS_KEY_BOOTSTRAP, manual_addresses.trim());
+			}
+			Toast.success(t("toast.bootstrap_saved"));
+		} catch (e) {
+			console.error(e);
+			Toast.error(t("toast.error_generic"));
 		}
-		set_saved(true);
-		setTimeout(() => set_saved(false), 2000);
 	};
 
 	return (
@@ -54,7 +58,7 @@ export const BootstrapSection: React.FC = () => {
 					</Stack>
 				</Radio.Group>
 				{mode === "manual" && <TextInput placeholder={t("bootstrap.manual_placeholder")} value={manual_addresses} onChange={(e) => set_manual_addresses(e.currentTarget.value)} />}
-				<Button onClick={handle_save}>{saved ? t("bootstrap.saved") : t("bootstrap.save")}</Button>
+				<Button onClick={handle_save}>{t("bootstrap.save")}</Button>
 			</Stack>
 		</CollapsiblePanel>
 	);

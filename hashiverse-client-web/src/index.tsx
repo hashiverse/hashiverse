@@ -6,7 +6,9 @@
 
 import "./index.css";
 import "@mantine/core/styles.css";
+import "@mantine/notifications/styles.css";
 import { ActionIcon, createTheme, MantineProvider, Tooltip } from "@mantine/core";
+import { Notifications } from "@mantine/notifications";
 import React, { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter, Route, Routes, useLocation, useNavigate } from "react-router";
@@ -284,6 +286,7 @@ if (!root) throw new Error("Missing #root element");
 createRoot(root).render(
 	<React.StrictMode>
 		<MantineProvider defaultColorScheme="dark" theme={theme}>
+			<Notifications position="top-right" />
 			<PrereleaseBanner />
 			<App initial_hashiverse={hashiverse} initial_settings={initial_settings} />
 		</MantineProvider>

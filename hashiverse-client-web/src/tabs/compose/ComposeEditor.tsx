@@ -47,6 +47,7 @@ import sound_compose from "../../media/compose.wav";
 import { LOCAL_SETTINGS_KEY_DRAFT_POST, local_settings_delete, local_settings_get, local_settings_set } from "../../tools/LocalSettings.ts";
 import { sanitize } from "../../tools/PostPurifier.ts";
 import { Spinner } from "../../tools/Spinner.tsx";
+import { Toast } from "../../tools/Toast.ts";
 import { Tools } from "../../tools/Tools.ts";
 import { GiphyDialogControl, type GiphyDialogControlManager } from "./GiphyDialogControl.tsx";
 import { Hashtag } from "./HashtagExtension.ts";
@@ -236,12 +237,19 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 			set_submitting(true);
 			if (!editor) return;
 			if (!contains_meaningful_tiptap_node(editor.getJSON())) return;
-			await hashiverse.post_v1(editor.getHTML());
+			try {
+				await hashiverse.post_v1(editor.getHTML());
+			} catch (e) {
+				console.error(e);
+				Toast.error(t("toast.error_generic"));
+				return;
+			}
 			await on_posted?.();
 			Tools.play_ui_sound(sound_compose);
 			editor.commands.clearContent();
 			await local_settings_delete(LOCAL_SETTINGS_KEY_DRAFT_POST);
 			on_submit_complete?.();
+			Toast.success(t("toast.post_submitted"));
 		} finally {
 			set_submitting(false);
 		}

@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { Hashiverse, type HashiverseClientWasmProxy } from "../Hashiverse.ts";
 import { useCachedBio } from "./BioCache.ts";
+import { Toast } from "./Toast.ts";
 import { UserImageControl } from "./UserImageControl.tsx";
 import { UserNameControl } from "./UserNameControl.tsx";
 
@@ -106,16 +107,28 @@ export const StoredAccountsList: React.FC<Props> = ({ hashiverse, on_login, intr
 
 	const on_remove = useCallback(
 		async (key_public: string) => {
-			await hashiverse.delete_stored_key_v1(key_public).catch(() => {});
+			try {
+				await hashiverse.delete_stored_key_v1(key_public);
+				Toast.success(t("toast.account_removed"));
+			} catch (e) {
+				console.error(e);
+				Toast.error(t("toast.error_generic"));
+			}
 			refresh();
 		},
-		[hashiverse, refresh],
+		[hashiverse, refresh, t],
 	);
 
 	const remove_all = useCallback(async () => {
-		await hashiverse.delete_all_stored_keys_v1().catch(() => {});
+		try {
+			await hashiverse.delete_all_stored_keys_v1();
+			Toast.success(t("toast.accounts_removed_all"));
+		} catch (e) {
+			console.error(e);
+			Toast.error(t("toast.error_generic"));
+		}
 		refresh();
-	}, [hashiverse, refresh]);
+	}, [hashiverse, refresh, t]);
 
 	if (loading) {
 		return (
