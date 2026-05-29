@@ -11,6 +11,7 @@ on:
   workflow_run:
     workflows: ["build-www"]
     types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -19,7 +20,14 @@ permissions:
 jobs:
   mirror:
     runs-on: ubuntu-latest
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # workflow_run jobs run from the default branch with secrets. Only mirror a
+    # build that succeeded, came from this repo (not a fork), and ran on main.
+    # The leading event_name check preserves manual workflow_dispatch runs.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_branch == 'main')
     steps:
       - name: Clone canonical dist
         run: git clone --branch main --depth 1 https://github.com/hashiverse/www.git dist
