@@ -9,6 +9,7 @@ pub mod ddos;
 pub mod tcp_transport;
 pub mod full_https_transport;
 pub mod https_transport_cert_refresher;
+pub mod https_transport_ownership_proof;
 
 #[cfg(test)]
 mod transport_tests;

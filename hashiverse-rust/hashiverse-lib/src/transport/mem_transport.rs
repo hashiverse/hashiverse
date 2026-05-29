@@ -15,6 +15,7 @@
 use crate::tools::types::Id;
 use crate::transport::ddos::ddos::{DdosConnectionGuard, DdosProtection};
 use crate::transport::transport::{IncomingRequest, ServerState, TransportFactory, TransportServer};
+use crate::transport::transport_ownership_proof::{EmptyMarkerOwnershipProof, TransportOwnershipProof};
 use anyhow::{Result, anyhow};
 use bytes::Bytes;
 use log::info;
@@ -78,6 +79,10 @@ pub struct MemTransportServer {
 impl TransportServer for MemTransportServer {
     fn get_address(&self) -> &String {
         &self.address
+    }
+
+    fn get_transport_ownership_proof(&self) -> Arc<dyn TransportOwnershipProof> {
+        Arc::new(EmptyMarkerOwnershipProof)
     }
 
     async fn listen(&self, cancellation_token: CancellationToken, handler: mpsc::Sender<IncomingRequest>) -> Result<()> {

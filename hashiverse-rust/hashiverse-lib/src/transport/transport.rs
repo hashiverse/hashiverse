@@ -21,6 +21,7 @@
 
 use crate::tools::BytesGatherer;
 use crate::transport::ddos::ddos::DdosConnectionGuard;
+use crate::transport::transport_ownership_proof::{RejectAllTransportOwnershipProof, TransportOwnershipProof};
 use bytes::Bytes;
 use log::{info, trace, warn};
 use std::sync::Arc;
@@ -130,6 +131,15 @@ pub trait TransportServer: Send + Sync {
     fn get_address(&self) -> &String;
 
     async fn listen(&self, cancellation_token: CancellationToken, handler: mpsc::Sender<IncomingRequest>) -> anyhow::Result<()>;
+
+    /// Returns the per-transport ownership-proof object used to (a) produce the proof bytes
+    /// embedded in this server's outbound `AnnounceV2` requests and (b) verify proof bytes
+    /// received from peers in inbound `AnnounceV2` requests. The default reject-all
+    /// implementation is overridden by transports that have a real notion of address
+    /// ownership (HTTPS via ACME cert, mem-transport via an empty marker, …).
+    fn get_transport_ownership_proof(&self) -> Arc<dyn TransportOwnershipProof> {
+        Arc::new(RejectAllTransportOwnershipProof)
+    }
 }
 
 /// The pluggable network layer of the protocol — the single point where the crate touches

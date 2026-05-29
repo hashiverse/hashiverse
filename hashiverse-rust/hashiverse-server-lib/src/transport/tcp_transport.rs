@@ -18,6 +18,7 @@ use futures::{SinkExt, StreamExt};
 use hashiverse_lib::tools::config;
 use hashiverse_lib::transport::ddos::ddos::{DdosConnectionGuard, DdosProtection};
 use hashiverse_lib::transport::transport::{IncomingRequest, ServerState, TransportFactory, TransportServer};
+use hashiverse_lib::transport::transport_ownership_proof::{EmptyMarkerOwnershipProof, TransportOwnershipProof};
 use log::{info, trace, warn};
 use parking_lot::RwLock;
 use std::net::SocketAddr;
@@ -65,6 +66,13 @@ impl TcpTransportServer {
 impl TransportServer for TcpTransportServer {
     fn get_address(&self) -> &String {
         &self.address
+    }
+
+    fn get_transport_ownership_proof(&self) -> Arc<dyn TransportOwnershipProof> {
+        // Plain TCP is for trusted-network deployments only — no crypto proof exists, so
+        // the empty-marker proof matches mem-transport's behaviour and lets V2 announces
+        // flow within a TCP-only network without crossing wires with HTTPS peers.
+        Arc::new(EmptyMarkerOwnershipProof)
     }
 
     async fn listen(&self, cancellation_token: CancellationToken, handler: mpsc::Sender<IncomingRequest>) -> anyhow::Result<()> {
