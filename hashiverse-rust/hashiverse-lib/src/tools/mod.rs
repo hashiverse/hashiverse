@@ -32,5 +32,6 @@ pub use bytes_gatherer::BytesGatherer;
 pub mod url_preview;
 pub mod hyper_log_log;
 pub mod plain_text_post;
+pub mod cert_validation;
 
 
