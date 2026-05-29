@@ -1,0 +1,67 @@
+name: mirror-www-v2
+
+# Pushes the built www site from hashiverse/www (GitHub Pages canonical) into
+# the Bunny Edge Storage zone "hashiverse-www", which is then served from the
+# www-eu and www-ch Pull Zones at www.hashiverse.{eu,ch}.
+#
+# Runs in parallel to the v1 mirror-www.yml during cutover. After ~1 week of
+# clean operation, the v1 workflow is removed.
+
+on:
+  workflow_run:
+    workflows: ["build-www"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Clone canonical dist
+        run: git clone --branch main --depth 1 https://github.com/hashiverse/www.git dist
+
+      - name: Install rclone
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rclone
+
+      # Bunny Edge Storage has no native rclone backend, but it speaks FTPS on
+      # the standard storage host. The zone name is the FTP username; the zone
+      # password doubles as the FTP password. rclone wants the password
+      # obscured before use.
+      - name: Sync dist to Bunny storage zone (FTPS)
+        env:
+          BUNNY_STORAGE_PASSWORD_WWW: ${{ secrets.BUNNY_STORAGE_PASSWORD_WWW }}
+        run: |
+          obscured_password=$(rclone obscure "$BUNNY_STORAGE_PASSWORD_WWW")
+          rclone sync dist/ :ftp: \
+            --ftp-host storage.bunnycdn.com \
+            --ftp-user hashiverse-www \
+            --ftp-pass "$obscured_password" \
+            --ftp-explicit-tls \
+            --transfers 8 \
+            --checkers 8 \
+            --exclude '.git/**' \
+            --exclude '/README.md' \
+            --exclude '/.domains' \
+            --exclude '/CNAME'
+
+      - name: Purge EU pull zone cache
+        env:
+          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+        run: |
+          curl -fsS -X POST \
+            -H "AccessKey: $BUNNY_API_KEY" \
+            "https://api.bunny.net/pullzone/${{ vars.BUNNY_PULL_ZONE_ID_WWW_EU }}/purgeCache"
+
+      - name: Purge CH pull zone cache
+        env:
+          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+        run: |
+          curl -fsS -X POST \
+            -H "AccessKey: $BUNNY_API_KEY" \
+            "https://api.bunny.net/pullzone/${{ vars.BUNNY_PULL_ZONE_ID_WWW_CH }}/purgeCache"
