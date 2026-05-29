@@ -38,11 +38,20 @@ jobs:
           BUNNY_STORAGE_PASSWORD_WWW: ${{ secrets.BUNNY_STORAGE_PASSWORD_WWW }}
         run: |
           obscured_password=$(rclone obscure "$BUNNY_STORAGE_PASSWORD_WWW")
+          # --size-only + --no-update-modtime: Bunny's FTP server doesn't
+          # honor MFMT, so any rclone path that calls SetModTime fails.
+          # --size-only avoids modtime/checksum comparison (no SetModTime on
+          # already-uploaded files); --no-update-modtime prevents the
+          # post-comparison modtime "refresh" on byte-identical files.
+          # The first-time seed of a fresh zone will still log SetModTime
+          # errors per file but the upload itself succeeds.
           rclone sync dist/ :ftp: \
             --ftp-host storage.bunnycdn.com \
             --ftp-user hashiverse-www \
             --ftp-pass "$obscured_password" \
             --ftp-explicit-tls \
+            --size-only \
+            --no-update-modtime \
             --transfers 8 \
             --checkers 8 \
             --exclude '.git/**' \
