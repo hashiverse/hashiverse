@@ -65,12 +65,13 @@ pub enum PayloadRequestKind {
     FetchUrlPreviewV1,
     TrendingHashtagsFetchV1,
     PeerStatsRequestV1,
+    AnnounceV2,
 }
 
 /// Number of variants in [`PayloadRequestKind`]. Manually maintained; the
 /// test `test_PAYLOAD_REQUEST_KIND_COUNT_matches_variants` keeps it honest.
 /// Used to size fixed-length per-kind counter arrays (e.g. on the server).
-pub const PAYLOAD_REQUEST_KIND_COUNT: usize = 17;
+pub const PAYLOAD_REQUEST_KIND_COUNT: usize = 18;
 
 impl PayloadRequestKind {
     pub fn from_u16(value: u16) -> anyhow::Result<Self> {
@@ -106,6 +107,7 @@ pub enum PayloadResponseKind {
     FetchUrlPreviewResponseV1,
     TrendingHashtagsFetchResponseV1,
     PeerStatsResponseV1,
+    AnnounceResponseV2,
 }
 
 impl PayloadResponseKind {
@@ -149,6 +151,28 @@ pub struct AnnounceV1 {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct AnnounceResponseV1 {
+    pub peer_self: Peer,
+    pub peers_nearest: Vec<Peer>,
+}
+
+/// V2 of the peer announce. Adds an opaque `proof_payload` produced and verified by the
+/// announcer's transport-specific
+/// [`crate::transport::transport_ownership_proof::TransportOwnershipProof`] — for the HTTPS
+/// transport that's the announcer's current ACME-issued TLS chain, for mem / TCP it's the
+/// empty marker. The receiver gates Kademlia admission on the proof verifying; an announcer
+/// that can't produce a valid proof (e.g. an HTTPS server that hasn't completed ACME
+/// because it doesn't control port 443) is dropped without ever being added.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct AnnounceV2 {
+    pub peer_self: Peer,
+    pub proof_payload: Bytes,
+}
+
+/// V2 announce response. Same shape as [`AnnounceResponseV1`] — proof bytes never flow
+/// back in the response, since receivers only validate proofs at admission time and
+/// thereafter store and gossip plain [`Peer`] records.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct AnnounceResponseV2 {
     pub peer_self: Peer,
     pub peers_nearest: Vec<Peer>,
 }
@@ -1438,7 +1462,7 @@ mod tests {
         use crate::protocol::payload::payload::{PayloadRequestKind, PAYLOAD_REQUEST_KIND_COUNT};
         let last_variant = PayloadRequestKind::from_u16((PAYLOAD_REQUEST_KIND_COUNT - 1) as u16)
             .expect("PAYLOAD_REQUEST_KIND_COUNT - 1 must decode to a valid variant");
-        assert_eq!(last_variant, PayloadRequestKind::PeerStatsRequestV1, "last variant changed; bump PAYLOAD_REQUEST_KIND_COUNT");
+        assert_eq!(last_variant, PayloadRequestKind::AnnounceV2, "last variant changed; bump PAYLOAD_REQUEST_KIND_COUNT");
         assert!(PayloadRequestKind::from_u16(PAYLOAD_REQUEST_KIND_COUNT as u16).is_err(), "PAYLOAD_REQUEST_KIND_COUNT must equal the variant count");
     }
 
