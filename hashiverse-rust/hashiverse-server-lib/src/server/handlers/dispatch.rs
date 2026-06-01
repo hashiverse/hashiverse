@@ -1640,5 +1640,94 @@ mod tests {
             assert_eq!(map.len(), PAYLOAD_REQUEST_KIND_COUNT);
         }
     }
+
+    mod announce_v2 {
+        use super::*;
+        use crate::environment::mem_environment_store::MemEnvironmentFactory;
+        use crate::environment::environment::EnvironmentFactory;
+        use crate::server::args::Args;
+        use crate::server::hashiverse_server::HashiverseServer;
+        use hashiverse_lib::protocol::payload::payload::AnnounceV2;
+        use hashiverse_lib::protocol::peer::Peer;
+        use hashiverse_lib::tools::pow_generator::pow_generator::PowGenerator;
+        use hashiverse_lib::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
+        use hashiverse_lib::tools::runtime_services::RuntimeServices;
+        use hashiverse_lib::tools::server_id::ServerId;
+        use hashiverse_lib::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
+        use hashiverse_lib::transport::mem_transport::MemTransportFactory;
+        use std::sync::Arc;
+
+        async fn make_test_server() -> Arc<HashiverseServer> {
+            let time_provider = Arc::new(RealTimeProvider);
+            let transport_factory = MemTransportFactory::default();
+            let pow_generator = Arc::new(SingleThreadedPowGenerator::new());
+            let runtime_services = Arc::new(RuntimeServices { time_provider, transport_factory, pow_generator });
+            let environment_factory = Arc::new(MemEnvironmentFactory::new(""));
+            let args = Args::default_for_testing();
+            HashiverseServer::new(runtime_services, environment_factory, args).await.expect("server must start")
+        }
+
+        /// Build a freshly-signed `Peer` to play the role of an inbound announcer. Uses a
+        /// brand-new `ServerId` (separate identity from the receiving server) so the announce
+        /// looks like it comes from a different node.
+        async fn make_announcing_peer(time_provider: &dyn TimeProvider, pow_generator: &dyn PowGenerator, address: &str) -> Peer {
+            let server_id = ServerId::new("own_pow", time_provider, config::SERVER_KEY_POW_MIN, true, pow_generator).await.expect("ServerId::new must succeed in tests (PoW reduced under cfg(test))");
+            let mut peer = server_id.to_peer(time_provider).expect("to_peer must succeed");
+            peer.address = address.to_string();
+            peer.sign(time_provider, &server_id.keys.signature_key).expect("sign must succeed");
+            peer
+        }
+
+        #[tokio::test]
+        async fn v2_admits_peer_when_proof_is_valid_for_mem_transport() {
+            let server = make_test_server().await;
+            let pow_generator = SingleThreadedPowGenerator::new();
+            let announcing_peer = make_announcing_peer(server.runtime_services.time_provider.as_ref(), &pow_generator, "9999").await;
+            let announcing_peer_id = announcing_peer.id;
+
+            let baseline_len = server.kademlia.read().len();
+
+            // Mem-transport's EmptyMarkerOwnershipProof accepts the empty proof — the announce should be admitted.
+            let request_bytes = json::struct_to_bytes(&AnnounceV2 { peer_self: announcing_peer, proof_payload: vec![] }).expect("encode V2");
+
+            let (response_kind, _gatherer) = server
+                .dispatch_network_payload_x_AnnounceV2(CancellationToken::new(), PayloadRequestKind::AnnounceV2, request_bytes)
+                .await
+                .expect("valid V2 must succeed on mem-transport");
+
+            assert_eq!(response_kind, PayloadResponseKind::AnnounceResponseV2);
+            assert_eq!(server.kademlia.read().len(), baseline_len + 1, "announcer should now be in Kademlia");
+
+            // The peer is actually findable by id, not just that the count went up.
+            let (peers, _) = server.kademlia.read().get_peers_for_key(&announcing_peer_id, 8);
+            assert!(peers.iter().any(|p| p.id == announcing_peer_id), "announcing peer must be reachable through get_peers_for_key");
+        }
+
+        #[tokio::test]
+        async fn v2_bails_and_does_not_admit_when_proof_fails() {
+            let server = make_test_server().await;
+            let pow_generator = SingleThreadedPowGenerator::new();
+            let announcing_peer = make_announcing_peer(server.runtime_services.time_provider.as_ref(), &pow_generator, "8888").await;
+            let announcing_peer_id = announcing_peer.id;
+
+            let baseline_len = server.kademlia.read().len();
+
+            // Non-empty proof bytes on a mem-transport receiver — EmptyMarkerOwnershipProof::prove
+            // returns false, so the handler should bail. This is the cross-transport-mismatch case
+            // (an HTTPS-shaped postcard blob arriving at a mem-transport server).
+            let request_bytes = json::struct_to_bytes(&AnnounceV2 { peer_self: announcing_peer, proof_payload: vec![1, 2, 3, 4] }).expect("encode V2");
+
+            let result = server
+                .dispatch_network_payload_x_AnnounceV2(CancellationToken::new(), PayloadRequestKind::AnnounceV2, request_bytes)
+                .await;
+
+            assert!(result.is_err(), "failed proof must bail so the dispatcher wraps it as ErrorResponseV1");
+            assert_eq!(server.kademlia.read().len(), baseline_len, "no Kademlia mutation on failed proof");
+
+            // The peer is not findable by id.
+            let (peers, _) = server.kademlia.read().get_peers_for_key(&announcing_peer_id, 8);
+            assert!(!peers.iter().any(|p| p.id == announcing_peer_id), "rejected peer must not be reachable through get_peers_for_key");
+        }
+    }
 }
 

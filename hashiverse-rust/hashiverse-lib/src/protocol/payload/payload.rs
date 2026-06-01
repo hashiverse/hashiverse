@@ -162,10 +162,15 @@ pub struct AnnounceResponseV1 {
 /// empty marker. The receiver gates Kademlia admission on the proof verifying; an announcer
 /// that can't produce a valid proof (e.g. an HTTPS server that hasn't completed ACME
 /// because it doesn't control port 443) is dropped without ever being added.
+///
+/// `proof_payload` is `Vec<u8>` rather than `bytes::Bytes` because this struct is wire-
+/// encoded as JSON, and `serde_json` doesn't round-trip `Bytes` (the bytes crate's
+/// `Serialize` calls `serialize_bytes`, but `serde_json`'s `Deserialize` reaches Bytes via
+/// `visit_seq` on the integer-array form — they don't meet). `Vec<u8>` round-trips cleanly.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct AnnounceV2 {
     pub peer_self: Peer,
-    pub proof_payload: Bytes,
+    pub proof_payload: Vec<u8>,
 }
 
 /// V2 announce response. Same shape as [`AnnounceResponseV1`] — proof bytes never flow

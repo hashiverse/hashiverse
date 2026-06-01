@@ -200,4 +200,27 @@ mod tests {
         let server_name: Option<ServerName<'static>> = build_ip_server_name("example.com");
         assert!(server_name.is_none());
     }
+
+    /// Per project preference ([[feedback_fuzzer_choice]]) bolero is the fuzzer of choice.
+    /// `is_cert_valid` is exposed to bytes that arrive over the wire from untrusted peers,
+    /// so the invariant under test is "never panics, always returns a bool". In `cargo
+    /// nextest run` this exercises a small deterministic sample (bolero's default property-
+    /// test mode); under `cargo bolero test` it runs as a coverage-guided fuzzer.
+    #[test]
+    fn fuzz_is_cert_valid_never_panics() {
+        bolero::check!()
+            .with_type::<(Vec<Vec<u8>>, String, i64)>()
+            .for_each(|(chain_der, announced_address, now_millis)| {
+                let _ = is_cert_valid(chain_der, announced_address, TimeMillis(*now_millis));
+            });
+    }
+
+    #[test]
+    fn fuzz_strip_port_from_address_never_panics() {
+        bolero::check!()
+            .with_type::<String>()
+            .for_each(|input| {
+                let _ = strip_port_from_address(input);
+            });
+    }
 }
