@@ -131,8 +131,8 @@ fn strip_port_from_address(announced_address: &str) -> Option<String> {
 fn build_ip_server_name(host_str: &str) -> Option<ServerName<'static>> {
     let ip_addr: IpAddr = IpAddr::from_str(host_str).ok()?;
     let ip_addr_typed: rustls_pki_types::IpAddr = match ip_addr {
-        IpAddr::V4(v4) => rustls_pki_types::IpAddr::V4(rustls_pki_types::Ipv4Addr::from(v4)),
-        IpAddr::V6(v6) => rustls_pki_types::IpAddr::V6(rustls_pki_types::Ipv6Addr::from(v6)),
+        IpAddr::V4(v4) => rustls_pki_types::IpAddr::V4(rustls_pki_types::Ipv4Addr::from(v4.octets())),
+        IpAddr::V6(v6) => rustls_pki_types::IpAddr::V6(rustls_pki_types::Ipv6Addr::from(v6.segments())),
     };
     Some(ServerName::IpAddress(ip_addr_typed))
 }
