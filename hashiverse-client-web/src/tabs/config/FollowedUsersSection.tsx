@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import type { HashiverseClientWasmProxy } from "../../Hashiverse.ts";
 import { useCachedBio } from "../../tools/BioCache.ts";
 import { CollapsiblePanel } from "../../tools/CollapsiblePanel.tsx";
+import { Toast } from "../../tools/Toast.ts";
 import { UserImageControl } from "../../tools/UserImageControl.tsx";
 import { UserNameControl } from "../../tools/UserNameControl.tsx";
 import type { UserSettingsCache } from "../../tools/UserSettingsCache.ts";
@@ -55,8 +56,12 @@ export const FollowedUsersSection: React.FC<Props> = ({ hashiverse, user_setting
 			.then(() => {
 				saved_ids_set(followed_ids);
 				user_settings_cache.invalidate();
+				Toast.success(t("toast.followed_users_saved"));
 			})
-			.catch(console.error);
+			.catch((e) => {
+				console.error(e);
+				Toast.error(t("toast.error_generic"));
+			});
 	};
 
 	const reset = () => followed_ids_set(saved_ids);

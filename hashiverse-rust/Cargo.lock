@@ -1923,6 +1923,8 @@ dependencies = [
  "rayon",
  "reqwest",
  "rusqlite",
+ "rustls-pki-types",
+ "rustls-webpki",
  "scopeguard",
  "scraper",
  "send_wrapper",
@@ -1940,6 +1942,7 @@ dependencies = [
  "uuid",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
+ "webpki-roots 1.0.7",
  "whirlpool",
 ]
 

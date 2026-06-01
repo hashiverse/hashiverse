@@ -6,6 +6,7 @@ import type { HashiverseClientWasmProxy } from "../../Hashiverse.ts";
 import { CollapsiblePanel } from "../../tools/CollapsiblePanel.tsx";
 import { ContentThresholdSlider } from "../../tools/ContentThresholdSlider.tsx";
 import { FEEDBACK_TYPE_CSAM, FEEDBACKS_NEGATIVE } from "../../tools/Feedback.ts";
+import { Toast } from "../../tools/Toast.ts";
 import type { ContentThresholds, UserSettingsCache } from "../../tools/UserSettingsCache.ts";
 
 interface Props {
@@ -17,7 +18,6 @@ export const ContentThresholdSection: React.FC<Props> = ({ hashiverse, user_sett
 	const { t } = useTranslation();
 	const [thresholds, set_thresholds_state] = useState<ContentThresholds>(user_settings_cache.content_thresholds);
 	const [skip_for_followed, set_skip_for_followed] = useState(user_settings_cache.skip_warnings_for_followed);
-	const [saved, set_saved] = useState(false);
 	const applied_ref = useRef(false);
 
 	// Re-seed local state when the cache updates, but not after a local Apply
@@ -38,12 +38,16 @@ export const ContentThresholdSection: React.FC<Props> = ({ hashiverse, user_sett
 	}, [user_settings_cache.skip_warnings_for_followed]);
 
 	const handle_apply = async () => {
-		await hashiverse.set_content_thresholds_v1(thresholds);
-		await hashiverse.set_skip_warnings_for_followed_v1(skip_for_followed);
-		applied_ref.current = true;
-		user_settings_cache.invalidate();
-		set_saved(true);
-		setTimeout(() => set_saved(false), 2000);
+		try {
+			await hashiverse.set_content_thresholds_v1(thresholds);
+			await hashiverse.set_skip_warnings_for_followed_v1(skip_for_followed);
+			applied_ref.current = true;
+			user_settings_cache.invalidate();
+			Toast.success(t("toast.content_thresholds_saved"));
+		} catch (e) {
+			console.error(e);
+			Toast.error(t("toast.error_generic"));
+		}
 	};
 
 	return (
@@ -68,7 +72,7 @@ export const ContentThresholdSection: React.FC<Props> = ({ hashiverse, user_sett
 			</Stack>
 			<Checkbox mt="md" label={t("config.content_thresholds.skip_warnings_for_followed")} checked={skip_for_followed} onChange={(e) => set_skip_for_followed(e.currentTarget.checked)} />
 			<Button onClick={handle_apply} mt="md">
-				{saved ? t("config.content_thresholds.saved") : t("config.content_thresholds.apply")}
+				{t("config.content_thresholds.apply")}
 			</Button>
 		</CollapsiblePanel>
 	);

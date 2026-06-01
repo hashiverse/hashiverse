@@ -21,6 +21,7 @@
 //! accounting happens automatically without each handler needing to remember it.
 
 use crate::transport::https_transport_cert_refresher::HttpsTransportCertRefresher;
+use crate::transport::https_transport_ownership_proof::HttpsTransportOwnershipProof;
 use crate::tools::tools::get_public_ipv4;
 use anyhow::anyhow;
 use axum::body::Body;
@@ -33,6 +34,7 @@ use futures::stream;
 use hashiverse_lib::tools::config;
 use hashiverse_lib::transport::ddos::ddos::{DdosConnectionGuard, DdosProtection};
 use hashiverse_lib::transport::transport::{IncomingRequest, ServerState, TransportFactory, TransportServer};
+use hashiverse_lib::transport::transport_ownership_proof::TransportOwnershipProof;
 use hyper::body::Incoming;
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use hyper_util::server::conn::auto::Builder as AutoBuilder;
@@ -66,27 +68,35 @@ pub struct FullHttpsTransportFactory {
 }
 
 pub struct FullHttpsTransportServer {
-    base_path: String,
-    force_local_network: bool,
     address: String,
-    ip: String,
-    port: u16,
     listener: Arc<Mutex<Option<TcpListener>>>, // Needs Mutex to make Server Send, and needs Option because we give the TcpListener to axum
     state: Arc<RwLock<ServerState>>,
     ddos_protection: Arc<dyn DdosProtection>,
+    /// Hoisted from `listen()` so the same instance also backs
+    /// `get_transport_ownership_proof()`. `reload_certs()` is deferred to `listen()` —
+    /// disk I/O at construction time isn't appropriate for an `async fn new`.
+    cert_refresher: Arc<HttpsTransportCertRefresher>,
+    /// Built once in `new()` and handed out cheaply (Arc clone) from
+    /// `get_transport_ownership_proof()` on every announce tick. Holds its own internal
+    /// cache of the last-encoded proof bytes keyed on the cert refresher's current
+    /// `Arc<CertifiedKey>`, so the proof bytes themselves only get re-signed and
+    /// re-encoded when ACME rotates the cert.
+    ownership_proof: Arc<HttpsTransportOwnershipProof>,
 }
 
 impl FullHttpsTransportServer {
     async fn new(base_path: &str, address: String, ip: String, port: u16, force_local_network: bool, listener: TcpListener, ddos_protection: Arc<dyn DdosProtection>) -> anyhow::Result<Self> {
+        let path_certs: PathBuf = PathBuf::from(base_path.to_string()).join("certs");
+        let cert_refresher: Arc<HttpsTransportCertRefresher> = Arc::new(HttpsTransportCertRefresher::new(path_certs, ip, port, force_local_network)?);
+        let ownership_proof: Arc<HttpsTransportOwnershipProof> = Arc::new(HttpsTransportOwnershipProof::new(cert_refresher.base_cert.clone()));
+
         Ok(FullHttpsTransportServer {
-            base_path: base_path.to_string(),
-            force_local_network,
             address,
-            ip,
-            port,
             listener: Arc::new(Mutex::new(Some(listener))),
             state: Arc::new(RwLock::new(ServerState::Created)),
-            ddos_protection
+            ddos_protection,
+            cert_refresher,
+            ownership_proof,
         })
     }
 }
@@ -95,6 +105,10 @@ impl FullHttpsTransportServer {
 impl TransportServer for FullHttpsTransportServer {
     fn get_address(&self) -> &String {
         &self.address
+    }
+
+    fn get_transport_ownership_proof(&self) -> Arc<dyn TransportOwnershipProof> {
+        self.ownership_proof.clone()
     }
 
     async fn listen(&self, cancellation_token: CancellationToken, handler: mpsc::Sender<IncomingRequest>) -> anyhow::Result<()> {
@@ -183,8 +197,7 @@ impl TransportServer for FullHttpsTransportServer {
             .layer(CorsLayer::permissive())
             .fallback(fallback_handler);
 
-        let path_certs = PathBuf::from(self.base_path.clone()).join("certs");
-        let cert_refresher = Arc::new(HttpsTransportCertRefresher::new(path_certs.clone(), self.ip.clone(), self.port, self.force_local_network)?);
+        let cert_refresher: Arc<HttpsTransportCertRefresher> = self.cert_refresher.clone();
         cert_refresher.reload_certs()?;
 
         let tls_acceptor = {

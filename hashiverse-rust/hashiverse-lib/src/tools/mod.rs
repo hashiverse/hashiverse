@@ -32,5 +32,11 @@ pub use bytes_gatherer::BytesGatherer;
 pub mod url_preview;
 pub mod hyper_log_log;
 pub mod plain_text_post;
+// Server-only: cert-chain validation for HTTPS transport-ownership-proof verification.
+// Depends on rustls-webpki → ring, which needs a C toolchain to build for wasm. The wasm
+// client never verifies ownership proofs (that path lives in hashiverse-server-lib), so the
+// module and its deps are excluded from the wasm build. See the matching target table in Cargo.toml.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod cert_validation;
 
 

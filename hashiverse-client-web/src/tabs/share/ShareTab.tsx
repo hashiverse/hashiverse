@@ -1,7 +1,7 @@
 import type React from "react";
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { LOCAL_SETTINGS_KEY_POST_LOGIN_RETURN, local_settings_set } from "../../tools/LocalSettings.ts";
+import { redirect_to_login_with_return } from "../../tools/PostLoginRedirect.ts";
 import type { UserSettingsCache } from "../../tools/UserSettingsCache.ts";
 import { open_compose } from "../compose/ComposeDialogStore.ts";
 
@@ -33,9 +33,7 @@ export const ShareTab: React.FC<Props> = ({ user_settings_cache }) => {
 		const has_file = params.get("has_file") === "true";
 
 		if (!user_settings_cache.is_logged_in) {
-			const return_url = location.pathname + location.search;
-			local_settings_set(LOCAL_SETTINGS_KEY_POST_LOGIN_RETURN, return_url).catch(console.error);
-			navigate("/login", { replace: true });
+			redirect_to_login_with_return(navigate, location.pathname + location.search, { replace: true });
 			return;
 		}
 

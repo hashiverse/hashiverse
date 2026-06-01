@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import type { HashiverseClientWasmProxy } from "../../Hashiverse.ts";
 import { flush_cached_bio, useCachedBio } from "../../tools/BioCache.ts";
 import { CollapsiblePanel } from "../../tools/CollapsiblePanel.tsx";
+import { Toast } from "../../tools/Toast.ts";
 import { Tools } from "../../tools/Tools.ts";
 import type { UserSettingsCache } from "../../tools/UserSettingsCache.ts";
 
@@ -104,13 +105,19 @@ export const BioSection: React.FC<Props> = ({ hashiverse, user_settings_cache })
 	};
 
 	const on_submit_bio = async () => {
-		await hashiverse.set_bio(nickname, status, selfie, selected_avatar_seed);
+		try {
+			await hashiverse.set_bio(nickname, status, selfie, selected_avatar_seed);
 
-		// This is one of the few times we manually push our config out as a post.
-		// Normally we rely on the once-a-month push
-		await hashiverse.submit_meta_post_v1();
+			// This is one of the few times we manually push our config out as a post.
+			// Normally we rely on the once-a-month push
+			await hashiverse.submit_meta_post_v1();
 
-		flush_cached_bio(client_id);
+			flush_cached_bio(client_id);
+			Toast.success(t("toast.bio_saved"));
+		} catch (e) {
+			console.error(e);
+			Toast.error(t("toast.error_generic"));
+		}
 	};
 
 	return (

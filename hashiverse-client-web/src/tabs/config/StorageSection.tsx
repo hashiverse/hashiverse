@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { HashiverseClientWasmProxy } from "../../Hashiverse.ts";
 import { CollapsiblePanel } from "../../tools/CollapsiblePanel.tsx";
 import { local_settings_reset } from "../../tools/LocalSettings.ts";
+import { Toast } from "../../tools/Toast.ts";
 import { Tools } from "../../tools/Tools.ts";
 
 interface Props {
@@ -14,11 +15,23 @@ export const StorageSection: React.FC<Props> = ({ hashiverse }) => {
 	const { t } = useTranslation();
 
 	const on_reset_click = async () => {
-		await hashiverse.client_storage_reset();
+		try {
+			await hashiverse.client_storage_reset();
+			Toast.success(t("toast.client_storage_reset"));
+		} catch (e) {
+			console.error(e);
+			Toast.error(t("toast.error_generic"));
+		}
 	};
 
 	const on_reset_local_settings_click = async () => {
-		await local_settings_reset();
+		try {
+			await local_settings_reset();
+			Toast.success(t("toast.local_settings_reset"));
+		} catch (e) {
+			console.error(e);
+			Toast.error(t("toast.error_generic"));
+		}
 	};
 
 	return (

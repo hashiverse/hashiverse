@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import type { HashiverseClientWasmProxy } from "../../Hashiverse.ts";
 import { CollapsiblePanel } from "../../tools/CollapsiblePanel.tsx";
+import { Toast } from "../../tools/Toast.ts";
 
 interface Props {
 	hashiverse: HashiverseClientWasmProxy;
@@ -34,8 +35,12 @@ export const FollowedHashtagsSection: React.FC<Props> = ({ hashiverse, on_settin
 			.then(() => {
 				saved_hashtags_set(hashtags);
 				on_settings_changed();
+				Toast.success(t("toast.followed_hashtags_saved"));
 			})
-			.catch(console.error);
+			.catch((e) => {
+				console.error(e);
+				Toast.error(t("toast.error_generic"));
+			});
 	};
 
 	const reset = () => hashtags_set(saved_hashtags);

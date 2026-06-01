@@ -5,7 +5,7 @@ import html2canvas from "html2canvas";
 import katex from "katex";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import type { HashiverseClientWasmProxy, Post } from "../../Hashiverse.ts";
 import sound_interaction_negative from "../../media/interaction_negative.wav";
 import sound_interaction_positive from "../../media/interaction_positive.wav";
@@ -13,6 +13,7 @@ import { populate_mention_bio, useCachedBio } from "../../tools/BioCache.ts";
 import { FEEDBACK_TYPE_COMMENT, FEEDBACK_TYPE_CSAM, FEEDBACK_TYPE_REPOST, FEEDBACK_TYPE_SEQUEL, FEEDBACKS_NEGATIVE, FEEDBACKS_POSITIVE, FEEDBACKS_WITH_ACTIONS } from "../../tools/Feedback.ts";
 import { has_submitted_feedback, mark_feedback_submitted } from "../../tools/FeedbackCache.ts";
 import { register_client_id } from "../../tools/MentionStore.ts";
+import { redirect_to_login_with_return } from "../../tools/PostLoginRedirect.ts";
 import { sanitize } from "../../tools/PostPurifier.ts";
 import { RelativeTimeAgo } from "../../tools/RelativeTimeAgo.tsx";
 import { Tools } from "../../tools/Tools.ts";
@@ -32,6 +33,7 @@ interface Props {
 export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_images, user_settings_cache }) => {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	const location = useLocation();
 
 	// *** TODO eventually find a reasonable place to put this
 	register_client_id(post.client_id);
@@ -599,7 +601,7 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 					<Button
 						onClick={() => {
 							needs_login_close();
-							navigate("/login");
+							redirect_to_login_with_return(navigate, location.pathname + location.search);
 						}}
 					>
 						{t("not_logged_in.log_in")}

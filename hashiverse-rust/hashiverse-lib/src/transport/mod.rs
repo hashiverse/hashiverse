@@ -12,3 +12,4 @@ pub mod ddos;
 pub mod partial_https_transport;
 pub mod transport;
 pub mod mem_transport;
+pub mod transport_ownership_proof;

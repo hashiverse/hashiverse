@@ -27,7 +27,7 @@ use crate::server::kademlia::kademlia::Kademlia;
 use crate::server::post_bundle_caching::PostBundleCache;
 use crate::server::post_bundle_feedback_caching::PostBundleFeedbackCache;
 use hashiverse_lib::anyhow_assert_eq;
-use hashiverse_lib::protocol::payload::payload::{AnnounceResponseV1, AnnounceV1, BootstrapResponseV1, BootstrapV1, PayloadRequestKind, PayloadResponseKind, PeerStatsResponseV1, PAYLOAD_REQUEST_KIND_COUNT};
+use hashiverse_lib::protocol::payload::payload::{AnnounceResponseV1, AnnounceResponseV2, AnnounceV1, AnnounceV2, BootstrapResponseV1, BootstrapV1, PayloadRequestKind, PayloadResponseKind, PeerStatsResponseV1, PAYLOAD_REQUEST_KIND_COUNT};
 use hashiverse_lib::protocol::peer::Peer;
 use hashiverse_lib::protocol::rpc;
 use hashiverse_lib::tools::runtime_services::RuntimeServices;
@@ -311,16 +311,50 @@ impl HashiverseServer {
                         continue;
                     }
 
-                    let try_result: anyhow::Result<()> = try {
-                        {
-                            // trace!("announcing ourselves to {}", announce_peer);
+                    // V2-first outbound. The transport ownership proof carries our current
+                    // ACME chain (HTTPS) or an empty marker (mem / TCP). If we don't have a
+                    // proof to send yet — e.g. ACME hasn't completed first issuance — we skip
+                    // this announce tick; the next tick will pick up the chain as soon as the
+                    // cert refresher loads it (see HttpsTransportOwnershipProof's cache + the
+                    // RwLock pull pattern).
+                    let proof_payload = match self.transport_server.get_transport_ownership_proof().make_ownership_proof_payload() {
+                        Some(p) => p,
+                        None => {
+                            trace!("skipping announce to {}: no transport ownership proof available yet", announce_peer);
+                            continue;
+                        }
+                    };
 
-                            let rpc_response_packet_rx = self.rpc_server_known(&announce_peer, PayloadRequestKind::AnnounceV1, json::struct_to_bytes(&AnnounceV1 { peer_self: peer_self.clone() })?).await?;
-                            anyhow_assert_eq!(&PayloadResponseKind::AnnounceResponseV1, &rpc_response_packet_rx.response_request_kind);
-                            let response = json::bytes_to_struct::<AnnounceResponseV1>(&rpc_response_packet_rx.bytes)?;
-                            self.add_potential_peer_to_kademlia(response.peer_self, now).await;
-                            for peer in response.peers_nearest {
-                                self.add_potential_peer_to_kademlia(peer, now).await;
+                    let try_result: anyhow::Result<()> = try {
+                        // Try V2 first. If V2 fails for any reason — peer is V1-only and doesn't
+                        // know the variant, our chain didn't validate at their end, transient
+                        // network error — fall back to V1. Only if V1 *also* fails do we prune.
+                        // This keeps the network functional during the V1 coexistence window:
+                        // we never drop a peer just because they haven't upgraded yet.
+                        let v2_result = self.rpc_server_known(
+                            &announce_peer,
+                            PayloadRequestKind::AnnounceV2,
+                            json::struct_to_bytes(&AnnounceV2 { peer_self: peer_self.clone(), proof_payload: proof_payload.to_vec() })?,
+                        ).await;
+
+                        match v2_result {
+                            Ok(rpc_response_packet_rx) => {
+                                anyhow_assert_eq!(&PayloadResponseKind::AnnounceResponseV2, &rpc_response_packet_rx.response_request_kind);
+                                let response = json::bytes_to_struct::<AnnounceResponseV2>(&rpc_response_packet_rx.bytes)?;
+                                self.add_potential_peer_to_kademlia(response.peer_self, now).await;
+                                for peer in response.peers_nearest {
+                                    self.add_potential_peer_to_kademlia(peer, now).await;
+                                }
+                            }
+                            Err(v2_err) => {
+                                trace!("V2 announce to {} failed: {}; falling back to V1", announce_peer, v2_err);
+                                let rpc_response_packet_rx = self.rpc_server_known(&announce_peer, PayloadRequestKind::AnnounceV1, json::struct_to_bytes(&AnnounceV1 { peer_self: peer_self.clone() })?).await?;
+                                anyhow_assert_eq!(&PayloadResponseKind::AnnounceResponseV1, &rpc_response_packet_rx.response_request_kind);
+                                let response = json::bytes_to_struct::<AnnounceResponseV1>(&rpc_response_packet_rx.bytes)?;
+                                self.add_potential_peer_to_kademlia(response.peer_self, now).await;
+                                for peer in response.peers_nearest {
+                                    self.add_potential_peer_to_kademlia(peer, now).await;
+                                }
                             }
                         }
                     };

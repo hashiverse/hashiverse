@@ -461,6 +461,12 @@ body {
 	padding: 4px 10px;
 }
 
+a.plugin-urlpreview-card-inner {
+	display: block;
+	text-decoration: none;
+	color: inherit;
+}
+
 .plugin-urlpreview-card-domain {
 	font-size: 12px;
 }

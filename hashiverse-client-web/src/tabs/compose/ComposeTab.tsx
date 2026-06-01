@@ -11,7 +11,7 @@ export const ComposeTab: React.FC<Props> = ({ hashiverse }) => {
 	return (
 		<div className="FullColumnChildAndParent" style={{ position: "relative" }}>
 			<TabHeader />
-			<ComposeEditor hashiverse={hashiverse} />
+			<ComposeEditor hashiverse={hashiverse} restore_draft={true} />
 		</div>
 	);
 };

@@ -68,17 +68,17 @@ function build_card_dom(attrs: PreviewAttrs, on_dismiss?: () => void): HTMLEleme
 		card.appendChild(dismiss_button);
 	}
 
-	const inner = document.createElement("div");
-	inner.className = "plugin-urlpreview-card-inner";
-
-	if (!attrs.image_url) {
-		const domain_el = document.createElement("div");
-		domain_el.className = "plugin-urlpreview-card-domain";
-		domain_el.textContent = attrs.domain || attrs.url || "";
-		inner.appendChild(domain_el);
-	}
-
 	if (attrs.title) {
+		const inner = document.createElement("div");
+		inner.className = "plugin-urlpreview-card-inner";
+
+		if (!attrs.image_url) {
+			const domain_el = document.createElement("div");
+			domain_el.className = "plugin-urlpreview-card-domain";
+			domain_el.textContent = attrs.domain || attrs.url || "";
+			inner.appendChild(domain_el);
+		}
+
 		const title_el = document.createElement("a");
 		title_el.className = "plugin-urlpreview-card-title";
 		title_el.textContent = attrs.title;
@@ -93,14 +93,37 @@ function build_card_dom(attrs: PreviewAttrs, on_dismiss?: () => void): HTMLEleme
 			desc_el.textContent = attrs.description;
 			inner.appendChild(desc_el);
 		}
+
+		card.appendChild(inner);
 	} else {
-		const loading_el = document.createElement("div");
-		loading_el.className = "plugin-urlpreview-card-loading";
-		loading_el.textContent = attrs.url ? "Loading preview…" : "Preview unavailable";
-		inner.appendChild(loading_el);
+		// No OG data yet. In the live editor (on_dismiss defined) keep the transient "Loading preview…"
+		// copy — the fetch is in flight. In serialized/persisted output, swap to an <a> so a viewer can
+		// at least click through to the URL; the post will otherwise be a dead "Loading…" box forever.
+		const inner_is_link = !on_dismiss && !!attrs.url;
+		const inner = inner_is_link ? document.createElement("a") : document.createElement("div");
+		inner.className = "plugin-urlpreview-card-inner";
+		if (inner_is_link) {
+			const anchor = inner as HTMLAnchorElement;
+			anchor.href = attrs.url;
+			anchor.target = "_blank";
+			anchor.rel = "noopener noreferrer nofollow";
+		}
+
+		if (!attrs.image_url) {
+			const domain_el = document.createElement("div");
+			domain_el.className = "plugin-urlpreview-card-domain";
+			domain_el.textContent = attrs.domain || attrs.url || "";
+			inner.appendChild(domain_el);
+		}
+
+		const text_el = document.createElement("div");
+		text_el.className = "plugin-urlpreview-card-loading";
+		text_el.textContent = on_dismiss ? (attrs.url ? "Loading preview…" : "Preview unavailable") : attrs.url || "Preview unavailable";
+		inner.appendChild(text_el);
+
+		card.appendChild(inner);
 	}
 
-	card.appendChild(inner);
 	return card;
 }
 
