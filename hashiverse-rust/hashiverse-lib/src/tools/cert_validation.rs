@@ -86,8 +86,9 @@ fn time_millis_to_unix_time(time_millis: TimeMillis) -> Option<UnixTime> {
 }
 
 /// Split a `<host>:<port>` or `[<ipv6>]:<port>` address into just the host part. Bare hosts
-/// (no port) are returned unchanged. Returns `None` if the input is empty or has an unbalanced
-/// IPv6 bracket.
+/// (no port) are returned unchanged. Returns `None` for empty input, unbalanced IPv6
+/// brackets, junk after the bracketed host, or a non-numeric port — so a caller can't
+/// quietly normalise a malformed announce into a plausible-looking host string.
 fn strip_port_from_address(announced_address: &str) -> Option<String> {
     let trimmed: &str = announced_address.trim();
     if trimmed.is_empty() {
@@ -97,11 +98,32 @@ fn strip_port_from_address(announced_address: &str) -> Option<String> {
     if let Some(rest_after_open_bracket) = trimmed.strip_prefix('[') {
         let close_bracket_pos: usize = rest_after_open_bracket.find(']')?;
         let ipv6_body: &str = &rest_after_open_bracket[..close_bracket_pos];
+        let suffix: &str = &rest_after_open_bracket[close_bracket_pos + 1..];
+        // After the closing `]` the only legal suffixes are nothing (`[::1]`) or `:<digits>+`
+        // (`[::1]:443`). Anything else (`[::1]garbage`, `[::1]:notaport`, `[::1]:`) is
+        // malformed and must be rejected — otherwise the bracket body alone would be returned
+        // as if it were a clean host.
+        if !suffix.is_empty() {
+            let port_str: &str = suffix.strip_prefix(':')?;
+            if port_str.is_empty() || !port_str.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+        }
         return Some(ipv6_body.to_string());
     }
 
     match trimmed.rsplit_once(':') {
-        Some((host_part, _port_part)) if !host_part.contains(':') => Some(host_part.to_string()),
+        Some((host_part, port_part)) if !host_part.contains(':') => {
+            // Plain `host:port` form. The port must be present and all digits; `1.2.3.4:`
+            // and `1.2.3.4:notaport` are malformed.
+            if port_part.is_empty() || !port_part.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            Some(host_part.to_string())
+        }
+        // Either no colon at all (bare IPv4 host) or multiple colons with no port suffix
+        // (bare IPv6 host). Either way, hand the trimmed input back; the downstream
+        // `IpAddr::from_str` in `build_ip_server_name` is the final validator.
         _ => Some(trimmed.to_string()),
     }
 }
@@ -179,6 +201,36 @@ mod tests {
     #[test]
     fn strip_port_whitespace_trimmed() {
         assert_eq!(strip_port_from_address("  1.2.3.4:8080  "), Some("1.2.3.4".to_string()));
+    }
+
+    #[test]
+    fn strip_port_rejects_non_numeric_port_on_ipv4() {
+        assert_eq!(strip_port_from_address("1.2.3.4:notaport"), None);
+    }
+
+    #[test]
+    fn strip_port_rejects_empty_port_on_ipv4() {
+        assert_eq!(strip_port_from_address("1.2.3.4:"), None);
+    }
+
+    #[test]
+    fn strip_port_rejects_bracketed_with_junk_suffix() {
+        assert_eq!(strip_port_from_address("[::1]garbage"), None);
+    }
+
+    #[test]
+    fn strip_port_rejects_bracketed_with_non_numeric_port() {
+        assert_eq!(strip_port_from_address("[::1]:notaport"), None);
+    }
+
+    #[test]
+    fn strip_port_rejects_bracketed_with_empty_port() {
+        assert_eq!(strip_port_from_address("[::1]:"), None);
+    }
+
+    #[test]
+    fn strip_port_rejects_unbalanced_bracket() {
+        assert_eq!(strip_port_from_address("[::1"), None);
     }
 
     #[test]
