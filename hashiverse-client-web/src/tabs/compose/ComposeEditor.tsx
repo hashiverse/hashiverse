@@ -247,7 +247,11 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 			await on_posted?.();
 			Tools.play_ui_sound(sound_compose);
 			editor.commands.clearContent();
-			await local_settings_delete(LOCAL_SETTINGS_KEY_DRAFT_POST);
+			try {
+				await local_settings_delete(LOCAL_SETTINGS_KEY_DRAFT_POST);
+			} catch (e) {
+				console.error(e);
+			}
 			on_submit_complete?.();
 			Toast.success(t("toast.post_submitted"));
 		} finally {
