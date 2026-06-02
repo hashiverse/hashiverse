@@ -307,4 +307,44 @@ mod tests {
 
         Ok(())
     }
+
+    /// When more originators are uploaded than `max_originators_per_location`, the cache keeps the
+    /// ones *closest* to the location_id (highest leading-agreement-bits) and evicts the furthest.
+    #[tokio::test]
+    async fn test_overflow_keeps_closest_originators() -> anyhow::Result<()> {
+        let (server_id, peer_self) = make_test_server_and_peer().await?;
+        let cache = PostBundleCache::new(3, 64 * 1024 * 1024, Arc::new(RealTimeProvider)); // keep at most 3
+        let bucket_location = make_test_bucket_location();
+        let location_id = bucket_location.location_id;
+        let now = TimeMillis(1_000_000);
+
+        // Register the placeholder entry so uploads are accepted.
+        cache.on_get(&bucket_location, &[], &peer_self, &server_id, now);
+
+        // Flipping bit `p` of the location_id yields an originator whose leading-agreement-bits
+        // with the location_id is exactly `p` — i.e. a controllable XOR distance.
+        let originator_at = |flip_bit: usize| -> Id {
+            let mut bytes = location_id.0;
+            bytes[flip_bit / 8] ^= 1 << (7 - (flip_bit % 8));
+            Id(bytes)
+        };
+
+        // Agreements 20,40,60,80,100. With a cap of 3 the three closest (60,80,100) must survive.
+        for &p in &[20usize, 40, 60, 80, 100] {
+            let bytes = Bytes::from(format!("bundle-agreement-{}", p));
+            // sealed => never individually stale, so on_get returns every survivor.
+            cache.on_upload(location_id, originator_at(p), bytes, now, true);
+        }
+
+        let result = cache.on_get(&bucket_location, &[], &peer_self, &server_id, now);
+        let cached: std::collections::HashSet<Vec<u8>> = result.cached_items.iter().map(|b| b.to_vec()).collect();
+        assert_eq!(3, cached.len(), "cache must keep exactly max_originators_per_location entries");
+        for &p in &[60usize, 80, 100] {
+            assert!(cached.contains(format!("bundle-agreement-{}", p).as_bytes()), "closest originator (agreement {}) must be kept", p);
+        }
+        for &p in &[20usize, 40] {
+            assert!(!cached.contains(format!("bundle-agreement-{}", p).as_bytes()), "furthest originator (agreement {}) must be evicted", p);
+        }
+        Ok(())
+    }
 }

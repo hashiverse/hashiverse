@@ -1,5 +1,3 @@
-#![feature(try_blocks)]
-
 use hashiverse_lib::anyhow_assert;
 use hashiverse_lib::client::client_storage::mem_client_storage::MemClientStorage;
 use hashiverse_lib::client::hashiverse_client::HashiverseClient;
@@ -15,7 +13,6 @@ use hashiverse_lib::transport::bootstrap_provider::manual_bootstrap_provider::Ma
 use hashiverse_lib::tools::time_provider::manual_time_provider::ManualTimeProvider;
 use hashiverse_lib::transport::ddos::ddos::{DdosConnectionGuard, DdosProtection};
 use hashiverse_lib::transport::ddos::mem_ddos::MemDdosProtection;
-use hashiverse_lib::transport::ddos::noop_ddos::NoopDdosProtection;
 use hashiverse_lib::transport::mem_transport::MemTransportFactory;
 use hashiverse_server_lib::environment::environment::EnvironmentFactory;
 use hashiverse_server_lib::environment::mem_environment_store::MemEnvironmentFactory;
@@ -41,7 +38,9 @@ async fn test_ddos_protection_does_not_block_legitimate_traffic() -> anyhow::Res
     let cancellation_token = CancellationToken::new();
     let environment_factory = Arc::new(MemEnvironmentFactory::new(&temp_dir_path));
 
-    // Generous threshold so that normal traffic never triggers the ban.
+    // Generous threshold so that normal traffic never triggers the ban. Wired into the transport
+    // factory below so every RPC actually flows through MemDdosProtection (try_acquire_connection
+    // + allow_request) — exercising the real DDoS path, not just the standalone state machine.
     let ddos_protection: Arc<MemDdosProtection> = Arc::new(MemDdosProtection::new(
         10_000.0, // score_threshold
         0.1,      // decay_per_second
@@ -49,7 +48,7 @@ async fn test_ddos_protection_does_not_block_legitimate_traffic() -> anyhow::Res
         50,       // max_connections_per_ip
         time_provider.clone(),
     ));
-    let transport_factory = Arc::new(MemTransportFactory::new(NoopDdosProtection::default(), ManualBootstrapProvider::new(vec!["443".to_string()])));
+    let transport_factory = Arc::new(MemTransportFactory::new(ddos_protection.clone(), ManualBootstrapProvider::new(vec!["443".to_string()])));
 
 
     let pow_generator = Arc::new(NativeParallelPowGenerator::new());

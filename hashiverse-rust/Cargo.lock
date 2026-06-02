@@ -1875,6 +1875,7 @@ dependencies = [
  "futures",
  "hashiverse-lib",
  "hashiverse-server-lib",
+ "hex",
  "log",
  "parking_lot",
  "rustls",

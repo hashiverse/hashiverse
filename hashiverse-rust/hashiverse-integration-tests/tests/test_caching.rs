@@ -5,16 +5,19 @@ use hashiverse_lib::client::client_storage::mem_client_storage::MemClientStorage
 use hashiverse_lib::client::hashiverse_client::HashiverseClient;
 use hashiverse_lib::client::key_locker::key_locker::KeyLockerManager;
 use hashiverse_lib::client::key_locker::mem_key_locker::MemKeyLockerManager;
-use hashiverse_lib::protocol::payload::payload::{CachePostBundleV1, PayloadRequestKind, PayloadResponseKind};
+use hashiverse_lib::protocol::payload::payload::{CachePostBundleFeedbackV1, CachePostBundleV1, PayloadRequestKind, PayloadResponseKind};
 use hashiverse_lib::protocol::posting::encoded_post_bundle::EncodedPostBundleV1;
+use hashiverse_lib::protocol::posting::encoded_post_bundle_feedback::{EncodedPostBundleFeedbackHeaderV1, EncodedPostBundleFeedbackV1};
+use hashiverse_lib::protocol::posting::encoded_post_feedback::EncodedPostFeedbackV1;
 use hashiverse_lib::protocol::rpc;
 use hashiverse_lib::tools::buckets::BucketLocation;
+use hashiverse_lib::tools::hashing;
 use hashiverse_lib::tools::pow_generator::native_parallel_pow_generator::NativeParallelPowGenerator;
 use hashiverse_lib::tools::runtime_services::RuntimeServices;
 use hashiverse_lib::tools::time::{MILLIS_IN_MINUTE, MILLIS_IN_SECOND};
 use hashiverse_lib::tools::time_provider::time_provider::{ScaledTimeProvider, TimeProvider};
 use hashiverse_lib::tools::tools::{configure_logging_with_time_provider, get_temp_dir, leading_agreement_bits_xor};
-use hashiverse_lib::tools::types::Id;
+use hashiverse_lib::tools::types::{Id, Signature};
 use hashiverse_lib::transport::bootstrap_provider::manual_bootstrap_provider::ManualBootstrapProvider;
 use hashiverse_lib::transport::ddos::noop_ddos::NoopDdosProtection;
 use hashiverse_lib::transport::mem_transport::MemTransportFactory;
@@ -107,6 +110,47 @@ async fn drive_hits_upload_and_verify_cached(
 
 fn holds_bundle(server: &Arc<HashiverseServer>, location_id: &Id, now: hashiverse_lib::tools::time::TimeMillis) -> bool {
     server.environment.get_post_bundle_bytes(now, location_id).ok().flatten().is_some()
+}
+
+/// Feedback-cache analogue of `drive_hits_upload_and_verify_cached`: wrap the feedback the
+/// `server` holds into a signed `EncodedPostBundleFeedbackV1` (as the GetPostBundleFeedbackV1
+/// handler does), drive the server's feedback cache to the threshold, upload via the real
+/// `CachePostBundleFeedbackV1` RPC, and assert the server then serves the feedback from cache.
+async fn drive_feedback_hits_upload_and_verify_cached(
+    server: &Arc<HashiverseServer>,
+    bucket_location: &BucketLocation,
+    runtime_services: &Arc<RuntimeServices>,
+    sponsor_id: &Id,
+) -> anyhow::Result<()> {
+    let now = runtime_services.time_provider.current_time_millis();
+    let peer_self = server.peer_self.read().clone();
+
+    let feedbacks_bytes = server.environment.get_post_bundle_encoded_post_feedbacks_bytes(now, &bucket_location.location_id)?;
+    anyhow_assert!(!feedbacks_bytes.is_empty(), "server {} holds no feedback to cache", server.server_id.id);
+    let mut header = EncodedPostBundleFeedbackHeaderV1 {
+        time_millis: now,
+        location_id: bucket_location.location_id,
+        feedbacks_bytes_hash: hashing::hash(feedbacks_bytes.as_ref()),
+        peer: peer_self.clone(),
+        signature: Signature::zero(),
+    };
+    header.signature_generate(&server.server_id.keys.signature_key);
+    let feedback_bundle_bytes = (EncodedPostBundleFeedbackV1 { header, feedbacks_bytes }).to_bytes()?;
+
+    let mut cache_request_token = None;
+    for _ in 0..CACHE_HIT_THRESHOLD {
+        let result = server.post_bundle_feedback_cache.on_get(bucket_location, &[], &peer_self, &server.server_id, now);
+        cache_request_token = result.cache_request_token.or(cache_request_token);
+    }
+    let cache_request_token = cache_request_token.ok_or_else(|| anyhow::anyhow!("server {} did not issue a feedback CacheRequestToken", server.server_id.id))?;
+
+    let request_bytes = CachePostBundleFeedbackV1::new_to_bytes(&cache_request_token, feedback_bundle_bytes.as_ref())?;
+    let response = rpc::rpc::rpc_server_known(runtime_services, sponsor_id, &cache_request_token.peer, PayloadRequestKind::CachePostBundleFeedbackV1, request_bytes).await?;
+    anyhow_assert_eq!(&PayloadResponseKind::CachePostBundleFeedbackResponseV1, &response.response_request_kind);
+
+    let cached = server.post_bundle_feedback_cache.on_get(bucket_location, &[], &peer_self, &server.server_id, now);
+    anyhow_assert!(!cached.cached_items.is_empty(), "server {} should serve the feedback from cache after the CachePostBundleFeedbackV1 upload", server.server_id.id);
+    Ok(())
 }
 
 // --------------------------------------------------------------------------------------------
@@ -300,5 +344,58 @@ async fn test_caching_spreads_via_client_fetches() -> anyhow::Result<()> {
 
     cancellation_token.cancel();
     anyhow_assert!(spread, "expected the cache to spread to at least one surrounding (non-holder) server via client fetches");
+    Ok(())
+}
+
+/// The feedback cache mirrors the post-bundle cache: once a post's feedback has been requested
+/// `CACHE_HIT_THRESHOLD` times the server issues a token, and a `CachePostBundleFeedbackV1` upload
+/// populates its feedback cache.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_caching_post_bundle_feedbacks() -> anyhow::Result<()> {
+    let (_temp_dir, temp_dir_path) = get_temp_dir()?;
+    let time_provider = Arc::new(ScaledTimeProvider::new(CLOCK_SCALE_FACTOR));
+    configure_logging_with_time_provider("warn", time_provider.clone());
+
+    let cancellation_token = CancellationToken::new();
+    let environment_factory = Arc::new(MemEnvironmentFactory::new(&temp_dir_path));
+    let transport_factory = Arc::new(MemTransportFactory::new(NoopDdosProtection::default(), ManualBootstrapProvider::new(vec!["443".to_string()])));
+    let runtime_services = Arc::new(RuntimeServices {
+        time_provider: time_provider.clone(),
+        transport_factory,
+        pow_generator: Arc::new(NativeParallelPowGenerator::new()),
+    });
+
+    warn!("--- Starting servers ---");
+    let servers = start_cluster(&runtime_services, &environment_factory, &cancellation_token, 20).await?;
+    time_provider.sleep_millis(MILLIS_IN_MINUTE.const_mul(30)).await;
+
+    warn!("--- Posting ---");
+    let poster = make_client(&runtime_services, "poster").await?;
+    let (post_result, _) = poster.submit_post("Feedback caching test post!").await?;
+    anyhow_assert!(!post_result.is_empty(), "submit_post returned no commit tokens");
+    let bucket_location = post_result[0].bucket_location.clone();
+    let location_id = bucket_location.location_id;
+    let post_id = post_result[0].post_id;
+    let sponsor_id = poster.client_id().id;
+
+    time_provider.sleep_millis(MILLIS_IN_MINUTE.const_mul(5)).await;
+
+    // The nearest holder, with one real (valid-PoW) feedback placed on it so there's feedback to cache.
+    let now = time_provider.current_time_millis();
+    let mut holders: Vec<Arc<HashiverseServer>> = servers.iter().filter(|s| holds_bundle(s, &location_id, now)).cloned().collect();
+    anyhow_assert!(!holders.is_empty(), "no server holds the posted bundle after settling");
+    holders.sort_by_key(|s| -leading_agreement_bits_xor(&s.server_id.id.0, &location_id.0));
+    let server = holders[0].clone();
+
+    let feedback_type = 1u8;
+    let (salt, pow, _) = EncodedPostFeedbackV1::pow_generate(&post_id, feedback_type, runtime_services.pow_generator.as_ref()).await?;
+    let feedback = EncodedPostFeedbackV1::new(post_id, feedback_type, salt, pow);
+    server.environment.put_post_feedback_if_more_powerful(now, &location_id, &feedback)?;
+
+    warn!("--- Driving feedback cache on holder {} ---", server.server_id.id);
+    drive_feedback_hits_upload_and_verify_cached(&server, &bucket_location, &runtime_services, &sponsor_id).await?;
+    warn!("--- Holder is serving the feedback from cache ---");
+
+    cancellation_token.cancel();
     Ok(())
 }
