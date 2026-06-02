@@ -33,6 +33,7 @@ use hashiverse_lib::protocol::rpc;
 use hashiverse_lib::tools::runtime_services::RuntimeServices;
 use hashiverse_lib::tools::server_id::ServerId;
 use hashiverse_lib::tools::time::{TimeMillis, MILLIS_IN_MINUTE, MILLIS_IN_SECOND};
+use hashiverse_lib::tools::time_provider::moka_clock::TimeProviderMokaClock;
 use hashiverse_lib::tools::time_provider::time_provider::TimeProvider;
 use hashiverse_lib::tools::types::{Id, Salt};
 use hashiverse_lib::tools::{config, tools};
@@ -134,6 +135,9 @@ impl HashiverseServer {
         info!("server_id={}", server_id);
         info!("peer_self={}", peer_self);
 
+        // All time-based moka caches below run on our TimeProvider (scaled in tests), not wall time.
+        let time_provider = runtime_services.time_provider.clone();
+
         let hashiverse_server = HashiverseServer {
             runtime_services,
             environment: Arc::new(environment),
@@ -141,10 +145,10 @@ impl HashiverseServer {
             kademlia: Arc::new(RwLock::new(kademlia)),
             transport_server,
             peer_self: Arc::new(RwLock::new(peer_self)),
-            heal_in_progress: Cache::builder().time_to_live(Duration::from_secs(60)).build(),
-            seen_salts: Cache::builder().time_to_live(Duration::from_mins(5)).max_capacity(100_000).build(),
-            post_bundle_cache: PostBundleCache::new(config::SERVER_POST_BUNDLE_CACHE_MAX_ORIGINATORS_PER_LOCATION, config::SERVER_POST_BUNDLE_CACHE_MAX_BYTES),
-            post_bundle_feedback_cache: PostBundleFeedbackCache::new(config::SERVER_POST_BUNDLE_FEEDBACK_CACHE_MAX_BYTES),
+            heal_in_progress: Cache::builder().time_to_live(Duration::from_secs(60)).external_clock(Arc::new(TimeProviderMokaClock::new(time_provider.clone()))).build(),
+            seen_salts: Cache::builder().time_to_live(Duration::from_mins(5)).max_capacity(100_000).external_clock(Arc::new(TimeProviderMokaClock::new(time_provider.clone()))).build(),
+            post_bundle_cache: PostBundleCache::new(config::SERVER_POST_BUNDLE_CACHE_MAX_ORIGINATORS_PER_LOCATION, config::SERVER_POST_BUNDLE_CACHE_MAX_BYTES, time_provider.clone()),
+            post_bundle_feedback_cache: PostBundleFeedbackCache::new(config::SERVER_POST_BUNDLE_FEEDBACK_CACHE_MAX_BYTES, time_provider.clone()),
             trending_hashtags: Cache::builder().max_capacity(256).build(),
             trending_hashtags_response_cache: Mutex::new(None),
             request_counters: Arc::new(std::array::from_fn(|_| AtomicU64::new(0))),
