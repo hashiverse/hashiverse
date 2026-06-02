@@ -21,15 +21,18 @@
 //! the native ipset-backed production implementation lives in `hashiverse-server-lib`.
 
 use std::sync::Arc;
-use std::time::Instant;
+use crate::tools::time::TimeMillis;
 
 /// Per-IP score with linear time decay.
 ///
 /// Score drains at `decay_per_second` points per second. The decay is applied
-/// lazily on each `increment` or `current` call — no background timer needed.
+/// lazily on each `increment` or `current` call — no background timer needed —
+/// against a caller-supplied `now` (drawn from the pluggable `TimeProvider`), so
+/// it stays consistent with the rest of the system under a scaled test clock.
 pub struct DdosScore {
     score: f64,
-    last_updated: Instant,
+    /// `None` until the first `increment`, so a freshly-created score applies no decay.
+    last_updated: Option<TimeMillis>,
 }
 
 impl Default for DdosScore {
@@ -40,22 +43,26 @@ impl Default for DdosScore {
 
 impl DdosScore {
     pub fn new() -> Self {
-        Self { score: 0.0, last_updated: Instant::now() }
+        Self { score: 0.0, last_updated: None }
+    }
+
+    fn elapsed_secs(&self, now: TimeMillis) -> f64 {
+        match self.last_updated {
+            Some(prev) => (now.0.saturating_sub(prev.0).max(0) as f64) / 1000.0,
+            None => 0.0,
+        }
     }
 
     /// Decay the score based on elapsed time, then add `points`. Returns the new score.
-    pub fn increment(&mut self, points: f64, decay_per_second: f64) -> f64 {
-        let now = Instant::now();
-        let elapsed_secs = now.duration_since(self.last_updated).as_secs_f64();
-        self.score = (self.score - decay_per_second * elapsed_secs).max(0.0) + points;
-        self.last_updated = now;
+    pub fn increment(&mut self, points: f64, decay_per_second: f64, now: TimeMillis) -> f64 {
+        self.score = (self.score - decay_per_second * self.elapsed_secs(now)).max(0.0) + points;
+        self.last_updated = Some(now);
         self.score
     }
 
     /// Read the decayed score without modifying it.
-    pub fn current(&self, decay_per_second: f64) -> f64 {
-        let elapsed_secs = self.last_updated.elapsed().as_secs_f64();
-        (self.score - decay_per_second * elapsed_secs).max(0.0)
+    pub fn current(&self, decay_per_second: f64, now: TimeMillis) -> f64 {
+        (self.score - decay_per_second * self.elapsed_secs(now)).max(0.0)
     }
 }
 
@@ -138,4 +145,42 @@ pub trait DdosProtection: Send + Sync {
     /// Release a connection slot previously acquired by `try_acquire_connection`.
     /// Called automatically by `DdosConnectionGuard::drop`.
     fn release_connection(&self, ip: &str);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DdosScore;
+    use crate::tools::time::TimeMillis;
+
+    #[test]
+    fn fresh_score_has_no_decay_on_first_increment() {
+        // last_updated is None initially, so the first increment applies no decay
+        // regardless of decay_per_second or the supplied `now`.
+        let mut score = DdosScore::new();
+        assert_eq!(score.increment(5.0, 1000.0, TimeMillis(1_000_000)), 5.0);
+    }
+
+    #[test]
+    fn score_decays_with_elapsed_time() {
+        let decay_per_second = 2.0;
+        let mut score = DdosScore::new();
+
+        // t=0: +10 -> 10.0 (no decay on first increment)
+        assert_eq!(score.increment(10.0, decay_per_second, TimeMillis(0)), 10.0);
+
+        // 3s later: read decays 2.0 * 3 = 6.0 -> 4.0, without mutating.
+        assert_eq!(score.current(decay_per_second, TimeMillis(3_000)), 4.0);
+        // current() must not have mutated the stored score.
+        assert_eq!(score.current(decay_per_second, TimeMillis(0)), 10.0);
+
+        // 10s later: 2.0 * 10 = 20 fully drains it (floored at 0), then +1 -> 1.0
+        assert_eq!(score.increment(1.0, decay_per_second, TimeMillis(10_000)), 1.0);
+    }
+
+    #[test]
+    fn zero_decay_never_drains() {
+        let mut score = DdosScore::new();
+        score.increment(3.0, 0.0, TimeMillis(0));
+        assert_eq!(score.current(0.0, TimeMillis(1_000_000_000)), 3.0);
+    }
 }

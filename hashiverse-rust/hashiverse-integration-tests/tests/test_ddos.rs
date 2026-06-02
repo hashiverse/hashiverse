@@ -12,6 +12,7 @@ use hashiverse_lib::tools::time::MILLIS_IN_MINUTE;
 use hashiverse_lib::tools::time_provider::time_provider::{ScaledTimeProvider, TimeProvider};
 use hashiverse_lib::tools::tools::{configure_logging_with_time_provider, get_temp_dir};
 use hashiverse_lib::transport::bootstrap_provider::manual_bootstrap_provider::ManualBootstrapProvider;
+use hashiverse_lib::tools::time_provider::manual_time_provider::ManualTimeProvider;
 use hashiverse_lib::transport::ddos::ddos::{DdosConnectionGuard, DdosProtection};
 use hashiverse_lib::transport::ddos::mem_ddos::MemDdosProtection;
 use hashiverse_lib::transport::ddos::noop_ddos::NoopDdosProtection;
@@ -46,6 +47,7 @@ async fn test_ddos_protection_does_not_block_legitimate_traffic() -> anyhow::Res
         0.1,      // decay_per_second
         5.0,      // bad_request_penalty
         50,       // max_connections_per_ip
+        time_provider.clone(),
     ));
     let transport_factory = Arc::new(MemTransportFactory::new(NoopDdosProtection::default(), ManualBootstrapProvider::new(vec!["443".to_string()])));
 
@@ -113,6 +115,8 @@ fn test_ddos_bad_request_escalation_and_ban() {
         0.001, // very low decay so tests complete before scores decay
         bad_request_penalty,
         max_connections,
+        // Fixed manual clock: time never advances, so scores never decay — fully deterministic.
+        Arc::new(ManualTimeProvider::default()),
     ));
 
     // TEST-NET addresses (RFC 5737) — safe to use in tests.

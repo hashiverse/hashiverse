@@ -28,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
         .expect("Failed to install Ring as the crypto provider");
 
     let environment_factory: Arc<dyn EnvironmentFactory> = Arc::new(DiskEnvironmentFactory::new(args.base_path.as_str()));
-    let ddos_protection: Arc<dyn DdosProtection> = Arc::new(IpsetDdosProtection::new(config::SERVER_DDOS_IPSET_SET_NAME, config::SERVER_DDOS_SCORE_THRESHOLD, config::SERVER_DDOS_DECAY_PER_SECOND, config::SERVER_DDOS_BAD_REQUEST_PENALTY, config::SERVER_DDOS_MAX_CONNECTIONS_PER_IP));
+    let ddos_protection: Arc<dyn DdosProtection> = Arc::new(IpsetDdosProtection::new(config::SERVER_DDOS_IPSET_SET_NAME, config::SERVER_DDOS_SCORE_THRESHOLD, config::SERVER_DDOS_DECAY_PER_SECOND, config::SERVER_DDOS_BAD_REQUEST_PENALTY, config::SERVER_DDOS_MAX_CONNECTIONS_PER_IP, time_provider.clone()));
     let bootstrap_provider: Arc<dyn BootstrapProvider> = Arc::new(DnssecBootstrapProvider::new());
     let transport_factory = Arc::new(FullHttpsTransportFactory::new(ddos_protection, bootstrap_provider));
     let runtime_services = Arc::new(RuntimeServices { time_provider, transport_factory, pow_generator: Arc::new(NativeParallelPowGenerator::new()) });
