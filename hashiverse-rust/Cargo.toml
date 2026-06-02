@@ -19,6 +19,9 @@ default-members = [
     "hashiverse-server",
     "hashiverse-client-rust",
 ]
+# Vendored fork of moka (see 3rdparty/moka/PATCH_NOTES.md). Excluded so cargo
+# treats it only as a [patch.crates-io] source, not a workspace member.
+exclude = ["3rdparty/moka"]
 
 # Require newer resolver so features are handled per-package
 resolver = "2"
@@ -58,6 +61,13 @@ async-trait = "0.1.89"
 # crate via `{ workspace = true }` so the constraint never has to be repeated.
 hashiverse-lib = { path = "hashiverse-lib", version = "0.0.0" }
 hashiverse-server-lib = { path = "hashiverse-server-lib", version = "0.0.0" }
+
+# Temporary: depend on the vendored fork of moka that adds the `ExternalClock`
+# seam, so the cache's native TTL/TTI/expiry run on our `TimeProvider` (scaled
+# clock in tests). Drop this once the upstream PR is released. See
+# 3rdparty/moka/PATCH_NOTES.md.
+[patch.crates-io]
+moka = { path = "3rdparty/moka" }
 
 # Make sure our dependencies always use the release-level optimisations
 [profile.dev.package."*"]
