@@ -347,4 +347,32 @@ mod tests {
         }
         Ok(())
     }
+
+    /// The `CacheRequestToken` the server issues carries a TTL-bounded expiry — exactly the window
+    /// the `CachePostBundleV1` handler enforces via `token.is_expired(now)`. This is the
+    /// deterministic counterpart to that handler check (the integration tests can't exercise the
+    /// real RPC upload reliably because, under the scaled clock, the 30s TTL is only ~33ms of real
+    /// time and the upload RPC can outlive it — the very race that made the cache tests flaky).
+    /// (Token signature/PoW verification needs a fully-PoW'd identity and is covered by the
+    /// end-to-end `test_caching_spreads_via_client_fetches`.)
+    #[tokio::test]
+    async fn test_cache_request_token_expiry() -> anyhow::Result<()> {
+        let (server_id, peer_self) = make_test_server_and_peer().await?;
+        let cache = PostBundleCache::new(5, 64 * 1024 * 1024, Arc::new(RealTimeProvider));
+        let bucket_location = make_test_bucket_location();
+        let now = TimeMillis(1_000_000);
+
+        // Drive the hit threshold so the server issues a token.
+        let mut token = None;
+        for _ in 0..CACHE_HIT_THRESHOLD {
+            token = cache.on_get(&bucket_location, &[], &peer_self, &server_id, now).cache_request_token.or(token);
+        }
+        let token = token.expect("server issues a token at the hit threshold");
+
+        assert!(!token.is_expired(now), "token must be valid at issue time");
+        assert!(!token.is_expired(TimeMillis(now.0 + CACHE_REQUEST_TOKEN_TTL_DURATION_MILLIS.0 - 1)), "token must be valid just before its TTL elapses");
+        assert!(token.is_expired(TimeMillis(now.0 + CACHE_REQUEST_TOKEN_TTL_DURATION_MILLIS.0 + 1)), "token must be expired once its TTL has elapsed");
+
+        Ok(())
+    }
 }

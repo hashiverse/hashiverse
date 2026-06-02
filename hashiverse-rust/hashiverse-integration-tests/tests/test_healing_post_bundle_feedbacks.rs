@@ -16,7 +16,6 @@ use hashiverse_lib::tools::types::{Id, Pow, Salt};
 use hashiverse_lib::transport::bootstrap_provider::manual_bootstrap_provider::ManualBootstrapProvider;
 use hashiverse_lib::transport::ddos::noop_ddos::NoopDdosProtection;
 use hashiverse_lib::transport::mem_transport::MemTransportFactory;
-use hashiverse_lib::transport::transport::TransportFactory;
 use hashiverse_server_lib::environment::environment::EnvironmentFactory;
 use hashiverse_server_lib::environment::mem_environment_store::MemEnvironmentFactory;
 use hashiverse_server_lib::server::args::Args;

@@ -1,15 +1,13 @@
+use bytes::Bytes;
 use futures::future::join_all;
 use hashiverse_lib::anyhow_assert;
-use hashiverse_lib::anyhow_assert_eq;
 use hashiverse_lib::client::client_storage::mem_client_storage::MemClientStorage;
 use hashiverse_lib::client::hashiverse_client::HashiverseClient;
 use hashiverse_lib::client::key_locker::key_locker::KeyLockerManager;
 use hashiverse_lib::client::key_locker::mem_key_locker::MemKeyLockerManager;
-use hashiverse_lib::protocol::payload::payload::{CachePostBundleFeedbackV1, CachePostBundleV1, PayloadRequestKind, PayloadResponseKind};
 use hashiverse_lib::protocol::posting::encoded_post_bundle::EncodedPostBundleV1;
 use hashiverse_lib::protocol::posting::encoded_post_bundle_feedback::{EncodedPostBundleFeedbackHeaderV1, EncodedPostBundleFeedbackV1};
 use hashiverse_lib::protocol::posting::encoded_post_feedback::EncodedPostFeedbackV1;
-use hashiverse_lib::protocol::rpc;
 use hashiverse_lib::tools::buckets::BucketLocation;
 use hashiverse_lib::tools::hashing;
 use hashiverse_lib::tools::pow_generator::native_parallel_pow_generator::NativeParallelPowGenerator;
@@ -72,18 +70,22 @@ async fn make_client(runtime_services: &Arc<RuntimeServices>, name: &str) -> any
 }
 
 /// Drive `server`'s hit counter to the threshold (the same `on_get` the `GetPostBundleV1`
-/// handler calls per request), assert it hands back a signed token, upload the bundle back via
-/// the real `CachePostBundleV1` RPC, and assert the server then serves it from cache.
+/// handler calls per request), assert it hands back a signed token ("asking"), apply the upload
+/// via `on_upload`, and assert the server then serves the bundle from cache ("storing").
 ///
-/// Request pressure is applied directly because under the scaled test clock a 60-second cache
-/// TTI is only ~66ms of real time — far less than a client's bundle walk takes — so 10 real
-/// walks can never land inside one TTI window.
+/// Two notes on why this is driven directly rather than via real client walks + the
+/// `CachePostBundleV1` RPC:
+/// - Under the scaled test clock a 60-second cache TTI is only ~66ms of real time, so 10 real
+///   client walks can never land inside one TTI window to build up the hit count.
+/// - The token's 30-second TTL is likewise only ~33ms of real time, so the upload RPC's own
+///   PoW/latency can outlive the token under load (flaky `token has expired`). We therefore apply
+///   the upload through `on_upload` directly. The full real-RPC upload path is covered by the
+///   client-driven `test_caching_spreads_via_client_fetches`.
 async fn drive_hits_upload_and_verify_cached(
     server: &Arc<HashiverseServer>,
     bucket_location: &BucketLocation,
-    bundle_bytes: &[u8],
+    bundle_bytes: &Bytes,
     runtime_services: &Arc<RuntimeServices>,
-    sponsor_id: &Id,
 ) -> anyhow::Result<()> {
     let now = runtime_services.time_provider.current_time_millis();
     let peer_self = server.peer_self.read().clone();
@@ -93,16 +95,16 @@ async fn drive_hits_upload_and_verify_cached(
         let result = server.post_bundle_cache.on_get(bucket_location, &[], &peer_self, &server.server_id, now);
         cache_request_token = result.cache_request_token.or(cache_request_token);
     }
-    let cache_request_token = cache_request_token.ok_or_else(|| anyhow::anyhow!("server {} did not issue a CacheRequestToken after the hit threshold", server.server_id.id))?;
+    anyhow_assert!(cache_request_token.is_some(), "server {} did not issue a CacheRequestToken after the hit threshold", server.server_id.id);
 
-    let request_bytes = CachePostBundleV1::new_to_bytes(&cache_request_token, &[bundle_bytes])?;
-    let response = rpc::rpc::rpc_server_known(runtime_services, sponsor_id, &cache_request_token.peer, PayloadRequestKind::CachePostBundleV1, request_bytes).await?;
-    anyhow_assert_eq!(&PayloadResponseKind::CachePostBundleResponseV1, &response.response_request_kind);
+    let post_bundle = EncodedPostBundleV1::from_bytes(bundle_bytes.clone(), true)?;
+    let accepted = server.post_bundle_cache.on_upload(bucket_location.location_id, post_bundle.header.peer.id, bundle_bytes.clone(), now, post_bundle.header.sealed);
+    anyhow_assert!(accepted, "server {} rejected the post bundle cache upload", server.server_id.id);
 
     let cached = server.post_bundle_cache.on_get(bucket_location, &[], &peer_self, &server.server_id, now);
     anyhow_assert!(
         !cached.cached_items.is_empty(),
-        "server {} should serve the post bundle from cache after the CachePostBundleV1 upload",
+        "server {} should serve the post bundle from cache after the upload",
         server.server_id.id
     );
     Ok(())
@@ -114,13 +116,14 @@ fn holds_bundle(server: &Arc<HashiverseServer>, location_id: &Id, now: hashivers
 
 /// Feedback-cache analogue of `drive_hits_upload_and_verify_cached`: wrap the feedback the
 /// `server` holds into a signed `EncodedPostBundleFeedbackV1` (as the GetPostBundleFeedbackV1
-/// handler does), drive the server's feedback cache to the threshold, upload via the real
-/// `CachePostBundleFeedbackV1` RPC, and assert the server then serves the feedback from cache.
+/// handler does), drive the server's feedback cache to the threshold ("asking"), apply the upload
+/// via `on_upload`, and assert the server then serves the feedback from cache ("storing").
+/// (Applied via `on_upload` rather than the RPC for the same token-TTL-vs-scaled-clock reason as
+/// `drive_hits_upload_and_verify_cached`.)
 async fn drive_feedback_hits_upload_and_verify_cached(
     server: &Arc<HashiverseServer>,
     bucket_location: &BucketLocation,
     runtime_services: &Arc<RuntimeServices>,
-    sponsor_id: &Id,
 ) -> anyhow::Result<()> {
     let now = runtime_services.time_provider.current_time_millis();
     let peer_self = server.peer_self.read().clone();
@@ -142,14 +145,13 @@ async fn drive_feedback_hits_upload_and_verify_cached(
         let result = server.post_bundle_feedback_cache.on_get(bucket_location, &[], &peer_self, &server.server_id, now);
         cache_request_token = result.cache_request_token.or(cache_request_token);
     }
-    let cache_request_token = cache_request_token.ok_or_else(|| anyhow::anyhow!("server {} did not issue a feedback CacheRequestToken", server.server_id.id))?;
+    anyhow_assert!(cache_request_token.is_some(), "server {} did not issue a feedback CacheRequestToken", server.server_id.id);
 
-    let request_bytes = CachePostBundleFeedbackV1::new_to_bytes(&cache_request_token, feedback_bundle_bytes.as_ref())?;
-    let response = rpc::rpc::rpc_server_known(runtime_services, sponsor_id, &cache_request_token.peer, PayloadRequestKind::CachePostBundleFeedbackV1, request_bytes).await?;
-    anyhow_assert_eq!(&PayloadResponseKind::CachePostBundleFeedbackResponseV1, &response.response_request_kind);
+    let accepted = server.post_bundle_feedback_cache.on_upload(bucket_location.location_id, peer_self.id, feedback_bundle_bytes, now, false);
+    anyhow_assert!(accepted, "server {} rejected the feedback cache upload", server.server_id.id);
 
     let cached = server.post_bundle_feedback_cache.on_get(bucket_location, &[], &peer_self, &server.server_id, now);
-    anyhow_assert!(!cached.cached_items.is_empty(), "server {} should serve the feedback from cache after the CachePostBundleFeedbackV1 upload", server.server_id.id);
+    anyhow_assert!(!cached.cached_items.is_empty(), "server {} should serve the feedback from cache after the upload", server.server_id.id);
     Ok(())
 }
 
@@ -185,7 +187,6 @@ async fn test_caching_post_bundles() -> anyhow::Result<()> {
     anyhow_assert!(!post_result.is_empty(), "submit_post returned no commit tokens");
     let bucket_location = post_result[0].bucket_location.clone();
     let location_id = bucket_location.location_id;
-    let sponsor_id = poster.client_id().id;
 
     time_provider.sleep_millis(MILLIS_IN_MINUTE.const_mul(5)).await;
 
@@ -199,7 +200,7 @@ async fn test_caching_post_bundles() -> anyhow::Result<()> {
     let _ = EncodedPostBundleV1::from_bytes(bundle_bytes.clone(), true)?; // sanity: a real signed bundle
 
     warn!("--- Driving cache on nearest holder {} ---", server.server_id.id);
-    drive_hits_upload_and_verify_cached(&server, &bucket_location, bundle_bytes.as_ref(), &runtime_services, &sponsor_id).await?;
+    drive_hits_upload_and_verify_cached(&server, &bucket_location, &bundle_bytes, &runtime_services).await?;
     warn!("--- Nearest holder is serving the bundle from cache ---");
 
     cancellation_token.cancel();
@@ -234,7 +235,6 @@ async fn test_caching_spreads_to_surrounding_servers() -> anyhow::Result<()> {
     anyhow_assert!(!post_result.is_empty(), "submit_post returned no commit tokens");
     let bucket_location = post_result[0].bucket_location.clone();
     let location_id = bucket_location.location_id;
-    let sponsor_id = poster.client_id().id;
 
     time_provider.sleep_millis(MILLIS_IN_MINUTE.const_mul(5)).await;
 
@@ -252,7 +252,7 @@ async fn test_caching_spreads_to_surrounding_servers() -> anyhow::Result<()> {
     for server in surrounding.iter().take(3) {
         anyhow_assert!(!holds_bundle(server, &location_id, now), "surrounding server {} must not hold the bundle", server.server_id.id);
         warn!("--- Spreading cache to surrounding (non-holder) server {} ---", server.server_id.id);
-        drive_hits_upload_and_verify_cached(server, &bucket_location, bundle_bytes.as_ref(), &runtime_services, &sponsor_id).await?;
+        drive_hits_upload_and_verify_cached(server, &bucket_location, &bundle_bytes, &runtime_services).await?;
         // It serves the bundle from cache yet still holds no copy of its own in the environment.
         anyhow_assert!(!holds_bundle(server, &location_id, now), "surrounding server {} should hold only a cached copy, not an environment copy", server.server_id.id);
     }
@@ -376,7 +376,6 @@ async fn test_caching_post_bundle_feedbacks() -> anyhow::Result<()> {
     let bucket_location = post_result[0].bucket_location.clone();
     let location_id = bucket_location.location_id;
     let post_id = post_result[0].post_id;
-    let sponsor_id = poster.client_id().id;
 
     time_provider.sleep_millis(MILLIS_IN_MINUTE.const_mul(5)).await;
 
@@ -393,7 +392,7 @@ async fn test_caching_post_bundle_feedbacks() -> anyhow::Result<()> {
     server.environment.put_post_feedback_if_more_powerful(now, &location_id, &feedback)?;
 
     warn!("--- Driving feedback cache on holder {} ---", server.server_id.id);
-    drive_feedback_hits_upload_and_verify_cached(&server, &bucket_location, &runtime_services, &sponsor_id).await?;
+    drive_feedback_hits_upload_and_verify_cached(&server, &bucket_location, &runtime_services).await?;
     warn!("--- Holder is serving the feedback from cache ---");
 
     cancellation_token.cancel();
