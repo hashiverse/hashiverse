@@ -14,5 +14,5 @@ pub mod system_stats;
 
 pub use environment_stats::environment_stats_subtree;
 pub use kademlia_stats::kademlia_stats_subtree;
-pub use request_counts::request_counts_subtree;
+pub use request_counts::{request_counts_subtree, RequestRateWindows};
 pub use system_stats::system_stats_subtree;

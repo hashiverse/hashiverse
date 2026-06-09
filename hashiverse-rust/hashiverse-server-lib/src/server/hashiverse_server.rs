@@ -26,6 +26,7 @@ use crate::server::kademlia::kademlia;
 use crate::server::kademlia::kademlia::Kademlia;
 use crate::server::post_bundle_caching::PostBundleCache;
 use crate::server::post_bundle_feedback_caching::PostBundleFeedbackCache;
+use crate::server::stats::RequestRateWindows;
 use hashiverse_lib::anyhow_assert_eq;
 use hashiverse_lib::protocol::payload::payload::{AnnounceResponseV1, AnnounceResponseV2, AnnounceV1, AnnounceV2, BootstrapResponseV1, BootstrapV1, PayloadRequestKind, PayloadResponseKind, PeerStatsResponseV1, PAYLOAD_REQUEST_KIND_COUNT};
 use hashiverse_lib::protocol::peer::Peer;
@@ -70,6 +71,11 @@ pub struct HashiverseServer {
     /// after packet decode + replay-guard but before per-handler PoW gates, so
     /// adversarial load shows up too.
     pub request_counters: Arc<[AtomicU64; PAYLOAD_REQUEST_KIND_COUNT]>,
+    /// Per-`PayloadRequestKind` decaying call-rate estimates (hour/day/month).
+    /// Recorded alongside `request_counters` on the same hot path; rendered next
+    /// to the all-time total so idle servers no longer look busy. Each kind has
+    /// its own `Mutex` so a single-kind flood contends only with itself.
+    pub request_rate_windows: Arc<[Mutex<RequestRateWindows>; PAYLOAD_REQUEST_KIND_COUNT]>,
     /// Cached signed stats blob. The `TimeMillis` is the timestamp recorded in
     /// the cached `PeerStatsResponseV1` itself — the cache hands the response
     /// back verbatim so clients re-sharing it get a single canonical byte sequence.
@@ -152,6 +158,7 @@ impl HashiverseServer {
             trending_hashtags: Cache::builder().max_capacity(256).build(),
             trending_hashtags_response_cache: Mutex::new(None),
             request_counters: Arc::new(std::array::from_fn(|_| AtomicU64::new(0))),
+            request_rate_windows: Arc::new(std::array::from_fn(|_| Mutex::new(RequestRateWindows::new()))),
             peer_stats_response_cache: Mutex::new(None),
         };
 
