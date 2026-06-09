@@ -162,20 +162,8 @@ import Nav from '../../components/Nav.astro';
     </section>
 
     <script>
-      function setAppLink(id: string) {
-        const a = document.getElementById(id) as HTMLAnchorElement | null;
-        if (!a) return;
-        const host = window.location.hostname;
-        if (host === 'localhost' || host === '127.0.0.1') {
-          a.href = 'http://localhost:3000';
-        }
-        else {
-          const bare = host.startsWith('www.') ? host.slice(4) : host;
-          a.href = `https://app.${bare}`;
-        }
-      }
-
-      setAppLink('hero-app-link');
+      import { set_app_link } from "../../utils/app-link";
+      set_app_link("hero-app-link");
     </script>
 </Base>
 

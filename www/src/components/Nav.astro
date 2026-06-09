@@ -80,16 +80,8 @@ const current_flag = flag_for(locale);
 </nav>
 
 <script>
-  const app_link = document.getElementById("nav-app-link") as HTMLAnchorElement | null;
-  if (app_link) {
-    const host = window.location.hostname;
-    if (host === "localhost" || host === "127.0.0.1") {
-      app_link.href = "http://localhost:3000";
-    } else {
-      const bare = host.startsWith("www.") ? host.slice(4) : host;
-      app_link.href = `https://app.${bare}`;
-    }
-  }
+  import { set_app_link } from "../utils/app-link";
+  set_app_link("nav-app-link");
 
   const switcher = document.querySelector<HTMLElement>("[data-lang-switcher]");
   const btn = switcher?.querySelector<HTMLButtonElement>("[data-lang-btn]");
