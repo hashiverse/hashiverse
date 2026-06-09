@@ -25,9 +25,12 @@ use crate::protocol::rpc;
 use crate::tools::buckets::{bucket_durations_for_type, generate_bucket_location, BucketLocation, BucketType};
 use crate::tools::client_id::ClientId;
 use crate::tools::time::TimeMillis;
+use crate::tools::tools::spawn_background_task;
 use crate::tools::{config, json};
 use crate::tools::runtime_services::RuntimeServices;
 use bytes::Bytes;
+use futures::channel::mpsc;
+use futures::StreamExt;
 use log::{info, trace, warn};
 use scraper::{Html, Selector};
 use std::sync::Arc;
@@ -44,15 +47,34 @@ struct LinkedBaseIdDetail {
     referenced_post_header_bytes: Option<Bytes>,
 }
 
+/// One successful server commit, streamed back from the background poster to the foreground.
+///
+/// The channel only carries successes — a per-server failure isn't reported here because it's
+/// an internal retry (a dead peer just means we walk to the next one, it does not mean the post
+/// failed). Total failure is conveyed by the channel closing with no `User` outcome ever sent.
+struct SubmissionOutcome {
+    bucket_type: BucketType,
+    token: SubmitPostCommitTokenV1,
+}
+
+/// Submit a post to the network.
+///
+/// The parse + encode happen in the foreground, then [`post_to_locations`] is run as a background
+/// task that streams each successful server commit back over a channel. With
+/// `wait_for_all_submissions == true` the foreground drains every outcome before returning (so the
+/// returned token list and recent-posts pen are fully populated); with `false` it returns the
+/// instant the mandatory User-bucket post secures its first commit and lets the background finish
+/// the remaining redundancy and secondary buckets (visible via the PoW job tracker).
 #[allow(clippy::too_many_arguments)] // each arg is a distinct piece of the client state submitting a post; bundling adds indirection without simplifying the call site
 pub async fn submit_post(
-    runtime_services: &RuntimeServices,
+    runtime_services: Arc<RuntimeServices>,
     client_id: &ClientId,
     key_locker: &Arc<dyn KeyLocker>,
-    post_bundle_manager: &LivePostBundleManager,
-    peer_tracker: &Arc<RwLock<PeerTracker>>,
+    post_bundle_manager: Arc<LivePostBundleManager>,
+    peer_tracker: Arc<RwLock<PeerTracker>>,
     recent_posts_pen: &Arc<RwLock<RecentPostsPen>>,
     post: &str,
+    wait_for_all_submissions: bool,
 ) -> anyhow::Result<(Vec<SubmitPostCommitTokenV1>, (EncodedPostV1, Bytes))> {
     trace!("submitting post: {}", post);
 
@@ -69,28 +91,45 @@ pub async fn submit_post(
     let linked_base_ids: Vec<Id> = linked_base_id_details.iter().map(|d| d.linked_base_id).collect();
     let mut encoded_post = EncodedPostV1::new(client_id, timestamp, linked_base_ids, post);
     let encoded_post_bytes = encoded_post.encode_to_bytes_direct(key_locker).await?;
-
-    let post_commit_tokens = post_to_locations(
-        runtime_services,
-        client_id,
-        post_bundle_manager,
-        peer_tracker,
-        &linked_base_id_details,
-        &encoded_post,
-        &encoded_post_bytes,
-        &referenced_hashtags,
-        timestamp,
-    )
-    .await?;
-
     let encoded_post_bytes_raw = Bytes::copy_from_slice(encoded_post_bytes.bytes());
 
-    // Record in the recent posts pen so these posts appear immediately in timeline fetches
-    {
-        let bucket_locations_and_post_ids: Vec<_> = post_commit_tokens.iter()
-            .map(|token| (token.bucket_location.clone(), token.post_id))
-            .collect();
-        recent_posts_pen.write().await.add_all(&bucket_locations_and_post_ids, encoded_post_bytes_raw.clone(), timestamp);
+    // Fan the post out to every target bucket on a background task; it streams each successful
+    // server commit back to us over this channel and keeps running even after we return.
+    let (outcomes_tx, mut outcomes_rx) = mpsc::unbounded::<SubmissionOutcome>();
+    spawn_background_task(post_to_locations(
+        runtime_services,
+        client_id.clone(),
+        post_bundle_manager,
+        peer_tracker,
+        linked_base_id_details,
+        encoded_post.clone(),
+        encoded_post_bytes,
+        referenced_hashtags,
+        timestamp,
+        outcomes_tx,
+    ));
+
+    // Collect the commits as they land. Record each in the recent posts pen so the post appears
+    // immediately in timeline fetches. We must have at least one User-bucket commit (healing fixes
+    // the rest); the channel closing without one is the same hard-fail as before.
+    let mut post_commit_tokens = Vec::new();
+    let mut user_committed = false;
+    while let Some(SubmissionOutcome { bucket_type, token }) = outcomes_rx.next().await {
+        recent_posts_pen.write().await.add_all(&[(token.bucket_location.clone(), token.post_id)], encoded_post_bytes_raw.clone(), timestamp);
+        if bucket_type == BucketType::User {
+            user_committed = true;
+        }
+        post_commit_tokens.push(token);
+
+        // Once the User's post is durably committed once, we can hand back control and let the
+        // background task complete the redundancy and secondary buckets.
+        if !wait_for_all_submissions && user_committed {
+            return Ok((post_commit_tokens, (encoded_post, encoded_post_bytes_raw)));
+        }
+    }
+
+    if !user_committed {
+        anyhow::bail!("Failed to post to any User buckets, so bailing,");
     }
 
     Ok((post_commit_tokens, (encoded_post, encoded_post_bytes_raw)))
@@ -198,29 +237,30 @@ fn build_locations(client_id: &ClientId, post: &str) -> anyhow::Result<(Vec<Link
 
 /// Post the encoded post into every target bucket (User + #hashtags / @mentions / replies / sequels).
 ///
-/// For each target it starts at the widest bucket duration and narrows until a non-overflowed,
-/// non-sealed bucket accepts it. The User bucket is mandatory — if it secures no commit we bail;
-/// secondary buckets are best-effort (a failed hashtag / mention is logged and skipped, healing
-/// reconciles the rest later).
+/// Runs as a background task: it owns its inputs and streams each successful server commit back to
+/// the caller over `outcomes_tx`. For each target it starts at the widest bucket duration and
+/// narrows until a non-overflowed, non-sealed bucket accepts it. The User bucket is mandatory — if
+/// it secures no commit we stop early (dropping `outcomes_tx` closes the channel, which the caller
+/// reads as the hard-fail); secondary buckets are best-effort (a failed hashtag / mention is logged
+/// and skipped, healing reconciles the rest later).
 #[allow(clippy::too_many_arguments)] // each arg is a distinct piece of the post-to-locations operation; bundling adds indirection without simplifying the call site
 async fn post_to_locations(
-    runtime_services: &RuntimeServices,
-    client_id: &ClientId,
-    post_bundle_manager: &LivePostBundleManager,
-    peer_tracker: &Arc<RwLock<PeerTracker>>,
-    linked_base_id_details: &[LinkedBaseIdDetail],
-    encoded_post: &EncodedPostV1,
-    encoded_post_bytes: &EncodedPostBytesV1,
-    referenced_hashtags: &[String],
+    runtime_services: Arc<RuntimeServices>,
+    client_id: ClientId,
+    post_bundle_manager: Arc<LivePostBundleManager>,
+    peer_tracker: Arc<RwLock<PeerTracker>>,
+    linked_base_id_details: Vec<LinkedBaseIdDetail>,
+    encoded_post: EncodedPostV1,
+    encoded_post_bytes: EncodedPostBytesV1,
+    referenced_hashtags: Vec<String>,
     timestamp: TimeMillis,
-) -> anyhow::Result<Vec<SubmitPostCommitTokenV1>> {
-    // The commit tokens for the User's post
-    let mut post_commit_tokens = Vec::new();
-
+    outcomes_tx: mpsc::UnboundedSender<SubmissionOutcome>,
+) {
     // Start the post machine
-    for linked_base_id_detail in linked_base_id_details {
+    for linked_base_id_detail in &linked_base_id_details {
         trace!("Posting to bucket type: {:?}, linked_base_id: {}", linked_base_id_detail.bucket_type, linked_base_id_detail.linked_base_id);
-        let try_result = try {
+        let mut committed_count = 0;
+        let try_result: anyhow::Result<()> = try {
             // Where are we going to post it?  Start at the widest bucket and work our way narrower till we succeed
             for &bucket_duration in bucket_durations_for_type(linked_base_id_detail.bucket_type) {
                 let bucket_location = generate_bucket_location(linked_base_id_detail.bucket_type, linked_base_id_detail.linked_base_id, bucket_duration, timestamp)?;
@@ -229,10 +269,10 @@ async fn post_to_locations(
                 let post_bundle = post_bundle_manager.get_post_bundle(&bucket_location, timestamp).await?;
                 if !post_bundle.header.overflowed && !post_bundle.header.sealed {
                     info!("Posting to {:?}", bucket_location);
-                    let result = post_to_location(runtime_services, &client_id.id, peer_tracker, &bucket_location, encoded_post, encoded_post_bytes, linked_base_id_detail.referenced_post_header_bytes.as_deref(), referenced_hashtags).await;
+                    let result = post_to_location(&runtime_services, &client_id.id, &peer_tracker, &bucket_location, &encoded_post, &encoded_post_bytes, linked_base_id_detail.referenced_post_header_bytes.as_deref(), &referenced_hashtags, linked_base_id_detail.bucket_type, &outcomes_tx).await;
                     match result {
-                        Ok(mut result) => {
-                            post_commit_tokens.append(&mut result);
+                        Ok(result) => {
+                            committed_count += result.len();
                             break;
                         }
                         Err(e) => {
@@ -252,17 +292,17 @@ async fn post_to_locations(
             warn!("Failed to post to any bucket location for linked_base_id {:?}: {}", linked_base_id_detail.linked_base_id, e);
         }
 
-        // Check that we managed at least one commit by the end of the User bucket (healing should fix the rest).  We can happily continue with a failed hashtag, mention, etc.
-        if linked_base_id_detail.bucket_type == BucketType::User && post_commit_tokens.is_empty() {
-            anyhow::bail!("Failed to post to any User buckets, so bailing,");
+        // Stop if we managed no commit by the end of the User bucket (healing should fix the rest).  We can
+        // happily continue with a failed hashtag, mention, etc.  Returning here drops `outcomes_tx` and closes
+        // the channel, which the caller reads as the User-bucket hard-fail.
+        if linked_base_id_detail.bucket_type == BucketType::User && committed_count == 0 {
+            return;
         }
     }
-
-    Ok(post_commit_tokens)
 }
 
 #[allow(clippy::too_many_arguments)] // each arg is a distinct piece of the post-to-location operation; bundling adds indirection without simplifying call sites
-pub async fn post_to_location(
+async fn post_to_location(
     runtime_services: &RuntimeServices,
     sponsor_id: &Id,
     peer_tracker: &Arc<RwLock<PeerTracker>>,
@@ -271,6 +311,8 @@ pub async fn post_to_location(
     encoded_post_bytes: &EncodedPostBytesV1,
     referenced_post_header_bytes: Option<&[u8]>,
     referenced_hashtags: &[String],
+    bucket_type: BucketType,
+    outcomes_tx: &mpsc::UnboundedSender<SubmissionOutcome>,
 ) -> anyhow::Result<Vec<SubmitPostCommitTokenV1>> {
     let mut peers_visited = Vec::new();
     let mut submit_post_claim_tokens = Vec::new();
@@ -305,7 +347,11 @@ pub async fn post_to_location(
                 anyhow_assert_eq!(&PayloadResponseKind::SubmitPostCommitResponseV1, &response.response_request_kind);
                 let response = json::bytes_to_struct::<SubmitPostCommitResponseV1>(&response.bytes)?;
 
-                submit_post_commit_tokens.push(response.submit_post_commit_token);
+                // Stream this commit back to the submitter as soon as it lands; the receiver may have
+                // already returned (the fast path), in which case the send simply no-ops.
+                let submit_post_commit_token = response.submit_post_commit_token;
+                let _ = outcomes_tx.unbounded_send(SubmissionOutcome { bucket_type, token: submit_post_commit_token.clone() });
+                submit_post_commit_tokens.push(submit_post_commit_token);
                 if submit_post_commit_tokens.len() >= config::REDUNDANT_SERVERS_PER_POST {
                     break;
                 }

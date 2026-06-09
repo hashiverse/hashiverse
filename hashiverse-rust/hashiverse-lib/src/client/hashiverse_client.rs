@@ -143,13 +143,14 @@ impl HashiverseClient {
 
     pub async fn submit_post(&self, post: &str) -> Result<(Vec<SubmitPostCommitTokenV1>, (EncodedPostV1, Bytes)), anyhow::Error> {
         posting::submit_post(
-            &self.runtime_services,
+            self.runtime_services.clone(),
             &self.client_id,
             &self.key_locker,
-            &self.post_bundle_manager,
-            &self.peer_tracker,
+            self.post_bundle_manager.clone(),
+            self.peer_tracker.clone(),
             &self.recent_posts_pen,
             post,
+            true,
         )
         .await
     }

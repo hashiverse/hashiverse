@@ -308,14 +308,35 @@ pub fn from_hex_str<T, const T_BYTES: usize>(str: &str, ctor: impl FnOnce([u8; T
 }
 
 /// Spawn a background async task, using the appropriate runtime for the current target.
+///
+/// Only the native path requires `Send`: `tokio::spawn` runs the task on the multi-threaded
+/// runtime. Both wasm targets are single-threaded and impose no `Send` bound — important because
+/// browser-backed futures (IndexedDB storage, `gloo-net` requests) and the `async_trait(?Send)`
+/// client traits are not `Send`. The browser (`wasm32-unknown-unknown`) drives the task on the JS
+/// event loop via `wasm_bindgen_futures`; the wasmtime test target (`wasm32-wasip1`) uses tokio's
+/// thread-local spawner.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn spawn_background_task<F>(task: F)
 where
     F: Future<Output = ()> + Send + 'static,
 {
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     tokio::spawn(task);
-    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub fn spawn_background_task<F>(task: F)
+where
+    F: Future<Output = ()> + 'static,
+{
     wasm_bindgen_futures::spawn_local(task);
+}
+
+#[cfg(all(target_arch = "wasm32", not(target_os = "unknown")))]
+pub fn spawn_background_task<F>(task: F)
+where
+    F: Future<Output = ()> + 'static,
+{
+    tokio::task::spawn_local(task);
 }
 
 #[cfg(test)]
