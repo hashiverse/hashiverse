@@ -33,6 +33,7 @@ use futures::channel::mpsc;
 use futures::StreamExt;
 use log::{info, trace, warn};
 use scraper::{Html, Selector};
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::protocol::posting::amplification;
@@ -173,9 +174,11 @@ fn build_locations(client_id: &ClientId, post: &str) -> anyhow::Result<(Vec<Link
             };
 
             let selector_hashtag = Selector::parse("hashtag").map_err(|e| anyhow::anyhow!("Failed to parse hashtag selector: {}", e))?;
+            let mut seen_hashtags: HashSet<String> = HashSet::new();
             for element in html.select(&selector_hashtag) {
                 if is_quoted(element) { continue; }
                 if let Some(hashtag) = element.attr("hashtag") {
+                    if !seen_hashtags.insert(hashtag.to_string()) { continue; }
                     trace!("hashtag={:?}", hashtag);
                     referenced_hashtags.push(hashtag.to_string());
                     linked_base_id_details.push(LinkedBaseIdDetail { linked_base_id: Id::from_hashtag_str(hashtag)?, bucket_type: BucketType::Hashtag, referenced_post_header_bytes: None });
@@ -185,11 +188,13 @@ fn build_locations(client_id: &ClientId, post: &str) -> anyhow::Result<(Vec<Link
             }
 
             let selector_mention = Selector::parse("mention").map_err(|e| anyhow::anyhow!("Failed to parse mention selector: {}", e))?;
+            let mut seen_mentions: HashSet<Id> = HashSet::new();
             for element in html.select(&selector_mention) {
                 if is_quoted(element) { continue; }
                 if let Some(client_id_str) = element.attr("client_id") {
                     match Id::from_hex_str(client_id_str) {
                         Ok(client_id) => {
+                            if !seen_mentions.insert(client_id) { continue; }
                             trace!("mention_id={:?}", client_id);
                             linked_base_id_details.push(LinkedBaseIdDetail { linked_base_id: client_id, bucket_type: BucketType::Mention, referenced_post_header_bytes: None });
                         }
@@ -201,11 +206,13 @@ fn build_locations(client_id: &ClientId, post: &str) -> anyhow::Result<(Vec<Link
             }
 
             let selector_reply = Selector::parse("reply").map_err(|e| anyhow::anyhow!("Failed to parse reply selector: {}", e))?;
+            let mut seen_replies: HashSet<Id> = HashSet::new();
             for element in html.select(&selector_reply) {
                 if is_quoted(element) { continue; }
                 if let Some(post_id_str) = element.attr("post_id") {
                     match Id::from_hex_str(post_id_str) {
                         Ok(post_id) => {
+                            if !seen_replies.insert(post_id) { continue; }
                             trace!("reply post_id={:?}", post_id);
                             let referenced_post_header_bytes = element.attr("post_header_hex")
                                 .and_then(|hex_str| hex::decode(hex_str).ok())
@@ -220,11 +227,13 @@ fn build_locations(client_id: &ClientId, post: &str) -> anyhow::Result<(Vec<Link
             }
 
             let selector_sequel = Selector::parse("sequel").map_err(|e| anyhow::anyhow!("Failed to parse sequel selector: {}", e))?;
+            let mut seen_sequels: HashSet<Id> = HashSet::new();
             for element in html.select(&selector_sequel) {
                 if is_quoted(element) { continue; }
                 if let Some(post_id_str) = element.attr("post_id") {
                     match Id::from_hex_str(post_id_str) {
                         Ok(post_id) => {
+                            if !seen_sequels.insert(post_id) { continue; }
                             trace!("sequel post_id={:?}", post_id);
                             let referenced_post_header_bytes = element.attr("post_header_hex")
                                 .and_then(|hex_str| hex::decode(hex_str).ok())
@@ -437,4 +446,93 @@ pub async fn post_feedback_to_location(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::keys::Keys;
+
+    fn test_client_id() -> anyhow::Result<ClientId> {
+        let keys = Keys::from_rnd(false)?;
+        ClientId::new(keys.verification_key_bytes, keys.pq_commitment_bytes)
+    }
+
+    // Two distinct 64-hex-char ids for use as mention / reply / sequel targets.
+    const ID_A: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+    const ID_B: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+
+    fn details_of(details: &[LinkedBaseIdDetail], bucket_type: BucketType) -> Vec<&LinkedBaseIdDetail> {
+        details.iter().filter(|d| d.bucket_type == bucket_type).collect()
+    }
+
+    #[tokio::test]
+    async fn plain_post_yields_only_self_user_bucket() -> anyhow::Result<()> {
+        let client_id = test_client_id()?;
+        let (details, hashtags) = build_locations(&client_id, "just some text with no references")?;
+        assert_eq!(details.len(), 1);
+        assert_eq!(details[0].bucket_type, BucketType::User);
+        assert_eq!(details[0].linked_base_id, client_id.id);
+        assert!(hashtags.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn repeated_hashtag_is_deduplicated() -> anyhow::Result<()> {
+        let client_id = test_client_id()?;
+        let (details, hashtags) = build_locations(&client_id, r#"<hashtag hashtag="rust"></hashtag> and again <hashtag hashtag="rust"></hashtag>"#)?;
+        assert_eq!(hashtags, vec!["rust".to_string()]);
+        assert_eq!(details_of(&details, BucketType::Hashtag).len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn repeated_mention_is_deduplicated() -> anyhow::Result<()> {
+        let client_id = test_client_id()?;
+        let post = format!(r#"<mention client_id="{ID_A}"></mention> hi again <mention client_id="{ID_A}"></mention>"#);
+        let (details, _) = build_locations(&client_id, &post)?;
+        assert_eq!(details_of(&details, BucketType::Mention).len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn distinct_mentions_are_kept() -> anyhow::Result<()> {
+        let client_id = test_client_id()?;
+        let post = format!(r#"<mention client_id="{ID_A}"></mention> <mention client_id="{ID_B}"></mention>"#);
+        let (details, _) = build_locations(&client_id, &post)?;
+        assert_eq!(details_of(&details, BucketType::Mention).len(), 2);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn repeated_reply_keeps_first_header_bytes() -> anyhow::Result<()> {
+        let client_id = test_client_id()?;
+        let post = format!(r#"<reply post_id="{ID_A}" post_header_hex="aabb"></reply> <reply post_id="{ID_A}" post_header_hex="ccdd"></reply>"#);
+        let (details, _) = build_locations(&client_id, &post)?;
+        let replies = details_of(&details, BucketType::ReplyToPost);
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].referenced_post_header_bytes.as_deref(), Some(&[0xaa, 0xbb][..]));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn repeated_sequel_is_deduplicated() -> anyhow::Result<()> {
+        let client_id = test_client_id()?;
+        let post = format!(r#"<sequel post_id="{ID_A}" post_header_hex="aabb"></sequel> <sequel post_id="{ID_A}" post_header_hex="ccdd"></sequel>"#);
+        let (details, _) = build_locations(&client_id, &post)?;
+        let sequels = details_of(&details, BucketType::Sequel);
+        assert_eq!(sequels.len(), 1);
+        assert_eq!(sequels[0].referenced_post_header_bytes.as_deref(), Some(&[0xaa, 0xbb][..]));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn same_id_as_mention_and_reply_stays_two_details() -> anyhow::Result<()> {
+        let client_id = test_client_id()?;
+        let post = format!(r#"<mention client_id="{ID_A}"></mention> <reply post_id="{ID_A}"></reply>"#);
+        let (details, _) = build_locations(&client_id, &post)?;
+        assert_eq!(details_of(&details, BucketType::Mention).len(), 1);
+        assert_eq!(details_of(&details, BucketType::ReplyToPost).len(), 1);
+        Ok(())
+    }
 }
