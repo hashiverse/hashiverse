@@ -62,7 +62,47 @@ pub async fn submit_post(
 
     let timestamp = runtime_services.time_provider.current_time_millis();
 
-    // Parse the post for #hashtags, @mentions, replies, sequels, etc.
+    // Parse the post for the buckets it should be indexed under (User + #hashtags / @mentions / replies / sequels).
+    let (linked_base_id_details, referenced_hashtags) = build_locations(client_id, post)?;
+
+    // Encode the post
+    let linked_base_ids: Vec<Id> = linked_base_id_details.iter().map(|d| d.linked_base_id).collect();
+    let mut encoded_post = EncodedPostV1::new(client_id, timestamp, linked_base_ids, post);
+    let encoded_post_bytes = encoded_post.encode_to_bytes_direct(key_locker).await?;
+
+    let post_commit_tokens = post_to_locations(
+        runtime_services,
+        client_id,
+        post_bundle_manager,
+        peer_tracker,
+        &linked_base_id_details,
+        &encoded_post,
+        &encoded_post_bytes,
+        &referenced_hashtags,
+        timestamp,
+    )
+    .await?;
+
+    let encoded_post_bytes_raw = Bytes::copy_from_slice(encoded_post_bytes.bytes());
+
+    // Record in the recent posts pen so these posts appear immediately in timeline fetches
+    {
+        let bucket_locations_and_post_ids: Vec<_> = post_commit_tokens.iter()
+            .map(|token| (token.bucket_location.clone(), token.post_id))
+            .collect();
+        recent_posts_pen.write().await.add_all(&bucket_locations_and_post_ids, encoded_post_bytes_raw.clone(), timestamp);
+    }
+
+    Ok((post_commit_tokens, (encoded_post, encoded_post_bytes_raw)))
+}
+
+/// Parse the post HTML into the set of buckets it should be indexed under.
+///
+/// The author's own User bucket is always present; on top of that, each #hashtag / @mention /
+/// reply / sequel referenced in the post (but not those nested inside a quoted reply/repost/sequel)
+/// contributes its own target. Returns the targets together with the list of referenced hashtags
+/// (needed by the claim RPC for hashtag-spam accounting).
+fn build_locations(client_id: &ClientId, post: &str) -> anyhow::Result<(Vec<LinkedBaseIdDetail>, Vec<String>)> {
     let mut linked_base_id_details: Vec<LinkedBaseIdDetail> = vec![];
     let mut referenced_hashtags: Vec<String> = vec![];
 
@@ -153,35 +193,7 @@ pub async fn submit_post(
         }
     }
 
-    // Encode the post
-    let linked_base_ids: Vec<Id> = linked_base_id_details.iter().map(|d| d.linked_base_id).collect();
-    let mut encoded_post = EncodedPostV1::new(client_id, timestamp, linked_base_ids, post);
-    let encoded_post_bytes = encoded_post.encode_to_bytes_direct(key_locker).await?;
-
-    let post_commit_tokens = post_to_locations(
-        runtime_services,
-        client_id,
-        post_bundle_manager,
-        peer_tracker,
-        &linked_base_id_details,
-        &encoded_post,
-        &encoded_post_bytes,
-        &referenced_hashtags,
-        timestamp,
-    )
-    .await?;
-
-    let encoded_post_bytes_raw = Bytes::copy_from_slice(encoded_post_bytes.bytes());
-
-    // Record in the recent posts pen so these posts appear immediately in timeline fetches
-    {
-        let bucket_locations_and_post_ids: Vec<_> = post_commit_tokens.iter()
-            .map(|token| (token.bucket_location.clone(), token.post_id))
-            .collect();
-        recent_posts_pen.write().await.add_all(&bucket_locations_and_post_ids, encoded_post_bytes_raw.clone(), timestamp);
-    }
-
-    Ok((post_commit_tokens, (encoded_post, encoded_post_bytes_raw)))
+    Ok((linked_base_id_details, referenced_hashtags))
 }
 
 /// Post the encoded post into every target bucket (User + #hashtags / @mentions / replies / sequels).
