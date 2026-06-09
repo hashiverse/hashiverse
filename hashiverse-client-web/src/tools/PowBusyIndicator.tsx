@@ -23,6 +23,7 @@ export const PowBusyIndicator: React.FC<Props> = ({ hashiverse }) => {
 	// Mirror of `busy` readable synchronously from the (non-React) beforeunload handler.
 	const busy_ref = useRef(false);
 	const in_flight_ref = useRef(false);
+	const stay_redirect_timer_ref = useRef<number | undefined>(undefined);
 	const navigate = useNavigate();
 	const { t } = useTranslation();
 
@@ -48,18 +49,26 @@ export const PowBusyIndicator: React.FC<Props> = ({ hashiverse }) => {
 		return () => clearInterval(handle);
 	}, [refresh]);
 
-	// Warn before the tab closes/reloads while background work is still pending (the worker, and so
-	// the in-flight posts, would be lost). The prompt text is browser-controlled.
+	// Warn before the tab closes/reloads while background work is still pending (closing kills the
+	// worker and loses the in-flight posts). Browsers only allow their own native "Leave site?"
+	// confirm here — a custom dialog isn't possible for a real window close — so that confirm is the
+	// "do you want to exit?" prompt. If the user chooses to stay, the redirect scheduled below runs
+	// (it only fires once the page resumes, i.e. they did NOT leave) and takes them to the PoW jobs
+	// page so they can see what's left.
 	useEffect(() => {
 		const on_before_unload = (event: BeforeUnloadEvent) => {
-			if (busy_ref.current) {
-				event.preventDefault();
-				event.returnValue = "";
-			}
+			if (!busy_ref.current) return;
+			event.preventDefault();
+			event.returnValue = "";
+			window.clearTimeout(stay_redirect_timer_ref.current);
+			stay_redirect_timer_ref.current = window.setTimeout(() => navigate("/geeks/pow-jobs"), 200);
 		};
 		window.addEventListener("beforeunload", on_before_unload);
-		return () => window.removeEventListener("beforeunload", on_before_unload);
-	}, []);
+		return () => {
+			window.removeEventListener("beforeunload", on_before_unload);
+			window.clearTimeout(stay_redirect_timer_ref.current);
+		};
+	}, [navigate]);
 
 	// Always mounted so we can fade the opacity in/out; when idle it's invisible and non-interactive.
 	return (
