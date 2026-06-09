@@ -9,6 +9,7 @@ use hashiverse_lib::protocol::posting::encoded_post_bundle::EncodedPostBundleV1;
 use hashiverse_lib::protocol::posting::encoded_post_bundle_feedback::{EncodedPostBundleFeedbackHeaderV1, EncodedPostBundleFeedbackV1};
 use hashiverse_lib::protocol::posting::encoded_post_feedback::EncodedPostFeedbackV1;
 use hashiverse_lib::tools::buckets::BucketLocation;
+use hashiverse_lib::tools::config;
 use hashiverse_lib::tools::hashing;
 use hashiverse_lib::tools::pow_generator::native_parallel_pow_generator::NativeParallelPowGenerator;
 use hashiverse_lib::tools::runtime_services::RuntimeServices;
@@ -394,6 +395,56 @@ async fn test_caching_post_bundle_feedbacks() -> anyhow::Result<()> {
     warn!("--- Driving feedback cache on holder {} ---", server.server_id.id);
     drive_feedback_hits_upload_and_verify_cached(&server, &bucket_location, &runtime_services).await?;
     warn!("--- Holder is serving the feedback from cache ---");
+
+    cancellation_token.cancel();
+    Ok(())
+}
+
+/// A "fast" post (`wait_for_all_submissions = false`) returns as soon as the User bucket secures its
+/// first commit, then a background task drives the remaining redundancy. Verify the post still
+/// reaches full `REDUNDANT_SERVERS_PER_POST` redundancy without the caller waiting for it.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_fast_post_backgrounds_full_redundancy() -> anyhow::Result<()> {
+    let (_temp_dir, temp_dir_path) = get_temp_dir()?;
+    let time_provider = Arc::new(ScaledTimeProvider::new(CLOCK_SCALE_FACTOR));
+    configure_logging_with_time_provider("warn", time_provider.clone());
+
+    let cancellation_token = CancellationToken::new();
+    let environment_factory = Arc::new(MemEnvironmentFactory::new(&temp_dir_path));
+    let transport_factory = Arc::new(MemTransportFactory::new(NoopDdosProtection::default(), ManualBootstrapProvider::new(vec!["443".to_string()])));
+    let runtime_services = Arc::new(RuntimeServices {
+        time_provider: time_provider.clone(),
+        transport_factory,
+        pow_generator: Arc::new(NativeParallelPowGenerator::new()),
+    });
+
+    warn!("--- Starting servers ---");
+    let servers = start_cluster(&runtime_services, &environment_factory, &cancellation_token, 20).await?;
+    time_provider.sleep_millis(MILLIS_IN_MINUTE.const_mul(30)).await;
+
+    warn!("--- Fast posting (wait_for_all_submissions = false) ---");
+    let poster = make_client(&runtime_services, "poster").await?;
+    let (post_result, _) = poster.submit_post_with_wait("Background propagation test #bg", false).await?;
+    // The fast path returns after just the first User-bucket commit.
+    anyhow_assert!(!post_result.is_empty(), "fast submit_post returned no commit token");
+    let location_id = post_result[0].bucket_location.location_id;
+
+    warn!("--- Waiting for the background task to complete the redundancy ---");
+    let mut holders = 0usize;
+    for _ in 0..40 {
+        time_provider.sleep_millis(MILLIS_IN_SECOND.const_mul(10)).await;
+        let now = time_provider.current_time_millis();
+        holders = servers.iter().filter(|s| holds_bundle(s, &location_id, now)).count();
+        if holders >= config::REDUNDANT_SERVERS_PER_POST {
+            break;
+        }
+    }
+    anyhow_assert!(
+        holders >= config::REDUNDANT_SERVERS_PER_POST,
+        "background task did not reach full redundancy: only {} of {} servers hold the User bucket",
+        holders,
+        config::REDUNDANT_SERVERS_PER_POST
+    );
 
     cancellation_token.cancel();
     Ok(())

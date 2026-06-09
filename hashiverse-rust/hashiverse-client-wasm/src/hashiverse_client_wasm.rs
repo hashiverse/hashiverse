@@ -109,8 +109,16 @@ impl HashiverseClientWasm {
 
     #[wasm_bindgen]
     pub async fn post_v1(&self, post: &str) -> Result<Post, JsValue> {
+        self.post_v2(post, true).await
+    }
+
+    /// Submit a post. With `wait_for_all_submissions == false` this returns as soon as the post
+    /// secures its first User-bucket commit, finishing the remaining redundancy and secondary
+    /// buckets on a background task (visible via the PoW busy indicator).
+    #[wasm_bindgen]
+    pub async fn post_v2(&self, post: &str, wait_for_all_submissions: bool) -> Result<Post, JsValue> {
         wasm_try!({
-            let (commit_tokens, (encoded_post, raw_bytes)) = self.hashiverse_client.submit_post(post).await?;
+            let (commit_tokens, (encoded_post, raw_bytes)) = self.hashiverse_client.submit_post_with_wait(post, wait_for_all_submissions).await?;
             let bucket_location = &commit_tokens[0].bucket_location;
             let client_id = encoded_post.header.client_id()?;
             let encoded_post_header_hex = hex::encode(EncodedPostV1::bytes_without_body(raw_bytes)?);
@@ -258,6 +266,13 @@ impl HashiverseClientWasm {
                 })
                 .collect::<Vec<_>>()
         })
+    }
+
+    /// Whether there is background PoW work happening now, or within the last `within_millis`.
+    /// Polled by the GUI to show/hide the "busy" indicator.
+    #[wasm_bindgen]
+    pub async fn is_pow_busy_v1(&self, within_millis: u32) -> Result<bool, JsValue> {
+        wasm_try!({ self.hashiverse_client.is_pow_busy(within_millis as i64) })
     }
 
     fn post_process_timeline_posts(&self, encoded_posts: Vec<(BucketLocation, EncodedPostV1, Bytes, bool)>, oldest_processed_time_millis: TimeMillis) -> anyhow::Result<SingleTimelineGetMoreV1Response> {

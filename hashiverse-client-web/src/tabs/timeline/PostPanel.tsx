@@ -372,7 +372,7 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 		try {
 			set_reposting(true);
 			const repost_html = `<repost post_id="${post.post_id}" bucket_location="${post.bucket_location}" client_id="${post.client_id}">${sanitized_html}</repost>`;
-			await hashiverse.post_v1(repost_html);
+			await hashiverse.post_v2(repost_html, false);
 			await hashiverse.submit_feedback_v1(post.bucket_location, post.post_id, FEEDBACK_TYPE_REPOST);
 			Tools.play_ui_sound(sound_interaction_positive);
 			repost_close();

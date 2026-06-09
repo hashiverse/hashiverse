@@ -42,6 +42,7 @@ import { UserTimelineTab } from "./tabs/timeline/UserTimelineTab.tsx";
 import { LOCAL_SETTINGS_KEY_POST_LOGIN_RETURN, LOCAL_SETTINGS_KEY_PREFERRED_DOMAIN, local_settings_delete, local_settings_get, local_settings_set } from "./tools/LocalSettings.ts";
 import { register_bio } from "./tools/MentionStore.ts";
 import { NeedsLoggedIn } from "./tools/NeedsLoggedIn.tsx";
+import { PowBusyIndicator } from "./tools/PowBusyIndicator.tsx";
 import type { UserSettingsCache } from "./tools/UserSettingsCache.ts";
 import { useKeyboardInsetBottomCssVariable } from "./tools/useKeyboardInsetBottomCssVariable.ts";
 
@@ -150,6 +151,7 @@ const App: React.FC<AppProps> = ({ initial_hashiverse, initial_settings }) => {
 				<RouteTitleUpdater />
 				<ComposeDialog hashiverse={hashiverse} user_settings_cache={user_settings_cache} />
 				<PostLoginReturner user_settings_cache={user_settings_cache} />
+				<PowBusyIndicator hashiverse={hashiverse} />
 				<Routes>
 					<Route path="/" element={<HomeTab hashiverse={hashiverse} />} />
 					<Route

@@ -250,6 +250,7 @@
 	"toast.followed_users_saved": "Gefolgte Personen gespeichert",
 	"toast.local_settings_reset": "Lokale Einstellungen zurückgesetzt",
 	"toast.post_submitted": "Beitrag veröffentlicht",
+	"tooltip.background_work_in_progress": "Hintergrundarbeit läuft — für Details klicken",
 	"user.anonymous": "Anonym",
 	"user.copy_qr": "QR in Zwischenablage kopieren",
 	"user.copy_url": "URL in Zwischenablage kopieren",
