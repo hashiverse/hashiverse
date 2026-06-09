@@ -24,6 +24,7 @@ use crate::protocol::payload::payload::{PayloadRequestKind, PayloadResponseKind,
 use crate::protocol::rpc;
 use crate::tools::buckets::{bucket_durations_for_type, generate_bucket_location, BucketLocation, BucketType};
 use crate::tools::client_id::ClientId;
+use crate::tools::time::TimeMillis;
 use crate::tools::{config, json};
 use crate::tools::runtime_services::RuntimeServices;
 use bytes::Bytes;
@@ -34,6 +35,14 @@ use tokio::sync::RwLock;
 use crate::protocol::posting::amplification;
 use crate::protocol::posting::encoded_post_feedback::EncodedPostFeedbackV1;
 use crate::tools::types::Id;
+
+/// One target the post needs indexing under: the author's own User bucket, plus one per
+/// referenced #hashtag / @mention / reply / sequel parsed out of the post HTML.
+struct LinkedBaseIdDetail {
+    linked_base_id: Id,
+    bucket_type: BucketType,
+    referenced_post_header_bytes: Option<Bytes>,
+}
 
 #[allow(clippy::too_many_arguments)] // each arg is a distinct piece of the client state submitting a post; bundling adds indirection without simplifying the call site
 pub async fn submit_post(
@@ -52,12 +61,6 @@ pub async fn submit_post(
     }
 
     let timestamp = runtime_services.time_provider.current_time_millis();
-
-    struct LinkedBaseIdDetail {
-        linked_base_id: Id,
-        bucket_type: BucketType,
-        referenced_post_header_bytes: Option<Bytes>,
-    }
 
     // Parse the post for #hashtags, @mentions, replies, sequels, etc.
     let mut linked_base_id_details: Vec<LinkedBaseIdDetail> = vec![];
@@ -155,11 +158,55 @@ pub async fn submit_post(
     let mut encoded_post = EncodedPostV1::new(client_id, timestamp, linked_base_ids, post);
     let encoded_post_bytes = encoded_post.encode_to_bytes_direct(key_locker).await?;
 
+    let post_commit_tokens = post_to_locations(
+        runtime_services,
+        client_id,
+        post_bundle_manager,
+        peer_tracker,
+        &linked_base_id_details,
+        &encoded_post,
+        &encoded_post_bytes,
+        &referenced_hashtags,
+        timestamp,
+    )
+    .await?;
+
+    let encoded_post_bytes_raw = Bytes::copy_from_slice(encoded_post_bytes.bytes());
+
+    // Record in the recent posts pen so these posts appear immediately in timeline fetches
+    {
+        let bucket_locations_and_post_ids: Vec<_> = post_commit_tokens.iter()
+            .map(|token| (token.bucket_location.clone(), token.post_id))
+            .collect();
+        recent_posts_pen.write().await.add_all(&bucket_locations_and_post_ids, encoded_post_bytes_raw.clone(), timestamp);
+    }
+
+    Ok((post_commit_tokens, (encoded_post, encoded_post_bytes_raw)))
+}
+
+/// Post the encoded post into every target bucket (User + #hashtags / @mentions / replies / sequels).
+///
+/// For each target it starts at the widest bucket duration and narrows until a non-overflowed,
+/// non-sealed bucket accepts it. The User bucket is mandatory — if it secures no commit we bail;
+/// secondary buckets are best-effort (a failed hashtag / mention is logged and skipped, healing
+/// reconciles the rest later).
+#[allow(clippy::too_many_arguments)] // each arg is a distinct piece of the post-to-locations operation; bundling adds indirection without simplifying the call site
+async fn post_to_locations(
+    runtime_services: &RuntimeServices,
+    client_id: &ClientId,
+    post_bundle_manager: &LivePostBundleManager,
+    peer_tracker: &Arc<RwLock<PeerTracker>>,
+    linked_base_id_details: &[LinkedBaseIdDetail],
+    encoded_post: &EncodedPostV1,
+    encoded_post_bytes: &EncodedPostBytesV1,
+    referenced_hashtags: &[String],
+    timestamp: TimeMillis,
+) -> anyhow::Result<Vec<SubmitPostCommitTokenV1>> {
     // The commit tokens for the User's post
     let mut post_commit_tokens = Vec::new();
 
     // Start the post machine
-    for linked_base_id_detail in &linked_base_id_details {
+    for linked_base_id_detail in linked_base_id_details {
         trace!("Posting to bucket type: {:?}, linked_base_id: {}", linked_base_id_detail.bucket_type, linked_base_id_detail.linked_base_id);
         let try_result = try {
             // Where are we going to post it?  Start at the widest bucket and work our way narrower till we succeed
@@ -170,7 +217,7 @@ pub async fn submit_post(
                 let post_bundle = post_bundle_manager.get_post_bundle(&bucket_location, timestamp).await?;
                 if !post_bundle.header.overflowed && !post_bundle.header.sealed {
                     info!("Posting to {:?}", bucket_location);
-                    let result = post_to_location(runtime_services, &client_id.id, peer_tracker, &bucket_location, &encoded_post, &encoded_post_bytes, linked_base_id_detail.referenced_post_header_bytes.as_deref(), &referenced_hashtags).await;
+                    let result = post_to_location(runtime_services, &client_id.id, peer_tracker, &bucket_location, encoded_post, encoded_post_bytes, linked_base_id_detail.referenced_post_header_bytes.as_deref(), referenced_hashtags).await;
                     match result {
                         Ok(mut result) => {
                             post_commit_tokens.append(&mut result);
@@ -199,17 +246,7 @@ pub async fn submit_post(
         }
     }
 
-    let encoded_post_bytes_raw = Bytes::copy_from_slice(encoded_post_bytes.bytes());
-
-    // Record in the recent posts pen so these posts appear immediately in timeline fetches
-    {
-        let bucket_locations_and_post_ids: Vec<_> = post_commit_tokens.iter()
-            .map(|token| (token.bucket_location.clone(), token.post_id))
-            .collect();
-        recent_posts_pen.write().await.add_all(&bucket_locations_and_post_ids, encoded_post_bytes_raw.clone(), timestamp);
-    }
-
-    Ok((post_commit_tokens, (encoded_post, encoded_post_bytes_raw)))
+    Ok(post_commit_tokens)
 }
 
 #[allow(clippy::too_many_arguments)] // each arg is a distinct piece of the post-to-location operation; bundling adds indirection without simplifying call sites
