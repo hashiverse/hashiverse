@@ -20,6 +20,8 @@
 //! [`hashiverse_lib::tools::config::SERVER_DDOS_MAX_CONNECTIONS_PER_IP`] slots. The
 //! `NET_ADMIN` capability is required on the container — see the operator docs.
 
+use hashiverse_lib::tools::time_provider::moka_clock::TimeProviderMokaClock;
+use hashiverse_lib::tools::time_provider::time_provider::TimeProvider;
 use hashiverse_lib::transport::ddos::ddos::{DdosProtection, DdosScore};
 use parking_lot::Mutex;
 use log::{info, warn};
@@ -51,10 +53,11 @@ pub struct IpsetDdosProtection {
     scores: Cache<String, Arc<Mutex<DdosScore>>>,
     ipset_throttle: Cache<String, ()>,
     connections: Mutex<HashMap<String, usize>>,
+    time_provider: Arc<dyn TimeProvider>,
 }
 
 impl IpsetDdosProtection {
-    pub fn new(set_name: impl Into<String>, score_threshold: f64, decay_per_second: f64, bad_request_penalty: f64, max_connections_per_ip: usize) -> Self {
+    pub fn new(set_name: impl Into<String>, score_threshold: f64, decay_per_second: f64, bad_request_penalty: f64, max_connections_per_ip: usize, time_provider: Arc<dyn TimeProvider>) -> Self {
         let set_name = set_name.into();
 
         // Idle expiry: time for a maxed-out score to fully decay, with 2x margin
@@ -83,27 +86,40 @@ impl IpsetDdosProtection {
             }
         }
 
+        // Score idle-eviction and the ipset throttle run on our TimeProvider, not wall time.
+        let scores = Cache::builder()
+            .time_to_idle(Duration::from_secs(idle_secs))
+            .external_clock(Arc::new(TimeProviderMokaClock::new(time_provider.clone())))
+            .build();
+        let ipset_throttle = Cache::builder()
+            .time_to_live(Duration::from_secs(10))
+            .external_clock(Arc::new(TimeProviderMokaClock::new(time_provider.clone())))
+            .build();
+
         Self {
             set_name,
             score_threshold,
             decay_per_second,
             bad_request_penalty,
             max_connections_per_ip,
-            scores: Cache::builder().time_to_idle(Duration::from_secs(idle_secs)).build(),
-            ipset_throttle: Cache::builder().time_to_live(Duration::from_secs(10)).build(),
+            scores,
+            ipset_throttle,
             connections: Mutex::new(HashMap::new()),
+            time_provider,
         }
     }
 
     fn increment_score(&self, ip: &str, points: f64) -> f64 {
+        let now = self.time_provider.current_time_millis();
         let entry = self.scores.get_with(ip.to_string(), || Arc::new(Mutex::new(DdosScore::new())));
-        entry.lock().increment(points, self.decay_per_second)
+        entry.lock().increment(points, self.decay_per_second, now)
     }
 
     fn is_score_banned(&self, ip: &str) -> bool {
+        let now = self.time_provider.current_time_millis();
         self.scores
             .get(ip)
-            .map(|entry| entry.lock().current(self.decay_per_second) >= self.score_threshold)
+            .map(|entry| entry.lock().current(self.decay_per_second, now) >= self.score_threshold)
             .unwrap_or(false)
     }
 

@@ -21,6 +21,8 @@ use hashiverse_lib::protocol::peer::Peer;
 use hashiverse_lib::tools::buckets::BucketLocation;
 use hashiverse_lib::tools::server_id::ServerId;
 use hashiverse_lib::tools::time::{TimeMillis, MILLIS_IN_MINUTE};
+use hashiverse_lib::tools::time_provider::moka_clock::TimeProviderMokaClock;
+use hashiverse_lib::tools::time_provider::time_provider::TimeProvider;
 use hashiverse_lib::tools::tools::leading_agreement_bits_xor;
 use hashiverse_lib::tools::types::Id;
 use moka::sync::Cache;
@@ -76,17 +78,22 @@ pub struct PostBundleCache {
 }
 
 impl PostBundleCache {
-    pub fn new(max_originators_per_location: usize, max_bytes: u64) -> Self {
+    pub fn new(max_originators_per_location: usize, max_bytes: u64, time_provider: Arc<dyn TimeProvider>) -> Self {
+        // Drive moka's TTI/TTL from our TimeProvider (scaled in tests) rather than wall time.
+        let clock = Arc::new(TimeProviderMokaClock::new(time_provider));
+
         let bundles = Cache::builder()
             .weigher(|_key: &Id, entry: &Arc<Mutex<CachedPostBundleLocationEntry>>| {
                 entry.lock().map(|e| e.weight()).unwrap_or(POST_BUNDLE_PLACEHOLDER_WEIGHT)
             })
             .max_capacity(max_bytes)
             .time_to_idle(CACHE_LOCATION_TTI)
+            .external_clock(clock.clone())
             .build();
 
         let inflight = Cache::builder()
             .time_to_live(CACHE_REQUEST_TOKEN_TTL_DURATION)
+            .external_clock(clock)
             .build();
 
         Self { max_originators_per_location, bundles, inflight }
@@ -212,7 +219,7 @@ mod tests {
     #[tokio::test]
     async fn test_below_threshold_no_token() -> anyhow::Result<()> {
         let (server_id, peer_self) = make_test_server_and_peer().await?;
-        let cache = PostBundleCache::new(5, 64 * 1024 * 1024);
+        let cache = PostBundleCache::new(5, 64 * 1024 * 1024, Arc::new(RealTimeProvider));
         let bucket_location = make_test_bucket_location();
         let now = TimeMillis(1_000_000);
 
@@ -228,7 +235,7 @@ mod tests {
     #[tokio::test]
     async fn test_at_threshold_token_issued_then_deduplicated() -> anyhow::Result<()> {
         let (server_id, peer_self) = make_test_server_and_peer().await?;
-        let cache = PostBundleCache::new(5, 64 * 1024 * 1024);
+        let cache = PostBundleCache::new(5, 64 * 1024 * 1024, Arc::new(RealTimeProvider));
         let bucket_location = make_test_bucket_location();
         let now = TimeMillis(1_000_000);
 
@@ -251,7 +258,7 @@ mod tests {
     #[tokio::test]
     async fn test_upload_and_retrieval() -> anyhow::Result<()> {
         let (server_id, peer_self) = make_test_server_and_peer().await?;
-        let cache = PostBundleCache::new(5, 64 * 1024 * 1024);
+        let cache = PostBundleCache::new(5, 64 * 1024 * 1024, Arc::new(RealTimeProvider));
         let bucket_location = make_test_bucket_location();
         let location_id = bucket_location.location_id;
         let now = TimeMillis(1_000_000);
@@ -273,7 +280,7 @@ mod tests {
     #[tokio::test]
     async fn test_already_retrieved_filtered() -> anyhow::Result<()> {
         let (server_id, peer_self) = make_test_server_and_peer().await?;
-        let cache = PostBundleCache::new(5, 64 * 1024 * 1024);
+        let cache = PostBundleCache::new(5, 64 * 1024 * 1024, Arc::new(RealTimeProvider));
         let bucket_location = make_test_bucket_location();
         let location_id = bucket_location.location_id;
         let now = TimeMillis(1_000_000);
@@ -290,13 +297,81 @@ mod tests {
 
     #[tokio::test]
     async fn test_upload_returns_false_when_not_in_cache() -> anyhow::Result<()> {
-        let cache = PostBundleCache::new(5, 64 * 1024 * 1024);
+        let cache = PostBundleCache::new(5, 64 * 1024 * 1024, Arc::new(RealTimeProvider));
         let location_id = Id::random();
         let originator_id = Id::random();
 
         // No on_get call — entry was never inserted — upload must be rejected
         let accepted = cache.on_upload(location_id, originator_id, Bytes::from_static(b"bundle"), TimeMillis(1_000_000), false);
         assert!(!accepted);
+
+        Ok(())
+    }
+
+    /// When more originators are uploaded than `max_originators_per_location`, the cache keeps the
+    /// ones *closest* to the location_id (highest leading-agreement-bits) and evicts the furthest.
+    #[tokio::test]
+    async fn test_overflow_keeps_closest_originators() -> anyhow::Result<()> {
+        let (server_id, peer_self) = make_test_server_and_peer().await?;
+        let cache = PostBundleCache::new(3, 64 * 1024 * 1024, Arc::new(RealTimeProvider)); // keep at most 3
+        let bucket_location = make_test_bucket_location();
+        let location_id = bucket_location.location_id;
+        let now = TimeMillis(1_000_000);
+
+        // Register the placeholder entry so uploads are accepted.
+        cache.on_get(&bucket_location, &[], &peer_self, &server_id, now);
+
+        // Flipping bit `p` of the location_id yields an originator whose leading-agreement-bits
+        // with the location_id is exactly `p` — i.e. a controllable XOR distance.
+        let originator_at = |flip_bit: usize| -> Id {
+            let mut bytes = location_id.0;
+            bytes[flip_bit / 8] ^= 1 << (7 - (flip_bit % 8));
+            Id(bytes)
+        };
+
+        // Agreements 20,40,60,80,100. With a cap of 3 the three closest (60,80,100) must survive.
+        for &p in &[20usize, 40, 60, 80, 100] {
+            let bytes = Bytes::from(format!("bundle-agreement-{}", p));
+            // sealed => never individually stale, so on_get returns every survivor.
+            cache.on_upload(location_id, originator_at(p), bytes, now, true);
+        }
+
+        let result = cache.on_get(&bucket_location, &[], &peer_self, &server_id, now);
+        let cached: std::collections::HashSet<Vec<u8>> = result.cached_items.iter().map(|b| b.to_vec()).collect();
+        assert_eq!(3, cached.len(), "cache must keep exactly max_originators_per_location entries");
+        for &p in &[60usize, 80, 100] {
+            assert!(cached.contains(format!("bundle-agreement-{}", p).as_bytes()), "closest originator (agreement {}) must be kept", p);
+        }
+        for &p in &[20usize, 40] {
+            assert!(!cached.contains(format!("bundle-agreement-{}", p).as_bytes()), "furthest originator (agreement {}) must be evicted", p);
+        }
+        Ok(())
+    }
+
+    /// The `CacheRequestToken` the server issues carries a TTL-bounded expiry — exactly the window
+    /// the `CachePostBundleV1` handler enforces via `token.is_expired(now)`. This is the
+    /// deterministic counterpart to that handler check (the integration tests can't exercise the
+    /// real RPC upload reliably because, under the scaled clock, the 30s TTL is only ~33ms of real
+    /// time and the upload RPC can outlive it — the very race that made the cache tests flaky).
+    /// (Token signature/PoW verification needs a fully-PoW'd identity and is covered by the
+    /// end-to-end `test_caching_spreads_via_client_fetches`.)
+    #[tokio::test]
+    async fn test_cache_request_token_expiry() -> anyhow::Result<()> {
+        let (server_id, peer_self) = make_test_server_and_peer().await?;
+        let cache = PostBundleCache::new(5, 64 * 1024 * 1024, Arc::new(RealTimeProvider));
+        let bucket_location = make_test_bucket_location();
+        let now = TimeMillis(1_000_000);
+
+        // Drive the hit threshold so the server issues a token.
+        let mut token = None;
+        for _ in 0..CACHE_HIT_THRESHOLD {
+            token = cache.on_get(&bucket_location, &[], &peer_self, &server_id, now).cache_request_token.or(token);
+        }
+        let token = token.expect("server issues a token at the hit threshold");
+
+        assert!(!token.is_expired(now), "token must be valid at issue time");
+        assert!(!token.is_expired(TimeMillis(now.0 + CACHE_REQUEST_TOKEN_TTL_DURATION_MILLIS.0 - 1)), "token must be valid just before its TTL elapses");
+        assert!(token.is_expired(TimeMillis(now.0 + CACHE_REQUEST_TOKEN_TTL_DURATION_MILLIS.0 + 1)), "token must be expired once its TTL has elapsed");
 
         Ok(())
     }

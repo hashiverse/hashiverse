@@ -12,6 +12,8 @@
 //! `hashiverse-server-lib` wraps this with a real firewall-level ban via
 //! [`crate::tools::config::SERVER_DDOS_IPSET_SET_NAME`].
 
+use crate::tools::time_provider::moka_clock::TimeProviderMokaClock;
+use crate::tools::time_provider::time_provider::TimeProvider;
 use crate::transport::ddos::ddos::{DdosProtection, DdosScore};
 use log::warn;
 use moka::sync::Cache;
@@ -36,35 +38,44 @@ pub struct MemDdosProtection {
     max_connections_per_ip: usize,
     scores: Cache<String, Arc<Mutex<DdosScore>>>,
     connections: Mutex<HashMap<String, usize>>,
+    time_provider: Arc<dyn TimeProvider>,
 }
 
 impl MemDdosProtection {
-    pub fn new(score_threshold: f64, decay_per_second: f64, bad_request_penalty: f64, max_connections_per_ip: usize) -> Self {
+    pub fn new(score_threshold: f64, decay_per_second: f64, bad_request_penalty: f64, max_connections_per_ip: usize, time_provider: Arc<dyn TimeProvider>) -> Self {
         // Idle expiry: time for a maxed-out score to fully decay, with 2x margin
         let idle_secs = if decay_per_second > 0.0 {
             (score_threshold / decay_per_second * 2.0).ceil() as u64
         } else {
             3600 // fallback: 1 hour if no decay
         };
+        // Score idle-eviction runs on our TimeProvider (scaled in tests), not wall time.
+        let scores = Cache::builder()
+            .time_to_idle(Duration::from_secs(idle_secs))
+            .external_clock(Arc::new(TimeProviderMokaClock::new(time_provider.clone())))
+            .build();
         Self {
             score_threshold,
             decay_per_second,
             bad_request_penalty,
             max_connections_per_ip,
-            scores: Cache::builder().time_to_idle(Duration::from_secs(idle_secs)).build(),
+            scores,
             connections: Mutex::new(HashMap::new()),
+            time_provider,
         }
     }
 
     fn increment_score(&self, ip: &str, points: f64) -> f64 {
+        let now = self.time_provider.current_time_millis();
         let entry = self.scores.get_with(ip.to_string(), || Arc::new(Mutex::new(DdosScore::new())));
-        entry.lock().increment(points, self.decay_per_second)
+        entry.lock().increment(points, self.decay_per_second, now)
     }
 
     fn is_score_banned(&self, ip: &str) -> bool {
+        let now = self.time_provider.current_time_millis();
         self.scores
             .get(ip)
-            .map(|entry| entry.lock().current(self.decay_per_second) >= self.score_threshold)
+            .map(|entry| entry.lock().current(self.decay_per_second, now) >= self.score_threshold)
             .unwrap_or(false)
     }
 }
@@ -109,6 +120,8 @@ impl DdosProtection for MemDdosProtection {
 mod tests {
     use super::*;
     use crate::tools::config;
+    use crate::tools::time::TimeMillis;
+    use crate::tools::time_provider::manual_time_provider::ManualTimeProvider;
     use crate::transport::ddos::ddos::DdosConnectionGuard;
 
     fn make_ddos() -> Arc<MemDdosProtection> {
@@ -117,6 +130,7 @@ mod tests {
             config::SERVER_DDOS_DECAY_PER_SECOND,
             config::SERVER_DDOS_BAD_REQUEST_PENALTY,
             config::SERVER_DDOS_MAX_CONNECTIONS_PER_IP,
+            Arc::new(ManualTimeProvider::default()),
         ))
     }
 
@@ -154,7 +168,7 @@ mod tests {
 
     #[test]
     fn banned_ip_cannot_acquire_connection() {
-        let ddos = Arc::new(MemDdosProtection::new(3.0, 0.0, 3.0, 8));
+        let ddos = Arc::new(MemDdosProtection::new(3.0, 0.0, 3.0, 8, Arc::new(ManualTimeProvider::default())));
         let ip = "1.2.3.4";
 
         // Exhaust the score to trigger a ban
@@ -166,7 +180,7 @@ mod tests {
 
     #[test]
     fn guard_report_bad_request_delegates() {
-        let ddos = Arc::new(MemDdosProtection::new(100.0, 0.0, 5.0, 8));
+        let ddos = Arc::new(MemDdosProtection::new(100.0, 0.0, 5.0, 8, Arc::new(ManualTimeProvider::default())));
         let ip = "5.6.7.8";
         let guard = DdosConnectionGuard::try_new(ddos.clone(), ip).unwrap();
 
@@ -194,7 +208,7 @@ mod tests {
     fn allow_request_returns_false_at_threshold() {
         // Use zero decay so timing doesn't affect the test
         let threshold = 5.0;
-        let ddos = Arc::new(MemDdosProtection::new(threshold, 0.0, 1.0, 8));
+        let ddos = Arc::new(MemDdosProtection::new(threshold, 0.0, 1.0, 8, Arc::new(ManualTimeProvider::default())));
         let ip = "3.3.3.3";
 
         for i in 0..4 {
@@ -209,7 +223,7 @@ mod tests {
     fn bad_request_penalty_causes_ban_faster_than_normal_requests() {
         let threshold = 20.0;
         let penalty = 10.0;
-        let ddos = Arc::new(MemDdosProtection::new(threshold, 0.0, penalty, 8));
+        let ddos = Arc::new(MemDdosProtection::new(threshold, 0.0, penalty, 8, Arc::new(ManualTimeProvider::default())));
         let ip = "4.4.4.4";
 
         ddos.report_bad_request(ip); // score = 10
@@ -222,7 +236,7 @@ mod tests {
     #[test]
     fn score_is_independent_per_ip() {
         let threshold = 3.0;
-        let ddos = Arc::new(MemDdosProtection::new(threshold, 0.0, 1.0, 8));
+        let ddos = Arc::new(MemDdosProtection::new(threshold, 0.0, 1.0, 8, Arc::new(ManualTimeProvider::default())));
         let ip_a = "10.0.0.1";
         let ip_b = "10.0.0.2";
 
@@ -236,18 +250,19 @@ mod tests {
 
     #[test]
     fn score_decays_over_time() {
-        // High threshold, fast decay: score should drop below threshold quickly
-        let ddos = Arc::new(MemDdosProtection::new(5.0, 1000.0, 1.0, 8));
+        // High threshold, fast decay; drive the clock by hand so the test is deterministic.
+        let time_provider = Arc::new(ManualTimeProvider::default());
+        let ddos = Arc::new(MemDdosProtection::new(5.0, 1000.0, 1.0, 8, time_provider.clone()));
         let ip = "7.7.7.7";
 
-        // Add 4 points (just under threshold)
+        // At t=0, add 4 points (just under the threshold of 5).
         for _ in 0..4 {
-            ddos.allow_request(ip);
+            assert!(ddos.allow_request(ip));
         }
 
-        // With decay_per_second=1000, even a microsecond decays significantly
-        // Next request should be allowed because the score has decayed
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        // Advance 10ms: with decay_per_second=1000 that's 1000 * 0.01 = 10 points of
+        // decay, draining the score to 0. The next request should therefore be allowed.
+        time_provider.set_time(TimeMillis(10));
         assert!(ddos.allow_request(ip), "score should have decayed, allowing the request");
     }
 }

@@ -17,6 +17,8 @@ use hashiverse_lib::protocol::peer::Peer;
 use hashiverse_lib::tools::buckets::BucketLocation;
 use hashiverse_lib::tools::server_id::ServerId;
 use hashiverse_lib::tools::time::{TimeMillis, MILLIS_IN_MINUTE};
+use hashiverse_lib::tools::time_provider::moka_clock::TimeProviderMokaClock;
+use hashiverse_lib::tools::time_provider::time_provider::TimeProvider;
 use hashiverse_lib::tools::types::Id;
 use moka::sync::Cache;
 use std::sync::{Arc, Mutex};
@@ -66,17 +68,22 @@ pub struct PostBundleFeedbackCache {
 }
 
 impl PostBundleFeedbackCache {
-    pub fn new(max_bytes: u64) -> Self {
+    pub fn new(max_bytes: u64, time_provider: Arc<dyn TimeProvider>) -> Self {
+        // Drive moka's TTI/TTL from our TimeProvider (scaled in tests) rather than wall time.
+        let clock = Arc::new(TimeProviderMokaClock::new(time_provider));
+
         let bundles = Cache::builder()
             .weigher(|_key: &Id, entry: &Arc<Mutex<CachedPostBundleFeedbackLocationEntry>>| {
                 entry.lock().map(|e| e.weight()).unwrap_or(POST_BUNDLE_FEEDBACK_PLACEHOLDER_WEIGHT)
             })
             .max_capacity(max_bytes)
             .time_to_idle(CACHE_LOCATION_TTI)
+            .external_clock(clock.clone())
             .build();
 
         let inflight = Cache::builder()
             .time_to_live(CACHE_REQUEST_TOKEN_TTL_DURATION)
+            .external_clock(clock)
             .build();
 
         Self { bundles, inflight }
@@ -169,7 +176,7 @@ mod tests {
     #[tokio::test]
     async fn test_below_threshold_no_token() -> anyhow::Result<()> {
         let (server_id, peer_self) = make_test_server_and_peer().await?;
-        let cache = PostBundleFeedbackCache::new(16 * 1024 * 1024);
+        let cache = PostBundleFeedbackCache::new(16 * 1024 * 1024, Arc::new(RealTimeProvider));
         let bucket_location = make_test_bucket_location();
         let now = TimeMillis(1_000_000);
 
@@ -185,7 +192,7 @@ mod tests {
     #[tokio::test]
     async fn test_at_threshold_token_issued_then_deduplicated() -> anyhow::Result<()> {
         let (server_id, peer_self) = make_test_server_and_peer().await?;
-        let cache = PostBundleFeedbackCache::new(16 * 1024 * 1024);
+        let cache = PostBundleFeedbackCache::new(16 * 1024 * 1024, Arc::new(RealTimeProvider));
         let bucket_location = make_test_bucket_location();
         let now = TimeMillis(1_000_000);
 
@@ -206,7 +213,7 @@ mod tests {
     #[tokio::test]
     async fn test_upload_and_retrieval() -> anyhow::Result<()> {
         let (server_id, peer_self) = make_test_server_and_peer().await?;
-        let cache = PostBundleFeedbackCache::new(16 * 1024 * 1024);
+        let cache = PostBundleFeedbackCache::new(16 * 1024 * 1024, Arc::new(RealTimeProvider));
         let bucket_location = make_test_bucket_location();
         let location_id = bucket_location.location_id;
         let now = TimeMillis(1_000_000);
@@ -227,7 +234,7 @@ mod tests {
     #[tokio::test]
     async fn test_already_retrieved_filtered() -> anyhow::Result<()> {
         let (server_id, peer_self) = make_test_server_and_peer().await?;
-        let cache = PostBundleFeedbackCache::new(16 * 1024 * 1024);
+        let cache = PostBundleFeedbackCache::new(16 * 1024 * 1024, Arc::new(RealTimeProvider));
         let bucket_location = make_test_bucket_location();
         let location_id = bucket_location.location_id;
         let now = TimeMillis(1_000_000);
@@ -244,7 +251,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_upload_returns_false_when_not_in_cache() -> anyhow::Result<()> {
-        let cache = PostBundleFeedbackCache::new(16 * 1024 * 1024);
+        let cache = PostBundleFeedbackCache::new(16 * 1024 * 1024, Arc::new(RealTimeProvider));
         let location_id = Id::random();
         let originator_id = Id::random();
 

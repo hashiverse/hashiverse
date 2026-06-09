@@ -9,6 +9,8 @@ pub mod time_provider;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod manual_time_provider;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod moka_clock;
 pub mod stop_watch;
 
 

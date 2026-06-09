@@ -131,6 +131,30 @@ impl ManualTimeProvider {
         }
     }
 
+    /// Jump the clock to `time`, waking any sleepers now due. Unlike
+    /// `advance_time_until_next_sleeper`, this sets an explicit time, letting a
+    /// test exercise time-dependent logic (e.g. score decay) deterministically
+    /// without an active time-driver task.
+    pub fn set_time(&self, time: TimeMillis) {
+        *self.current_time.write() = time;
+
+        let mut wake_times = self.wake_times.write();
+        let mut wakers_to_wake = Vec::new();
+        while let Some(wake_time) = wake_times.peek() {
+            if wake_time.time <= time {
+                if let Some(entry) = wake_times.pop() {
+                    wakers_to_wake.push(entry.waker);
+                }
+            } else {
+                break;
+            }
+        }
+        drop(wake_times);
+        for waker in wakers_to_wake {
+            waker.wake();
+        }
+    }
+
     /// Register a waker to be notified when time reaches a certain point
     fn register_wake_time(&self, wake_time: TimeMillis, waker: Waker) {
         let mut wake_times = self.wake_times.write();

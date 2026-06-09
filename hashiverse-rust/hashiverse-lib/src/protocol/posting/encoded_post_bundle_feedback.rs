@@ -320,6 +320,74 @@ mod tests {
         Ok(())
     }
 
+    /// Builds a feedback bundle from explicit `(post_id, feedback_type, pow)` entries.
+    /// (`get_post_pows` / `get_post_pow_for_feedback_type` / `merge` read the entries directly and
+    /// do not verify PoW, so arbitrary pow values are fine here.)
+    async fn make_bundle_with_feedbacks(time_millis: TimeMillis, feedbacks: &[(Id, u8, Pow)]) -> anyhow::Result<EncodedPostBundleFeedbackV1> {
+        let time_provider = RealTimeProvider;
+        let pow_generator = SingleThreadedPowGenerator::new();
+        let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
+        let peer = server_id.to_peer(&time_provider)?;
+
+        let mut feedbacks_bytes_mut = Vec::new();
+        for (post_id, feedback_type, pow) in feedbacks {
+            EncodedPostFeedbackV1::new(*post_id, *feedback_type, Salt::random(), *pow).append_encode_to_bytes(&mut feedbacks_bytes_mut)?;
+        }
+        let feedbacks_bytes = Bytes::from(feedbacks_bytes_mut);
+
+        let mut header = EncodedPostBundleFeedbackHeaderV1 {
+            time_millis,
+            location_id: Id::random(),
+            feedbacks_bytes_hash: hashing::hash(feedbacks_bytes.as_ref()),
+            peer,
+            signature: Signature::zero(),
+        };
+        header.signature_generate(&server_id.keys.signature_key);
+        Ok(EncodedPostBundleFeedbackV1 { header, feedbacks_bytes })
+    }
+
+    #[tokio::test]
+    async fn get_post_pows_reports_pow_per_feedback_type() -> anyhow::Result<()> {
+        let post_a = Id::random();
+        let post_b = Id::random();
+        let bundle = make_bundle_with_feedbacks(TimeMillis(1000), &[
+            (post_a, 1, Pow(10)),
+            (post_a, 2, Pow(20)),
+            (post_b, 1, Pow(30)),
+        ]).await?;
+
+        // Per-type lookups.
+        assert_eq!(Pow(10), bundle.get_post_pow_for_feedback_type(&post_a, 1));
+        assert_eq!(Pow(20), bundle.get_post_pow_for_feedback_type(&post_a, 2));
+        assert_eq!(Pow(0), bundle.get_post_pow_for_feedback_type(&post_a, 3), "absent type => Pow(0)");
+        assert_eq!(Pow(0), bundle.get_post_pow_for_feedback_type(&post_b, 2), "post_b has no type-2 feedback");
+
+        // Full per-post arrays, indexed by feedback_type.
+        let pows_a = bundle.get_post_pows(&post_a);
+        assert_eq!(Pow(10), pows_a[1]);
+        assert_eq!(Pow(20), pows_a[2]);
+        assert_eq!(Pow(0), pows_a[0]);
+        assert_eq!(Pow(0), pows_a[3]);
+
+        let pows_b = bundle.get_post_pows(&post_b);
+        assert_eq!(Pow(30), pows_b[1]);
+        assert_eq!(Pow(0), pows_b[2]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn merge_keeps_highest_pow_per_post_and_type() -> anyhow::Result<()> {
+        let post_a = Id::random();
+        let bundle_low = make_bundle_with_feedbacks(TimeMillis(1000), &[(post_a, 1, Pow(10)), (post_a, 2, Pow(5))]).await?;
+        let bundle_high = make_bundle_with_feedbacks(TimeMillis(2000), &[(post_a, 1, Pow(25))]).await?;
+
+        let merged = EncodedPostBundleFeedbackV1::merge(&[bundle_low, bundle_high]).expect("non-empty input");
+
+        assert_eq!(Pow(25), merged.get_post_pow_for_feedback_type(&post_a, 1), "the higher pow for (post_a, type 1) must win");
+        assert_eq!(Pow(5), merged.get_post_pow_for_feedback_type(&post_a, 2), "the only pow for (post_a, type 2) must be preserved");
+        Ok(())
+    }
+
     #[tokio::test]
     async fn encoded_post_bundle_header_v1_to_from_bytes_roundtrip() -> anyhow::Result<()> {
         let time_provider = RealTimeProvider;
