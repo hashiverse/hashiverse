@@ -39,15 +39,29 @@ export const PowBusyIndicator: React.FC<Props> = ({ hashiverse }) => {
 		return () => clearInterval(handle);
 	}, [refresh]);
 
-	if (!busy) return null;
-
+	// Always mounted so we can fade the opacity in/out; when idle it's invisible and non-interactive.
 	return (
 		<button
 			type="button"
 			onClick={() => navigate("/geeks/pow-jobs")}
 			title="Background work in progress — click for details"
 			aria-label="Background work in progress"
-			style={{ position: "fixed", bottom: 12, left: 12, zIndex: 200, padding: 0, border: "none", background: "transparent", cursor: "pointer", lineHeight: 0 }}
+			aria-hidden={!busy}
+			tabIndex={busy ? 0 : -1}
+			style={{
+				position: "fixed",
+				bottom: 12,
+				left: 12,
+				zIndex: 200,
+				padding: 0,
+				border: "none",
+				background: "transparent",
+				lineHeight: 0,
+				opacity: busy ? 1 : 0,
+				pointerEvents: busy ? "auto" : "none",
+				cursor: "pointer",
+				transition: "opacity 400ms ease-in-out",
+			}}
 		>
 			<Spinner size={28} />
 		</button>
