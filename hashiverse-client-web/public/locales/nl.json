@@ -250,6 +250,7 @@
 	"toast.followed_users_saved": "Gevolgde gebruikers opgeslagen",
 	"toast.local_settings_reset": "Lokale instellingen gereset",
 	"toast.post_submitted": "Bericht verzonden",
+	"tooltip.background_work_in_progress": "Achtergrondtaak bezig — klik voor details",
 	"user.anonymous": "Anoniem",
 	"user.copy_qr": "QR naar klembord kopiëren",
 	"user.copy_url": "URL naar klembord kopiëren",

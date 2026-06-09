@@ -250,6 +250,7 @@
 	"toast.followed_users_saved": "Utilisateurs suivis enregistrés",
 	"toast.local_settings_reset": "Paramètres locaux réinitialisés",
 	"toast.post_submitted": "Publication envoyée",
+	"tooltip.background_work_in_progress": "Tâche en arrière-plan en cours — cliquez pour plus de détails",
 	"user.anonymous": "Anonyme",
 	"user.copy_qr": "Copier le QR dans le presse-papiers",
 	"user.copy_url": "Copier l'URL dans le presse-papiers",

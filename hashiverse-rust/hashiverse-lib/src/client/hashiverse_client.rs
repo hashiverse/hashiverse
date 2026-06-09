@@ -148,6 +148,13 @@ impl HashiverseClient {
     }
 
     pub async fn submit_post(&self, post: &str) -> Result<(Vec<SubmitPostCommitTokenV1>, (EncodedPostV1, Bytes)), anyhow::Error> {
+        self.submit_post_with_wait(post, true).await
+    }
+
+    /// Submit a post, choosing whether to wait for the full fan-out. With `wait_for_all_submissions
+    /// == false` this returns as soon as the mandatory User-bucket post secures its first commit and
+    /// completes the remaining redundancy and secondary buckets on a background task.
+    pub async fn submit_post_with_wait(&self, post: &str, wait_for_all_submissions: bool) -> Result<(Vec<SubmitPostCommitTokenV1>, (EncodedPostV1, Bytes)), anyhow::Error> {
         posting::submit_post(
             self.runtime_services.clone(),
             &self.client_id,
@@ -156,7 +163,7 @@ impl HashiverseClient {
             self.peer_tracker.clone(),
             &self.recent_posts_pen,
             post,
-            true,
+            wait_for_all_submissions,
         )
         .await
     }

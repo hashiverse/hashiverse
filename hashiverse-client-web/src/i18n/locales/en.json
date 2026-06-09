@@ -250,6 +250,7 @@
 	"toast.followed_users_saved": "Followed users saved",
 	"toast.local_settings_reset": "Local settings reset",
 	"toast.post_submitted": "Post submitted",
+	"tooltip.background_work_in_progress": "Background work in progress — click for details",
 	"user.anonymous": "Anonymous",
 	"user.copy_qr": "Copy QR to clipboard",
 	"user.copy_url": "Copy URL to clipboard",

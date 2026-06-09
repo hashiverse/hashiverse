@@ -238,7 +238,9 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 			if (!editor) return;
 			if (!contains_meaningful_tiptap_node(editor.getJSON())) return;
 			try {
-				await hashiverse.post_v1(editor.getHTML());
+				// Fast post: return once the User bucket secures its first commit; the rest propagates
+				// in the background (surfaced by the busy indicator).
+				await hashiverse.post_v2(editor.getHTML(), false);
 			} catch (e) {
 				console.error(e);
 				Toast.error(t("toast.error_generic"));
