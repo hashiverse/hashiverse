@@ -93,36 +93,38 @@ pub async fn submit_post(
     let encoded_post_bytes = encoded_post.encode_to_bytes_direct(key_locker).await?;
     let encoded_post_bytes_raw = Bytes::copy_from_slice(encoded_post_bytes.bytes());
 
-    // Fan the post out to every target bucket on a background task; it streams each successful
-    // server commit back to us over this channel and keeps running even after we return.
+    // Fan the post out to every target bucket on a background task. It records each successful server
+    // commit in the recent posts pen itself (so committed posts show up immediately in local timelines
+    // regardless of whether we're still listening) and streams the commit tokens back to us over this
+    // channel. It keeps running even after we return.
     let (outcomes_tx, mut outcomes_rx) = mpsc::unbounded::<SubmissionOutcome>();
     spawn_background_task(post_to_locations(
         runtime_services,
         client_id.clone(),
         post_bundle_manager,
         peer_tracker,
+        recent_posts_pen.clone(),
         linked_base_id_details,
         encoded_post.clone(),
         encoded_post_bytes,
+        encoded_post_bytes_raw.clone(),
         referenced_hashtags,
         timestamp,
         outcomes_tx,
     ));
 
-    // Collect the commits as they land. Record each in the recent posts pen so the post appears
-    // immediately in timeline fetches. We must have at least one User-bucket commit (healing fixes
-    // the rest); the channel closing without one is the same hard-fail as before.
+    // Collect the commit tokens as they land. We must have at least one User-bucket commit (healing
+    // fixes the rest); the channel closing without one is the same hard-fail as before.
     let mut post_commit_tokens = Vec::new();
     let mut user_committed = false;
     while let Some(SubmissionOutcome { bucket_type, token }) = outcomes_rx.next().await {
-        recent_posts_pen.write().await.add_all(&[(token.bucket_location.clone(), token.post_id)], encoded_post_bytes_raw.clone(), timestamp);
         if bucket_type == BucketType::User {
             user_committed = true;
         }
         post_commit_tokens.push(token);
 
-        // Once the User's post is durably committed once, we can hand back control and let the
-        // background task complete the redundancy and secondary buckets.
+        // Once the User's post is durably committed once we can hand back control and let the background
+        // task complete the redundancy and secondary buckets (and pen those commits as it goes).
         if !wait_for_all_submissions && user_committed {
             return Ok((post_commit_tokens, (encoded_post, encoded_post_bytes_raw)));
         }
@@ -133,6 +135,12 @@ pub async fn submit_post(
     }
 
     Ok((post_commit_tokens, (encoded_post, encoded_post_bytes_raw)))
+}
+
+/// Record a single freshly-committed post in the recent posts pen so it appears immediately in the
+/// author's own (and the relevant hashtag / mention) timelines, before any network fetch.
+async fn record_in_pen(recent_posts_pen: &Arc<RwLock<RecentPostsPen>>, token: &SubmitPostCommitTokenV1, encoded_post_bytes_raw: &Bytes, timestamp: TimeMillis) {
+    recent_posts_pen.write().await.add_all(&[(token.bucket_location.clone(), token.post_id)], encoded_post_bytes_raw.clone(), timestamp);
 }
 
 /// Parse the post HTML into the set of buckets it should be indexed under.
@@ -249,9 +257,11 @@ async fn post_to_locations(
     client_id: ClientId,
     post_bundle_manager: Arc<LivePostBundleManager>,
     peer_tracker: Arc<RwLock<PeerTracker>>,
+    recent_posts_pen: Arc<RwLock<RecentPostsPen>>,
     linked_base_id_details: Vec<LinkedBaseIdDetail>,
     encoded_post: EncodedPostV1,
     encoded_post_bytes: EncodedPostBytesV1,
+    encoded_post_bytes_raw: Bytes,
     referenced_hashtags: Vec<String>,
     timestamp: TimeMillis,
     outcomes_tx: mpsc::UnboundedSender<SubmissionOutcome>,
@@ -269,7 +279,7 @@ async fn post_to_locations(
                 let post_bundle = post_bundle_manager.get_post_bundle(&bucket_location, timestamp).await?;
                 if !post_bundle.header.overflowed && !post_bundle.header.sealed {
                     info!("Posting to {:?}", bucket_location);
-                    let result = post_to_location(&runtime_services, &client_id.id, &peer_tracker, &bucket_location, &encoded_post, &encoded_post_bytes, linked_base_id_detail.referenced_post_header_bytes.as_deref(), &referenced_hashtags, linked_base_id_detail.bucket_type, &outcomes_tx).await;
+                    let result = post_to_location(&runtime_services, &client_id.id, &peer_tracker, &recent_posts_pen, &bucket_location, &encoded_post, &encoded_post_bytes, &encoded_post_bytes_raw, linked_base_id_detail.referenced_post_header_bytes.as_deref(), &referenced_hashtags, linked_base_id_detail.bucket_type, timestamp, &outcomes_tx).await;
                     match result {
                         Ok(result) => {
                             committed_count += result.len();
@@ -306,12 +316,15 @@ async fn post_to_location(
     runtime_services: &RuntimeServices,
     sponsor_id: &Id,
     peer_tracker: &Arc<RwLock<PeerTracker>>,
+    recent_posts_pen: &Arc<RwLock<RecentPostsPen>>,
     bucket_location: &BucketLocation,
     encoded_post: &EncodedPostV1,
     encoded_post_bytes: &EncodedPostBytesV1,
+    encoded_post_bytes_raw: &Bytes,
     referenced_post_header_bytes: Option<&[u8]>,
     referenced_hashtags: &[String],
     bucket_type: BucketType,
+    timestamp: TimeMillis,
     outcomes_tx: &mpsc::UnboundedSender<SubmissionOutcome>,
 ) -> anyhow::Result<Vec<SubmitPostCommitTokenV1>> {
     let mut peers_visited = Vec::new();
@@ -347,9 +360,11 @@ async fn post_to_location(
                 anyhow_assert_eq!(&PayloadResponseKind::SubmitPostCommitResponseV1, &response.response_request_kind);
                 let response = json::bytes_to_struct::<SubmitPostCommitResponseV1>(&response.bytes)?;
 
-                // Stream this commit back to the submitter as soon as it lands; the receiver may have
-                // already returned (the fast path), in which case the send simply no-ops.
+                // Record this commit in the recent posts pen (so it shows up immediately in local
+                // timelines) then stream it back to the submitter. The receiver may have already returned
+                // (the fast path), in which case the send simply no-ops — but the pen is still populated.
                 let submit_post_commit_token = response.submit_post_commit_token;
+                record_in_pen(recent_posts_pen, &submit_post_commit_token, encoded_post_bytes_raw, timestamp).await;
                 let _ = outcomes_tx.unbounded_send(SubmissionOutcome { bucket_type, token: submit_post_commit_token.clone() });
                 submit_post_commit_tokens.push(submit_post_commit_token);
                 if submit_post_commit_tokens.len() >= config::REDUNDANT_SERVERS_PER_POST {
