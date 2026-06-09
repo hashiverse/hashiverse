@@ -41,6 +41,9 @@ struct JobEntry {
 pub struct JobTracker {
     next_id: JobId,
     jobs: HashMap<JobId, JobEntry>,
+    /// Wall-clock millis of the most recent moment a job was registered or removed. Lets a poll
+    /// detect work that started and finished entirely between two polls (0 = no work ever seen).
+    last_work_time_millis: i64,
 }
 
 impl JobTracker {
@@ -61,6 +64,18 @@ impl JobTracker {
         self.jobs.remove(&job_id);
     }
 
+    /// Stamp the most-recent-work time. Called whenever a job starts or finishes.
+    pub fn mark_work(&mut self, now_millis: i64) {
+        self.last_work_time_millis = now_millis;
+    }
+
+    /// Whether there is background PoW work happening right now, or there was within the last
+    /// `within_millis`. The latter window lets a once-a-second UI poll still light up for bursts
+    /// that began and ended between polls.
+    pub fn is_busy(&self, now_millis: i64, within_millis: i64) -> bool {
+        !self.jobs.is_empty() || (self.last_work_time_millis != 0 && now_millis - self.last_work_time_millis <= within_millis)
+    }
+
     pub fn snapshot(&self) -> Vec<PowJobStatus> {
         self.jobs.values().map(|entry| PowJobStatus {
             label: entry.label.clone(),
@@ -79,7 +94,13 @@ struct TrackedJobGuard {
 
 impl TrackedJobGuard {
     fn new(tracker: Arc<Mutex<JobTracker>>, label: &str, pow_min: Pow) -> Self {
-        let job_id = tracker.lock().unwrap().add(label, pow_min);
+        let now = RealTimeProvider.current_time_millis().0;
+        let job_id = {
+            let mut tracker = tracker.lock().unwrap();
+            let job_id = tracker.add(label, pow_min);
+            tracker.mark_work(now);
+            job_id
+        };
         Self { tracker, job_id }
     }
 
@@ -90,7 +111,12 @@ impl TrackedJobGuard {
 
 impl Drop for TrackedJobGuard {
     fn drop(&mut self) {
-        self.tracker.lock().unwrap().remove(self.job_id);
+        // Stamp on removal too: this is what keeps `is_busy` true for the brief window after the
+        // last job finishes, so a once-a-second poll doesn't miss work that just completed.
+        let now = RealTimeProvider.current_time_millis().0;
+        let mut tracker = self.tracker.lock().unwrap();
+        tracker.remove(self.job_id);
+        tracker.mark_work(now);
     }
 }
 
@@ -140,6 +166,14 @@ pub trait PowGenerator: Send + Sync {
     /// Snapshot of all concurrently in-flight tracked jobs.
     fn active_jobs(&self) -> Vec<PowJobStatus> {
         self.tracker().lock().unwrap().snapshot()
+    }
+
+    /// Whether PoW work is happening now, or finished within the last `within_millis`. Drives the
+    /// UI "busy" indicator. Stamp and query both go through `RealTimeProvider` so they share one
+    /// wall-clock source (matching `run_pool`).
+    fn is_pow_busy(&self, within_millis: i64) -> bool {
+        let now = RealTimeProvider.current_time_millis().0;
+        self.tracker().lock().unwrap().is_busy(now, within_millis)
     }
 
     /// Run up to `iteration_limit` attempts via the work-stealing pool. Registers the job
@@ -350,6 +384,47 @@ mod tests {
         assert_eq!(snapshot[0].label, "rpc");
         assert_eq!(snapshot[0].pow_min, Pow(18));
         assert_eq!(snapshot[0].best_pow_so_far, Pow(42));
+    }
+
+    #[test]
+    fn is_busy_tracks_active_jobs_and_recent_work_window() {
+        let mut tracker = JobTracker::default();
+
+        // Nothing has ever happened: never busy, no matter the window.
+        assert!(!tracker.is_busy(1_000_000, 1000));
+
+        // While a job is registered, busy regardless of the time window.
+        let job = tracker.add("rpc", Pow(18));
+        tracker.mark_work(1_000_000);
+        assert!(tracker.is_busy(1_000_000, 1000));
+        assert!(tracker.is_busy(9_999_999, 1000)); // active jobs win even if the stamp is ancient
+
+        // After the job finishes we stamp the finish time; busy stays true only within the window.
+        tracker.remove(job);
+        tracker.mark_work(2_000_000);
+        assert!(tracker.is_busy(2_000_500, 1000)); // 500ms later → still within the 1s window
+        assert!(tracker.is_busy(2_001_000, 1000)); // exactly 1s later → boundary is inclusive
+        assert!(!tracker.is_busy(2_001_500, 1000)); // 1.5s later → window elapsed, idle
+    }
+
+    #[test]
+    fn tracked_job_guard_marks_work_via_real_clock() {
+        use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
+
+        let tracker = Arc::new(Mutex::new(JobTracker::default()));
+
+        // While the guard is alive there's an active job, so busy holds regardless of window.
+        {
+            let _guard = TrackedJobGuard::new(tracker.clone(), "rpc", Pow(18));
+            assert!(tracker.lock().unwrap().is_busy(0, 0));
+        }
+
+        // The guard stamped the (real) finish time on drop. So a query at "now" with a 1s window is
+        // busy (work just happened), and a query well into the future is idle.
+        assert!(tracker.lock().unwrap().snapshot().is_empty());
+        let now = RealTimeProvider.current_time_millis().0;
+        assert!(tracker.lock().unwrap().is_busy(now, 1000));
+        assert!(!tracker.lock().unwrap().is_busy(now + 60_000, 1000));
     }
 
     #[tokio::test]

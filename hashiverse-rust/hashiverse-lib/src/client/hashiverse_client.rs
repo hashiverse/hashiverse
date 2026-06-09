@@ -137,6 +137,12 @@ impl HashiverseClient {
         self.runtime_services.pow_generator.active_jobs()
     }
 
+    /// Whether there is background PoW work happening now, or within the last `within_millis`.
+    /// Drives the GUI "busy" indicator.
+    pub fn is_pow_busy(&self, within_millis: i64) -> bool {
+        self.runtime_services.pow_generator.is_pow_busy(within_millis)
+    }
+
     pub async fn client_storage_reset(&self) -> anyhow::Result<()> {
         self.client_storage.reset().await
     }

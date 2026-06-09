@@ -260,6 +260,13 @@ impl HashiverseClientWasm {
         })
     }
 
+    /// Whether there is background PoW work happening now, or within the last `within_millis`.
+    /// Polled by the GUI to show/hide the "busy" indicator.
+    #[wasm_bindgen]
+    pub async fn is_pow_busy_v1(&self, within_millis: u32) -> Result<bool, JsValue> {
+        wasm_try!({ self.hashiverse_client.is_pow_busy(within_millis as i64) })
+    }
+
     fn post_process_timeline_posts(&self, encoded_posts: Vec<(BucketLocation, EncodedPostV1, Bytes, bool)>, oldest_processed_time_millis: TimeMillis) -> anyhow::Result<SingleTimelineGetMoreV1Response> {
         let response = SingleTimelineGetMoreV1Response {
             oldest_processed_time_millis: if oldest_processed_time_millis == TimeMillis::MAX { None } else { Some(oldest_processed_time_millis.0) },
