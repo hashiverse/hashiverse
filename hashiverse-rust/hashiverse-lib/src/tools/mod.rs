@@ -39,5 +39,9 @@ pub mod plain_text_post;
 // module and its deps are excluded from the wasm build. See the matching target table in Cargo.toml.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cert_validation;
+// Browser-only helper: turns Result<T, JsValue> / IndexedDB errors into anyhow errors
+// with context. Used by the relocated wasm trait impls (e.g. wasm_key_locker).
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub mod with_js_context;
 
 

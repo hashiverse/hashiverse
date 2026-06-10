@@ -32,3 +32,5 @@
 pub mod pow_generator;
 pub mod native_parallel_pow_generator;
 pub mod single_threaded_pow_generator;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub mod wasm_parallel_pow_generator;

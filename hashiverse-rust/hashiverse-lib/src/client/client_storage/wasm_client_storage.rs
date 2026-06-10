@@ -1,6 +1,6 @@
+use crate::client::client_storage::client_storage::{ClientStorage, BUCKETS};
+use crate::tools::time::TimeMillis;
 use anyhow::anyhow;
-use hashiverse_lib::client::client_storage::client_storage::{ClientStorage, BUCKETS};
-use hashiverse_lib::tools::time::TimeMillis;
 use indexed_db_futures::database::Database;
 use indexed_db_futures::error::Error;
 use indexed_db_futures::prelude::*;
@@ -288,20 +288,20 @@ impl ClientStorage for WasmClientStorage {
 #[cfg(test)]
 pub mod tests {
     extern crate wasm_bindgen_test;
-    use hashiverse_lib::client::client_storage::client_storage;
+    use crate::client::client_storage::client_storage;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 
     #[wasm_bindgen_test]
     async fn add_test() {
-        use crate::wasm_client_storage::WasmClientStorage;
+        use super::WasmClientStorage;
         client_storage::tests::add_test(WasmClientStorage::new().await.unwrap()).await;
     }
 
     #[wasm_bindgen_test]
     async fn trim_test() {
-        use crate::wasm_client_storage::WasmClientStorage;
+        use super::WasmClientStorage;
         client_storage::tests::trim_test(WasmClientStorage::new().await.unwrap()).await;
     }
 }

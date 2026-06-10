@@ -8,3 +8,5 @@ pub mod client_storage;
 pub mod mem_client_storage;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod sqlite_client_storage;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub mod wasm_client_storage;

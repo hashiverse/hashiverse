@@ -1,7 +1,7 @@
-use crate::wasm_client_storage::WasmClientStorage;
-use crate::wasm_key_locker::WasmKeyLockerManager;
-use crate::wasm_transport::WasmTransportFactory;
 use crate::wasm_try;
+use hashiverse_lib::client::client_storage::wasm_client_storage::WasmClientStorage;
+use hashiverse_lib::client::key_locker::wasm_key_locker::WasmKeyLockerManager;
+use hashiverse_lib::transport::wasm_transport::WasmTransportFactory;
 use hashiverse_lib::client::args::Args;
 use hashiverse_lib::client::hashiverse_client::HashiverseClient;
 use hashiverse_lib::client::key_locker::key_locker::KeyLockerManager;

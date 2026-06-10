@@ -1,15 +1,9 @@
 #![feature(try_blocks)]
-pub mod wasm_transport;
-pub mod wasm_bootstrap_provider;
-pub mod wasm_local_settings;
-pub mod wasm_client_storage;
-pub mod wasm_key_locker;
-pub mod wasm_parallel_pow_generator;
-pub mod with_js_context;
 pub mod hashiverse_client_wasm;
 pub mod wasm_try;
 
 use hashiverse_lib::tools::pow_generator::pow_generator;
+use hashiverse_lib::tools::pow_generator::wasm_parallel_pow_generator::WasmParallelPowGenerator;
 use hashiverse_lib::tools::types::{Hash, Pow};
 use log::{info, trace};
 use std::sync::Arc;
@@ -60,7 +54,7 @@ pub fn pow_compute_batch(iteration_limit: u32, pow_min: u8, data_hash_hex: Strin
 }
 
 /// Global storage for the WasmParallelPowGenerator singleton.
-static WASM_PARALLEL_POW_GENERATOR: std::sync::OnceLock<Arc<wasm_parallel_pow_generator::WasmParallelPowGenerator>> = std::sync::OnceLock::new();
+static WASM_PARALLEL_POW_GENERATOR: std::sync::OnceLock<Arc<WasmParallelPowGenerator>> = std::sync::OnceLock::new();
 
 /// Initialize the parallel PoW worker pool. Call from TypeScript, passing an
 /// array of ready `Worker` handles that each run `HashiversePowWorker.ts`.
@@ -88,11 +82,11 @@ pub fn init_pow_workers(workers_js: JsValue) {
         return;
     }
 
-    let generator = wasm_parallel_pow_generator::WasmParallelPowGenerator::from_workers(workers);
+    let generator = WasmParallelPowGenerator::from_workers(workers);
     let _ = WASM_PARALLEL_POW_GENERATOR.set(Arc::new(generator));
 }
 
 /// Get the global WasmParallelPowGenerator if initialized.
-pub fn get_wasm_parallel_pow_generator() -> Option<Arc<wasm_parallel_pow_generator::WasmParallelPowGenerator>> {
+pub fn get_wasm_parallel_pow_generator() -> Option<Arc<WasmParallelPowGenerator>> {
     WASM_PARALLEL_POW_GENERATOR.get().cloned()
 }
