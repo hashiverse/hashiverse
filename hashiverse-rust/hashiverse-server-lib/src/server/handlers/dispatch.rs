@@ -145,7 +145,11 @@ impl HashiverseServer {
         // Count this inbound request. After decoding (so malformed traffic doesn't
         // pollute the totals) but before the per-handler PoW check (so failed-PoW
         // attempts still show up — adversarial load is the load we'd want to see).
-        self.request_counters[rpc_request_packet_rx.payload_request_kind.clone() as usize].fetch_add(1, Ordering::Relaxed);
+        let payload_request_kind_index = rpc_request_packet_rx.payload_request_kind.clone() as usize;
+        self.request_counters[payload_request_kind_index].fetch_add(1, Ordering::Relaxed);
+        // Also feed the decaying per-window rate estimates so the stats reflect
+        // recent load, not just the monotonic all-time total.
+        self.request_rate_windows[payload_request_kind_index].lock().record(current_time_millis);
 
         // Check that we have not seen this salt recently (stops replay attacks)
         {
@@ -1329,7 +1333,7 @@ impl HashiverseServer {
             None => {
                 let doc = serde_json::json!({
                     "version":     env!("CARGO_PKG_VERSION"),
-                    "requests":    request_counts_subtree(&self.request_counters),
+                    "requests":    request_counts_subtree(&self.request_counters, &self.request_rate_windows, time_millis),
                     "system":      system_stats_subtree(),
                     "kademlia":    kademlia_stats_subtree(&self.kademlia.read()),
                     "environment": environment_stats_subtree(&self.environment),
@@ -1573,7 +1577,7 @@ mod tests {
                 .expect("handler must succeed");
             let response = PeerStatsResponseV1::from_bytes(&gatherer.to_bytes()).expect("response must decode");
             let doc = decode_doc(&response);
-            assert_eq!(doc["requests"]["PingV1"].as_u64(), Some(7));
+            assert_eq!(doc["requests"]["PingV1"]["total"].as_u64(), Some(7));
         }
 
         #[tokio::test]
@@ -1635,7 +1639,9 @@ mod tests {
             // Belt-and-braces guard for PAYLOAD_REQUEST_KIND_COUNT staying in lockstep
             // with the enum at the server-stats layer.
             let counters: [std::sync::atomic::AtomicU64; PAYLOAD_REQUEST_KIND_COUNT] = std::array::from_fn(|_| std::sync::atomic::AtomicU64::new(0));
-            let subtree = request_counts_subtree(&counters);
+            let windows: [parking_lot::Mutex<crate::server::stats::RequestRateWindows>; PAYLOAD_REQUEST_KIND_COUNT] =
+                std::array::from_fn(|_| parking_lot::Mutex::new(crate::server::stats::RequestRateWindows::new()));
+            let subtree = request_counts_subtree(&counters, &windows, TimeMillis::zero());
             let map = subtree.as_object().expect("request_counts subtree must be an object");
             assert_eq!(map.len(), PAYLOAD_REQUEST_KIND_COUNT);
         }
