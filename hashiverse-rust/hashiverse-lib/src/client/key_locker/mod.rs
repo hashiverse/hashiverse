@@ -9,3 +9,5 @@ pub mod key_locker;
 pub mod mem_key_locker;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod disk_key_locker;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub mod wasm_key_locker;

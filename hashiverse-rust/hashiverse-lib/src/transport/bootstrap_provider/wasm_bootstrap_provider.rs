@@ -1,6 +1,6 @@
+use crate::tools::{config, tools};
+use crate::transport::bootstrap_provider::bootstrap_provider::BootstrapProvider;
 use gloo_net::http::Request;
-use hashiverse_lib::tools::{config, tools};
-use hashiverse_lib::transport::bootstrap_provider::bootstrap_provider::BootstrapProvider;
 use log::warn;
 use send_wrapper::SendWrapper;
 use std::collections::HashSet;
@@ -76,7 +76,7 @@ impl WasmBootstrapProvider {
 #[async_trait::async_trait]
 impl BootstrapProvider for WasmBootstrapProvider {
     async fn get_bootstrap_addresses(&self) -> Vec<String> {
-        let bootstrap_config = SendWrapper::new(crate::wasm_local_settings::local_settings_get("bootstrap"))
+        let bootstrap_config = SendWrapper::new(super::wasm_local_settings::local_settings_get("bootstrap"))
             .await
             .unwrap_or(None)
             .unwrap_or_else(|| "production".to_string());

@@ -9,3 +9,7 @@ pub mod bootstrap_provider;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod dnssec_bootstrap_provider;
 pub mod manual_bootstrap_provider;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub mod wasm_bootstrap_provider;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub mod wasm_local_settings;

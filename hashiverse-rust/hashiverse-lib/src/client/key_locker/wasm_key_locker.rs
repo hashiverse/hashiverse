@@ -1,10 +1,10 @@
-use crate::with_js_context::JsResultExt;
+use crate::client::key_locker::key_locker::{KeyLocker, KeyLockerManager, GUEST_CLIENT_ID};
+use crate::tools::client_id::ClientId;
+use crate::tools::keys::Keys;
+use crate::tools::types::{PQCommitmentBytes, Signature, VerificationKeyBytes, SIGNATURE_BYTES};
+use crate::tools::with_js_context::JsResultExt;
 use anyhow::{anyhow, Context};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use hashiverse_lib::client::key_locker::key_locker::{KeyLocker, KeyLockerManager, GUEST_CLIENT_ID};
-use hashiverse_lib::tools::client_id::ClientId;
-use hashiverse_lib::tools::keys::Keys;
-use hashiverse_lib::tools::types::{PQCommitmentBytes, Signature, VerificationKeyBytes, SIGNATURE_BYTES};
 use indexed_db_futures::database::Database;
 use indexed_db_futures::prelude::*;
 use indexed_db_futures::transaction::TransactionMode;
@@ -241,8 +241,8 @@ impl KeyLockerManager<WasmKeyLocker> for WasmKeyLockerManager {
 #[cfg(test)]
 pub mod tests {
     extern crate wasm_bindgen_test;
-    use crate::wasm_key_locker::{WasmKeyLocker, WasmKeyLockerManager};
-    use hashiverse_lib::client::key_locker::key_locker;
+    use super::{WasmKeyLocker, WasmKeyLockerManager};
+    use crate::client::key_locker::key_locker;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);

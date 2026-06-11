@@ -1,11 +1,11 @@
-use crate::wasm_bootstrap_provider::WasmBootstrapProvider;
+use crate::transport::bootstrap_provider::bootstrap_provider::BootstrapProvider;
+use crate::transport::bootstrap_provider::wasm_bootstrap_provider::WasmBootstrapProvider;
+use crate::transport::ddos::ddos::DdosProtection;
+use crate::transport::ddos::noop_ddos::NoopDdosProtection;
+use crate::transport::transport::{IncomingRequest, TransportFactory, TransportServer};
 use anyhow::anyhow;
 use bytes::Bytes;
 use gloo_net::http::Request;
-use hashiverse_lib::transport::bootstrap_provider::bootstrap_provider::BootstrapProvider;
-use hashiverse_lib::transport::ddos::ddos::DdosProtection;
-use hashiverse_lib::transport::ddos::noop_ddos::NoopDdosProtection;
-use hashiverse_lib::transport::transport::{IncomingRequest, TransportFactory, TransportServer};
 use send_wrapper::SendWrapper;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;

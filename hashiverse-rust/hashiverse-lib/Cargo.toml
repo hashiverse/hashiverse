@@ -82,6 +82,19 @@ uuid = { version = "1.17.0", features = ["js"] }
 getrandom_2 = { package = "getrandom", version = "0.2.17", features = ["js"] }
 getrandom_3 = { package = "getrandom", version = "0.3.4", features = ["wasm_js"] }
 getrandom_4 = { package = "getrandom", version = "0.4.2", features = ["wasm_js"] }
+# Browser-only trait impls relocated from hashiverse-client-wasm (WasmClientStorage,
+# WasmTransportFactory, WasmKeyLocker, WasmParallelPowGenerator, WasmBootstrapProvider).
+# Gated to the wasm32-unknown-unknown target, mirroring how native-impl deps sit in the
+# cfg(not(target_arch = "wasm32")) table — so an external browser consumer gets them via
+# `cargo add hashiverse-lib` targeting wasm32-unknown-unknown.
+wasm-bindgen = "0.2.108"
+js-sys = "0.3.85"
+gloo-net = "0.6.0"
+indexed_db_futures = { version = "0.6.4", features = ["serde", "cursors", "indices"] }
+web-sys = { version = "0.3", features = [
+    "Window", "WorkerGlobalScope", "Crypto", "CryptoKey", "SubtleCrypto",
+    "Worker", "MessageChannel", "MessagePort", "MessageEvent",
+] }
 
 [target.'cfg(all(tokio_unstable, not(target_arch = "wasm32")))'.dependencies]
 console-subscriber = { version = "0.5.0" }

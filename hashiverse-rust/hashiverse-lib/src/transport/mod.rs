@@ -10,6 +10,8 @@ pub mod bootstrap_provider;
 pub mod ddos;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod partial_https_transport;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub mod wasm_transport;
 pub mod transport;
 pub mod mem_transport;
 pub mod transport_ownership_proof;

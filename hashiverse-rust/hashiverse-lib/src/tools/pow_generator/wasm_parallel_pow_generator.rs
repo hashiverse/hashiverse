@@ -1,5 +1,5 @@
-use hashiverse_lib::tools::pow_generator::pow_generator::{JobTracker, PowGenerator};
-use hashiverse_lib::tools::types::{Hash, Pow, Salt};
+use crate::tools::pow_generator::pow_generator::{JobTracker, PowGenerator};
+use crate::tools::types::{Hash, Pow, Salt};
 use js_sys::{Array, Object, Reflect};
 use log::{info, warn};
 use send_wrapper::SendWrapper;
