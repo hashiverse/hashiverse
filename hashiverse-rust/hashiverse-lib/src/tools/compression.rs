@@ -268,4 +268,21 @@ mod tests {
         assert_eq!(input.as_bytes(), output.as_ref());
         Ok(())
     }
+
+    // Regression vectors: payloads compressed by the current lz4_flex / brotli versions are stored
+    // on servers and sent over the wire, so a dependency bump must keep decompressing them.
+
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
+    async fn test_decompress_regression_vectors() -> anyhow::Result<()> {
+        let expected = "The quick brown fox jumps over the lazy dog. ".repeat(8);
+
+        let compressed_lz4 = hex::decode("0168010000ff1e54686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f672e202d00ff236020646f672e20")?;
+        assert_eq!(decompress(&compressed_lz4)?.to_bytes().as_ref(), expected.as_bytes(), "lz4 regression vector no longer decompresses");
+
+        let compressed_brotli = hex::decode("021b6701882c0e78d3d0955d9710bb172ba9cad092cc8cad415ce6f236c8199e9e0a7b830d387048206f24bc41a715ce1c1e27aa2938c2a9efd360")?;
+        assert_eq!(decompress(&compressed_brotli)?.to_bytes().as_ref(), expected.as_bytes(), "brotli regression vector no longer decompresses");
+
+        Ok(())
+    }
 }

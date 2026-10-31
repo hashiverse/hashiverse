@@ -461,4 +461,27 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("p_cost too large"));
     }
+
+    // Regression vectors: guard against a dependency bump (argon2, chacha20poly1305) changing key
+    // derivation or making previously encrypted data undecryptable.  Captured against the crate
+    // versions in Cargo.lock at the time of writing.
+
+    #[test]
+    fn derive_wrap_key_regression_vector() -> anyhow::Result<()> {
+        let argon2 = Argon2Config::weak().to_argon2()?;
+        let wrap_key = derive_wrap_key(&argon2, b"alice")?;
+        assert_eq!(hex::encode(wrap_key.as_slice()), "ccea58e70888b6bb262add34697fb1aaf48174d14f2828360f0356d4abfea0f6", "argon2 wrap-key drift");
+        Ok(())
+    }
+
+    /// Ciphertext produced by `encrypt_weak(plaintext, ["alice", "bob"])` must remain decryptable.
+    #[test]
+    fn decrypt_regression_vector() -> anyhow::Result<()> {
+        let ciphertext = hex::decode("010213000010000000000200000001023f6e16af1447be1b634ef1b5aa6bce22ed91a6fdef7555ce73b69e11a75427178052d18f2e690daffccd0f6612607a3d4bbc14080143619fd393c66120b2d686fa1d03b6a59bf1c4790edf963f281614d9d81236d926042ba97ee0c4a01254bc0526c72e1d2efc3254fe0e87803c02fc2b4e2f3f2f72a9c61cf863812a52d76b2cc9a9c8234fb9969a260906fb2570cc2470104841bd4af0ac6691b0bf1e2a7da8a11d645f89bd8e1bb55e009c6144429fad99")?;
+        let plaintext = b"Jimme was here and then some...";
+        assert_eq!(decrypt(&ciphertext, b"alice")?, plaintext);
+        assert_eq!(decrypt(&ciphertext, b"bob")?, plaintext);
+        assert!(decrypt(&ciphertext, b"charlie").is_err());
+        Ok(())
+    }
 }

@@ -35,3 +35,39 @@ pub fn verify(verification_key: &VerificationKey, signature: &Signature, data: &
     verifying_key.verify(data, &signature)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::tools::keys::Keys;
+    use crate::tools::signing::{sign, sign_multiple, verify};
+    use crate::tools::types::Signature;
+
+    // Regression vectors: Ed25519 signing is deterministic, so a dependency bump (ed25519-dalek,
+    // blake3) that changes output — or stops accepting previously produced signatures — fails here.
+    // Seed matches the regression vectors in `keys.rs`.
+    const REGRESSION_SEED: [u8; 32] = [7u8; 32];
+    const REGRESSION_MESSAGE: &[u8] = b"hashiverse regression message";
+    const REGRESSION_SIGNATURE_HEX: &str = "bbb20840a165224789ddf9e2d5feafe659dbd039ced23737af04cce93076e289c5850b5f73110835fda1c4532677245722734d0740dcd3e5a2c685a0bb894303";
+    const REGRESSION_SIGNATURE_MULTIPLE_HEX: &str = "6dd9dfe34264da8655305fc0b05a44545826458bce43899fc268056321156955da8327cb8b9e2e83293b281bc7fb000d080a2ce79bf613ad2b0882411b990909";
+
+    #[test]
+    fn sign_regression_vector() -> anyhow::Result<()> {
+        let keys = Keys::from_seed(&REGRESSION_SEED, true)?;
+        assert_eq!(sign(&keys.signature_key, REGRESSION_MESSAGE).to_hex_str(), REGRESSION_SIGNATURE_HEX, "ed25519 signature drift");
+        assert_eq!(sign_multiple(&keys.signature_key, &[b"alpha", b"beta", b"gamma"]).to_hex_str(), REGRESSION_SIGNATURE_MULTIPLE_HEX, "ed25519 sign_multiple drift");
+        Ok(())
+    }
+
+    #[test]
+    fn verify_regression_vector() -> anyhow::Result<()> {
+        let keys = Keys::from_seed(&REGRESSION_SEED, true)?;
+        let signature = Signature::from_hex_str(REGRESSION_SIGNATURE_HEX)?;
+        verify(&keys.verification_key, &signature, REGRESSION_MESSAGE)?;
+        assert!(verify(&keys.verification_key, &signature, b"wrong message").is_err());
+
+        let mut tampered_signature_bytes = signature.0;
+        tampered_signature_bytes[0] ^= 0x01;
+        assert!(verify(&keys.verification_key, &Signature::from_bytes_exact(tampered_signature_bytes), REGRESSION_MESSAGE).is_err());
+        Ok(())
+    }
+}
