@@ -118,7 +118,7 @@ impl HttpsTransportCertRefresher {
 
                     let cert_chain = vec![rustls_pki_types::CertificateDer::from(cert.der().to_vec())];
                     let key_der = rustls_pki_types::PrivatePkcs8KeyDer::from(key_pair.serialize_der());
-                    let key = rustls::crypto::ring::sign::any_supported_type(&rustls_pki_types::PrivateKeyDer::Pkcs8(key_der)).map_err(|_| anyhow::anyhow!("Unsupported key type"))?;
+                    let key = rustls::crypto::aws_lc_rs::sign::any_supported_type(&rustls_pki_types::PrivateKeyDer::Pkcs8(key_der)).map_err(|_| anyhow::anyhow!("Unsupported key type"))?;
 
                     let certified_key = CertifiedKey { cert: cert_chain, key, ocsp: None };
 
@@ -165,7 +165,7 @@ impl HttpsTransportCertRefresher {
             // Return the CertifiedKey
             let cert_chain = rustls_pemfile::certs(&mut &bytes_cert[..]).collect::<Result<Vec<_>, _>>()?;
             let key_der = rustls_pemfile::private_key(&mut &bytes_key[..])?.ok_or_else(|| anyhow::anyhow!("No private key found in {}", self.filename_key.display()))?;
-            let key = rustls::crypto::ring::sign::any_supported_type(&key_der).map_err(|_| anyhow::anyhow!("Unsupported key type"))?;
+            let key = rustls::crypto::aws_lc_rs::sign::any_supported_type(&key_der).map_err(|_| anyhow::anyhow!("Unsupported key type"))?;
 
             CertifiedKey { cert: cert_chain, key, ocsp: None }
         };

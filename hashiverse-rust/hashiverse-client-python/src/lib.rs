@@ -18,8 +18,8 @@ pyo3::create_exception!(hashiverse_client, HashiverseError, pyo3::exceptions::Py
 
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Install the Ring crypto provider for rustls — required for TLS connections.
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    // Install the aws-lc-rs crypto provider for rustls — required for TLS connections.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     m.add("HashiverseError", m.py().get_type::<HashiverseError>())?;
     m.add_class::<HashiverseClientPython>()?;

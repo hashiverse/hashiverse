@@ -23,7 +23,7 @@ hex = { workspace = true }
 tokio = { version = "1.45", features = ["macros", "rt-multi-thread"] }
 dirs-next = "2.0"
 shellexpand = "3"
-rustls = { version = "0.23", features = ["ring"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "tls12", "logging", "std"] }
 
 [dev-dependencies]
 tempfile = "3.25.0"

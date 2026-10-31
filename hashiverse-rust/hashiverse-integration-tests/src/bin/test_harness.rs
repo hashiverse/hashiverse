@@ -32,7 +32,7 @@ const NUM_ADDITIONAL_SERVERS: usize = 15;
 async fn main() -> anyhow::Result<()> {
     // Set up TLS
     {
-        rustls::crypto::ring::default_provider().install_default().expect("Failed to install Ring as the crypto provider");
+        rustls::crypto::aws_lc_rs::default_provider().install_default().expect("Failed to install aws-lc-rs as the crypto provider");
     }
 
     let time_provider = Arc::new(RealTimeProvider);

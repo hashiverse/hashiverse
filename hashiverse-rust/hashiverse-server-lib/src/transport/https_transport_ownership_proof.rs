@@ -169,7 +169,7 @@ mod tests {
     /// it's sufficient to drive cache-hit / cache-miss bookkeeping in the proof object.
     fn placeholder_certified_key(der_bytes: Vec<u8>) -> Arc<CertifiedKey> {
         use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         let cert_chain: Vec<CertificateDer<'static>> = vec![CertificateDer::from(der_bytes)];
         // rcgen ships a key generator; we only need a structurally-valid PKCS#8 envelope
         // so rustls' any_supported_type accepts it. The cert above is bogus DER so the
@@ -177,7 +177,7 @@ mod tests {
         let key_pair: rcgen::KeyPair = rcgen::KeyPair::generate().expect("rcgen key gen never fails on supported algorithms");
         let pkcs8: Vec<u8> = key_pair.serialize_der();
         let key_der: PrivateKeyDer<'static> = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(pkcs8));
-        let signing: Arc<dyn rustls::sign::SigningKey> = rustls::crypto::ring::sign::any_supported_type(&key_der).expect("rcgen key is a supported type");
+        let signing: Arc<dyn rustls::sign::SigningKey> = rustls::crypto::aws_lc_rs::sign::any_supported_type(&key_der).expect("rcgen key is a supported type");
         Arc::new(CertifiedKey { cert: cert_chain, key: signing, ocsp: None })
     }
 

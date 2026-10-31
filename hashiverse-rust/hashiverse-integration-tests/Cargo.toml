@@ -22,5 +22,5 @@ hex = { workspace = true }
 tokio-util = { version = "0.7.14", features = ["codec", "rt"] }
 tokio = { version = "1.45", features = ["macros", "time", "rt", "io-util", "rt-multi-thread"] }
 futures = "0.3.31"
-rustls = { version = "0.23", default-features = false, features = ["ring", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "tls12"] }
 clap = { version = "4.5.38", features = ["derive"] }

@@ -65,14 +65,14 @@ getrandom_4 = { package = "getrandom", version = "0.4.2" }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 moka = { version = "0.12", features = ["sync"] }
 rayon = "1.10"
-reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
 dirs-next = "2.0"
-hickory-resolver = { version = "0.26", features = ["https-ring", "dnssec-ring", "webpki-roots"] }
-# Cert-chain validation (server-side ownership-proof verification only). Pulls in `ring`,
-# which needs a C/asm toolchain (clang) to build for wasm — kept off the wasm target so
+hickory-resolver = { version = "0.26", features = ["https-aws-lc-rs", "dnssec-aws-lc-rs", "webpki-roots"] }
+# Cert-chain validation (server-side ownership-proof verification only). Pulls in `aws-lc-rs`,
+# which needs a C toolchain and does not build for wasm — kept off the wasm target so
 # `cert_validation` and its deps never reach the browser client. See tools/mod.rs gate.
-rustls-webpki = { version = "0.103", default-features = false, features = ["alloc", "ring"] }
+rustls-webpki = { version = "0.103", default-features = false, features = ["alloc", "aws-lc-rs"] }
 webpki-roots = "1.0"
 rustls-pki-types = "1.13"
 

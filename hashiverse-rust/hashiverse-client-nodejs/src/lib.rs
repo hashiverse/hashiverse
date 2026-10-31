@@ -8,7 +8,7 @@ static RUSTLS_INIT: OnceLock<()> = OnceLock::new();
 
 pub(crate) fn ensure_rustls_init() {
     RUSTLS_INIT.get_or_init(|| {
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     });
 }
 
