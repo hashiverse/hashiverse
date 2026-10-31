@@ -38,8 +38,7 @@
 //! so a crafted ciphertext can't make a peer burn gigabytes of RAM trying to validate it.
 
 use anyhow::anyhow;
-use crate::tools::tools;
-use chacha20poly1305::aead::{Aead, AeadInOut, KeyInit};
+use chacha20poly1305::aead::{Aead, AeadInOut, Generate, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 
 const HEADER_FORMAT_VERSION: u8 = 1;
@@ -142,12 +141,6 @@ fn derive_wrap_key(argon2: &argon2::Argon2, password: &[u8]) -> anyhow::Result<K
     Ok(Key::from(key_bytes))
 }
 
-fn random_nonce() -> Nonce {
-    let mut nonce = Nonce::default();
-    tools::random_fill_bytes(&mut nonce);
-    nonce
-}
-
 fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &[Vec<u8>]) -> anyhow::Result<Vec<u8>> {
     if passwords.is_empty() {
         anyhow::bail!("at least one password required");
@@ -157,8 +150,7 @@ fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &[Vec
     }
 
     let argon2 = config.to_argon2()?;
-    let mut file_key = Key::default();
-    tools::random_fill_bytes(&mut file_key);
+    let file_key = Key::generate();
 
     let mut out = Vec::new();
     config.write_header_to(&mut out);
@@ -167,7 +159,7 @@ fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &[Vec
     // Wrap the file key for each recipient
     for password in passwords {
         let wrap_key = derive_wrap_key(&argon2, password)?;
-        let wrap_nonce = random_nonce();
+        let wrap_nonce = Nonce::generate();
         let wrapped = ChaCha20Poly1305::new(&wrap_key)
             .encrypt(&wrap_nonce, file_key.as_slice())
             .map_err(|_| anyhow!("key wrap failed"))?;
@@ -176,7 +168,7 @@ fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &[Vec
     }
 
     // Copy plaintext into out then encrypt in-place — no intermediate buffer
-    let body_nonce = random_nonce();
+    let body_nonce = Nonce::generate();
     out.extend_from_slice(&body_nonce);
     let plaintext_start = out.len();
     out.extend_from_slice(plaintext);

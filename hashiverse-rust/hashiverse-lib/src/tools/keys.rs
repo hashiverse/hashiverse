@@ -25,7 +25,7 @@ use crate::tools::tools;
 use crate::tools::types::{PQCommitmentBytes, SignatureKey, VerificationKey, VerificationKeyBytes};
 use anyhow::anyhow;
 use argon2::Argon2;
-use chacha20poly1305::aead::Aead;
+use chacha20poly1305::aead::{Aead, Generate};
 use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce};
 use std::fmt::{self, Display, Formatter};
 
@@ -102,8 +102,7 @@ impl Keys {
         let key = derive_persistence_key(passphrase, &salt)?;
 
         // Encrypt the buffer
-        let mut nonce = Nonce::default();
-        tools::random_fill_bytes(&mut nonce);
+        let nonce = Nonce::generate();
 
         let cipher = ChaCha20Poly1305::new(&key);
         let ciphertext = cipher.encrypt(&nonce, buf.as_ref()).map_err(|e| anyhow!("error encrypting buffer: {}", e))?.to_vec();

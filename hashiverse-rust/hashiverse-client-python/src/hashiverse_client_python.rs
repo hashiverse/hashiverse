@@ -85,7 +85,7 @@ pub fn convert_text_to_hashiverse_html_x_url_preview(
 // Data classes
 // ---------------------------------------------------------------------------
 
-#[pyclass(get_all)]
+#[pyclass(get_all, from_py_object)]
 #[derive(Clone)]
 pub struct Post {
     pub post_id: String,
@@ -104,7 +104,7 @@ impl Post {
     }
 }
 
-#[pyclass(get_all)]
+#[pyclass(get_all, from_py_object)]
 #[derive(Clone)]
 pub struct Bio {
     pub client_id: String,
@@ -121,7 +121,7 @@ impl Bio {
     }
 }
 
-#[pyclass(get_all)]
+#[pyclass(get_all, from_py_object)]
 #[derive(Clone)]
 pub struct UrlPreview {
     pub url: String,
@@ -130,14 +130,14 @@ pub struct UrlPreview {
     pub image_url: String,
 }
 
-#[pyclass(get_all)]
+#[pyclass(get_all, from_py_object)]
 #[derive(Clone)]
 pub struct TrendingHashtag {
     pub hashtag: String,
     pub count: u64,
 }
 
-#[pyclass(get_all)]
+#[pyclass(get_all, from_py_object)]
 #[derive(Clone)]
 pub struct TimelineResponse {
     pub posts: Vec<Post>,
@@ -256,7 +256,7 @@ impl HashiverseClientPython {
         passphrase: &str,
         bootstrap_addresses: Option<Vec<String>>,
     ) -> PyResult<Self> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let runtime = Arc::new(
                 tokio::runtime::Builder::new_multi_thread()
                     .enable_all()
@@ -285,7 +285,7 @@ impl HashiverseClientPython {
         passphrase: &str,
         bootstrap_addresses: Option<Vec<String>>,
     ) -> PyResult<Self> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let runtime = Arc::new(
                 tokio::runtime::Builder::new_multi_thread()
                     .enable_all()
