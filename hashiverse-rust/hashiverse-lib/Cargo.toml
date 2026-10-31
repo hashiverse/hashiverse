@@ -29,7 +29,7 @@ async-trait = { workspace = true }
 futures = "0.3"
 
 
-ed25519-dalek = { version = "3.0.0", features = ["rand_core", "serde", "pkcs8", "alloc"] }
+ed25519-dalek = { version = "3.0.0", features = ["serde", "pkcs8", "alloc"] }
 num-traits = "0.2.19"
 strum_macros = "0.27.2"
 chacha20poly1305 = "0.11.0"
@@ -58,7 +58,7 @@ send_wrapper = { version = "0.6.0", features = ["futures"]}
 tempfile = "3.25.0"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "registry", "fmt"] }
 ml-dsa = "0.1"
-falcon-rust = "0.1.2"
+falcon-rust = "0.3.1"
 bitflags="2.11.1"
 getrandom_4 = { package = "getrandom", version = "0.4.2" }
 
@@ -68,7 +68,7 @@ rayon = "1.10"
 reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
 rusqlite = { version = "0.36", features = ["bundled"] }
 dirs-next = "2.0"
-hickory-resolver = { version = "0.25", features = ["https-ring", "dnssec-ring", "webpki-roots"] }
+hickory-resolver = { version = "0.26", features = ["https-ring", "dnssec-ring", "webpki-roots"] }
 # Cert-chain validation (server-side ownership-proof verification only). Pulls in `ring`,
 # which needs a C/asm toolchain (clang) to build for wasm — kept off the wasm target so
 # `cert_validation` and its deps never reach the browser client. See tools/mod.rs gate.
@@ -81,7 +81,6 @@ wasm-bindgen-futures = "0.4"
 gloo-timers = { version = "0.4.0", features = ["futures"] }
 uuid = { version = "1.17.0", features = ["js"] }
 getrandom_2 = { package = "getrandom", version = "0.2.17", features = ["js"] }
-getrandom_3 = { package = "getrandom", version = "0.3.4", features = ["wasm_js"] }
 getrandom_4 = { package = "getrandom", version = "0.4.2", features = ["wasm_js"] }
 # Browser-only trait impls relocated from hashiverse-client-wasm (WasmClientStorage,
 # WasmTransportFactory, WasmKeyLocker, WasmParallelPowGenerator, WasmBootstrapProvider).

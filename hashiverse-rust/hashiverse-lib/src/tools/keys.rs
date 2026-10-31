@@ -104,14 +104,13 @@ impl Keys {
         // Encrypt the buffer
         let mut nonce = Nonce::default();
         tools::random_fill_bytes(&mut nonce);
-        let nonce_slice = nonce.as_slice();
 
         let cipher = ChaCha20Poly1305::new(&key);
         let ciphertext = cipher.encrypt(&nonce, buf.as_ref()).map_err(|e| anyhow!("error encrypting buffer: {}", e))?.to_vec();
 
         // Store lengths for salt and nonce (as u8)
         let salt_len = salt.len();
-        let nonce_len = nonce_slice.len();
+        let nonce_len = nonce.len();
 
         if salt_len > u8::MAX as usize || nonce_len > u8::MAX as usize {
             return Err(anyhow!("Salt or nonce too large"));
@@ -122,7 +121,7 @@ impl Keys {
         out.push(salt_len as u8);
         out.extend_from_slice(&salt);
         out.push(nonce_len as u8);
-        out.extend_from_slice(nonce_slice);
+        out.extend_from_slice(&nonce);
         out.extend_from_slice(&ciphertext);
 
         Ok(tools::encode_base64(&out))
