@@ -67,8 +67,11 @@ cargo nextest run --cargo-profile profiling -p hashiverse-lib <test_name>
 # WASM lib tests (wasmtime runner is configured in .cargo/config.toml)
 cargo nextest run --target wasm32-wasip1 -p hashiverse-lib
 
-# WASM client tests in headless Chrome (requires wasm-pack)
-wasm-pack test --chrome --headless hashiverse-client-wasm --lib
+# WASM browser tests in headless Chrome (requires wasm-pack)
+# The browser trait impls (WasmClientStorage, WasmKeyLocker, ...) and their tests live in hashiverse-lib
+wasm-pack test --chrome --headless hashiverse-lib --lib
+# hashiverse-client-wasm integration tests (tests/web.rs) — no --lib, it has no unit tests
+wasm-pack test --chrome --headless hashiverse-client-wasm
 
 # Python / Node extension crates compile only via their own build pipelines —
 # not through bare cargo. See hashiverse-client-python/ and hashiverse-client-nodejs/

@@ -31,21 +31,21 @@ futures = "0.3"
 
 ed25519-dalek = { version = "3.0.0", features = ["serde", "pkcs8", "alloc"] }
 num-traits = "0.2.19"
-strum_macros = "0.27.2"
+strum_macros = "0.28.0"
 chacha20poly1305 = "0.11.0"
 argon2 = "0.6.0"
 chrono = "0.4.44"
 tokio = { version = "1.45", features = ["macros", "time", "rt", "io-util"] }
 tokio-util = { version = "0.7.18", features = ["codec", "rt"] }
 clap = { version = "4.6.1", features = ["derive"] }
-base64 = "0.22.1"
+base64 = "0.23.1"
 uuid = { version = "1.17.0", features = ["v4"] }
-lz4_flex="0.13.1"
-brotli="8.0.2"
-scraper = "0.27.0"
+lz4_flex = "0.14.0"
+brotli = "9.1.1"
+scraper = "0.29.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
-derive_more = "0.99.20"
+derive_more = { version = "2.1.1", features = ["display", "add", "mul", "not"] }
 serde_with = { version = "3.16.1", features = ["hex"] }
 blake2 = "0.11.0"
 blake3 = { version = "1.8.7" }
@@ -66,7 +66,7 @@ getrandom_4 = { package = "getrandom", version = "0.4.2" }
 moka = { version = "0.12", features = ["sync"] }
 rayon = "1.10"
 reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
-rusqlite = { version = "0.36", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 dirs-next = "2.0"
 hickory-resolver = { version = "0.26", features = ["https-ring", "dnssec-ring", "webpki-roots"] }
 # Cert-chain validation (server-side ownership-proof verification only). Pulls in `ring`,
@@ -88,7 +88,7 @@ getrandom_4 = { package = "getrandom", version = "0.4.2", features = ["wasm_js"]
 # `cargo add hashiverse-lib` targeting wasm32-unknown-unknown.
 wasm-bindgen = "0.2.108"
 js-sys = "0.3.85"
-gloo-net = "0.6.0"
+gloo-net = "0.7.0"
 indexed_db_futures = { version = "0.6.4", features = ["serde", "cursors", "indices"] }
 web-sys = { version = "0.3", features = [
     "Window", "WorkerGlobalScope", "Crypto", "CryptoKey", "SubtleCrypto",

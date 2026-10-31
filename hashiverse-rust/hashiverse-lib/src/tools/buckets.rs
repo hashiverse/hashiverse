@@ -54,7 +54,7 @@ pub enum BucketType {
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Display)]
-#[display(fmt = "[ location_id: {}, bucket_type: {}, base_id: {}, duration: {}, bucket_time_millis: {}]", location_id, bucket_type, base_id, duration, bucket_time_millis)]
+#[display("[ location_id: {}, bucket_type: {}, base_id: {}, duration: {}, bucket_time_millis: {}]", location_id, bucket_type, base_id, duration, bucket_time_millis)]
 pub struct BucketLocation {
     pub bucket_type: BucketType,
     pub base_id: Id,
@@ -149,13 +149,35 @@ pub fn bucket_durations_for_type(bucket_type: BucketType) -> &'static [DurationM
 pub mod tests {
     use crate::tools::buckets::{bucket_durations_for_type, BucketLocation, BucketType, BUCKET_DURATIONS};
     use crate::tools::time::{TimeMillis, MILLIS_IN_DAY, MILLIS_IN_MONTH, MILLIS_IN_YEAR};
-    use crate::tools::types::Id;
+    use crate::tools::types::{Id, ID_BYTES};
 
     #[tokio::test]
     async fn ensure_bucket_duration_multiples_test() -> anyhow::Result<()> {
         for i in 0..BUCKET_DURATIONS.len()-1 {
             assert_eq!(0, BUCKET_DURATIONS[i].0 % BUCKET_DURATIONS[i+1].0)
         }
+        Ok(())
+    }
+
+    /// `BucketType`'s `Display` is part of the `to_html_attr` wire format and `BucketLocation`'s
+    /// `Display` comes from a `derive_more` format attribute — pin both so a macro-crate bump
+    /// cannot silently change them.
+    #[tokio::test]
+    async fn bucket_type_and_location_display_are_stable() -> anyhow::Result<()> {
+        assert_eq!(BucketType::User.to_string(), "User");
+        assert_eq!(BucketType::Hashtag.to_string(), "Hashtag");
+        assert_eq!(BucketType::Mention.to_string(), "Mention");
+        assert_eq!(BucketType::ReplyToPost.to_string(), "ReplyToPost");
+        assert_eq!(BucketType::Sequel.to_string(), "Sequel");
+
+        let base_id = Id::from_slice(&[0xab; ID_BYTES])?;
+        let bucket_time_millis = TimeMillis(1_700_000_000_000);
+        let bucket_location = BucketLocation::new(BucketType::Hashtag, base_id, MILLIS_IN_DAY, bucket_time_millis)?;
+        assert_eq!(
+            bucket_location.to_string(),
+            format!("[ location_id: {}, bucket_type: Hashtag, base_id: {}, duration: {}, bucket_time_millis: {}]", bucket_location.location_id, base_id, MILLIS_IN_DAY, bucket_location.bucket_time_millis)
+        );
+        assert_eq!(bucket_location.to_html_attr(), format!("1~Hashtag~{}~{}~{}", "ab".repeat(ID_BYTES), MILLIS_IN_DAY, bucket_location.bucket_time_millis));
         Ok(())
     }
 
