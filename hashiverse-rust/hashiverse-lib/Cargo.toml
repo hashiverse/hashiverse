@@ -80,7 +80,6 @@ rustls-pki-types = "1.13"
 wasm-bindgen-futures = "0.4"
 gloo-timers = { version = "0.4.0", features = ["futures"] }
 uuid = { version = "1.17.0", features = ["js"] }
-getrandom_2 = { package = "getrandom", version = "0.2.17", features = ["js"] }
 getrandom_4 = { package = "getrandom", version = "0.4.2", features = ["wasm_js"] }
 # Browser-only trait impls relocated from hashiverse-client-wasm (WasmClientStorage,
 # WasmTransportFactory, WasmKeyLocker, WasmParallelPowGenerator, WasmBootstrapProvider).
@@ -101,4 +100,9 @@ console-subscriber = { version = "0.5.0" }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.71"
-bolero = "0.11"
+bolero = "0.13"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+# bolero 0.13 -> rand 0.9 -> getrandom 0.3, which needs `wasm_js` to compile for wasm32-unknown-unknown.
+# Test-only: keeps getrandom 0.3 out of the shipped browser bundle.
+getrandom_3 = { package = "getrandom", version = "0.3.4", features = ["wasm_js"] }
