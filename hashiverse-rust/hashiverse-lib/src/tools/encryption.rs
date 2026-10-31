@@ -38,7 +38,8 @@
 //! so a crafted ciphertext can't make a peer burn gigabytes of RAM trying to validate it.
 
 use anyhow::anyhow;
-use chacha20poly1305::aead::{Aead, AeadCore, AeadInPlace, KeyInit, OsRng};
+use crate::tools::tools;
+use chacha20poly1305::aead::{Aead, AeadInOut, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 
 const HEADER_FORMAT_VERSION: u8 = 1;
@@ -138,7 +139,13 @@ fn derive_wrap_key(argon2: &argon2::Argon2, password: &[u8]) -> anyhow::Result<K
     argon2
         .hash_password_into(password, b"hashiverse-key-wrap", &mut key_bytes)
         .map_err(|e| anyhow!("key derivation error: {}", e))?;
-    Ok(*Key::from_slice(&key_bytes))
+    Ok(Key::from(key_bytes))
+}
+
+fn random_nonce() -> Nonce {
+    let mut nonce = Nonce::default();
+    tools::random_fill_bytes(&mut nonce);
+    nonce
 }
 
 fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &[Vec<u8>]) -> anyhow::Result<Vec<u8>> {
@@ -150,7 +157,8 @@ fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &[Vec
     }
 
     let argon2 = config.to_argon2()?;
-    let file_key = ChaCha20Poly1305::generate_key(&mut OsRng);
+    let mut file_key = Key::default();
+    tools::random_fill_bytes(&mut file_key);
 
     let mut out = Vec::new();
     config.write_header_to(&mut out);
@@ -159,7 +167,7 @@ fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &[Vec
     // Wrap the file key for each recipient
     for password in passwords {
         let wrap_key = derive_wrap_key(&argon2, password)?;
-        let wrap_nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+        let wrap_nonce = random_nonce();
         let wrapped = ChaCha20Poly1305::new(&wrap_key)
             .encrypt(&wrap_nonce, file_key.as_slice())
             .map_err(|_| anyhow!("key wrap failed"))?;
@@ -168,12 +176,12 @@ fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &[Vec
     }
 
     // Copy plaintext into out then encrypt in-place — no intermediate buffer
-    let body_nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+    let body_nonce = random_nonce();
     out.extend_from_slice(&body_nonce);
     let plaintext_start = out.len();
     out.extend_from_slice(plaintext);
     let tag = ChaCha20Poly1305::new(&file_key)
-        .encrypt_in_place_detached(&body_nonce, b"", &mut out[plaintext_start..])
+        .encrypt_inout_detached(&body_nonce, b"", (&mut out[plaintext_start..]).into())
         .map_err(|_| anyhow!("body encryption failed"))?;
     out.extend_from_slice(&tag);
 
@@ -221,17 +229,17 @@ pub fn decrypt(ciphertext: &[u8], password: &[u8]) -> anyhow::Result<Vec<u8>> {
     let mut file_key: Option<Key> = None;
     for i in 0..num_recipients {
         let slot = pos + i * RECIPIENT_SLOT_SIZE;
-        let nonce = Nonce::from_slice(&ciphertext[slot..slot + NONCE_SIZE]);
+        let nonce = <&Nonce>::try_from(&ciphertext[slot..slot + NONCE_SIZE]).map_err(|_| anyhow!("recipient nonce slice error"))?;
         let wrapped = &ciphertext[slot + NONCE_SIZE..slot + RECIPIENT_SLOT_SIZE];
         if let Ok(key_bytes) = wrap_cipher.decrypt(nonce, wrapped) {
-            file_key = Some(*Key::from_slice(&key_bytes));
+            file_key = Some(Key::try_from(key_bytes.as_slice()).map_err(|_| anyhow!("unwrapped file key has wrong length"))?);
             break;
         }
     }
 
     let file_key = file_key.ok_or_else(|| anyhow!("password did not match any recipient"))?;
 
-    let body_nonce = Nonce::from_slice(&ciphertext[recipients_end..recipients_end + NONCE_SIZE]);
+    let body_nonce = <&Nonce>::try_from(&ciphertext[recipients_end..recipients_end + NONCE_SIZE]).map_err(|_| anyhow!("body nonce slice error"))?;
     let body_ciphertext = &ciphertext[recipients_end + NONCE_SIZE..];
 
     ChaCha20Poly1305::new(&file_key)

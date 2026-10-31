@@ -24,12 +24,21 @@ use crate::tools::keys_post_quantum::pq_commitment_bytes_from_seed;
 use crate::tools::tools;
 use crate::tools::types::{PQCommitmentBytes, SignatureKey, VerificationKey, VerificationKeyBytes};
 use anyhow::anyhow;
-use argon2::password_hash::rand_core::OsRng;
-use argon2::password_hash::SaltString;
-use argon2::{Argon2, PasswordHasher};
+use argon2::Argon2;
 use chacha20poly1305::aead::Aead;
-use chacha20poly1305::{AeadCore, ChaCha20Poly1305, Key, KeyInit};
+use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit, Nonce};
 use std::fmt::{self, Display, Formatter};
+
+/// Argon2id (default params) over the passphrase and raw salt bytes, producing the 32-byte
+/// ChaCha20Poly1305 key used for key persistence.  Identical output to the argon2 0.5
+/// `hash_password(passphrase, SaltString::encode_b64(salt))` path it replaced (that path
+/// decoded the salt back to raw bytes and used the default 32-byte output length) — pinned by
+/// `keys_from_persistence_regression_vector`.
+fn derive_persistence_key(passphrase: &str, salt: &[u8]) -> anyhow::Result<Key> {
+    let mut key = Key::default();
+    Argon2::default().hash_password_into(passphrase.as_bytes(), salt, &mut key).map_err(|e| anyhow!("error hashing passphrase: {}", e))?;
+    Ok(key)
+}
 
 #[derive(Clone)]
 pub struct Keys {
@@ -90,25 +99,15 @@ impl Keys {
         // Derive encryption key from passphrase and random salt
         let mut salt = vec![0u8; 16];
         tools::random_fill_bytes(&mut salt);
-        let salt_string = SaltString::encode_b64(&salt).map_err(|e| anyhow!("error creating salt: {}", e))?;
-
-        let argon2 = Argon2::default();
-        let hash = argon2
-            .hash_password(passphrase.as_bytes(), &salt_string)
-            .map_err(|e| anyhow!("error hashing passphrase: {}", e))?
-            .hash
-            .ok_or_else(|| anyhow::anyhow!("argon2 failed"))?;
-        let key_bytes = hash.as_bytes();
-        let mut key = Key::default();
-        let copy_len = key_bytes.len().min(key.len());
-        key[..copy_len].copy_from_slice(&key_bytes[..copy_len]);
+        let key = derive_persistence_key(passphrase, &salt)?;
 
         // Encrypt the buffer
-        let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+        let mut nonce = Nonce::default();
+        tools::random_fill_bytes(&mut nonce);
         let nonce_slice = nonce.as_slice();
 
         let cipher = ChaCha20Poly1305::new(&key);
-        let ciphertext = cipher.encrypt(nonce_slice.into(), buf.as_ref()).map_err(|e| anyhow!("error encrypting buffer: {}", e))?.to_vec();
+        let ciphertext = cipher.encrypt(&nonce, buf.as_ref()).map_err(|e| anyhow!("error encrypting buffer: {}", e))?.to_vec();
 
         // Store lengths for salt and nonce (as u8)
         let salt_len = salt.len();
@@ -155,24 +154,13 @@ impl Keys {
         let nonce = &decoded[nonce_start..nonce_end];
         let ciphertext = &decoded[nonce_end..];
 
-        // Convert salt to usable type
-        let salt_string = SaltString::encode_b64(salt).map_err(|e| anyhow!("error creating salt: {}", e))?;
-
         // Derive encryption key from passphrase and salt
-        let argon2 = Argon2::default();
-        let hash = argon2
-            .hash_password(passphrase.as_bytes(), &salt_string)
-            .map_err(|e| anyhow!("error hashing passphrase: {}", e))?
-            .hash
-            .ok_or_else(|| anyhow!("argon2 failed"))?;
-        let key_bytes = hash.as_bytes();
-        let mut key = Key::default();
-        let copy_len = key_bytes.len().min(key.len());
-        key[..copy_len].copy_from_slice(&key_bytes[..copy_len]);
+        let key = derive_persistence_key(passphrase, salt)?;
 
         // Decrypt the buffer
+        let nonce = <&Nonce>::try_from(nonce).map_err(|_| anyhow!("Invalid nonce length: {}", nonce.len()))?;
         let cipher = ChaCha20Poly1305::new(&key);
-        let buf = cipher.decrypt(nonce.into(), ciphertext).map_err(|e| anyhow!("Decryption failed: {}", e))?;
+        let buf = cipher.decrypt(nonce, ciphertext).map_err(|e| anyhow!("Decryption failed: {}", e))?;
 
         // Split the buffer back into the key materials
         if buf.len() != 32 * 3 {

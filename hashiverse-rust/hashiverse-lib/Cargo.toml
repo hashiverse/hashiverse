@@ -29,11 +29,11 @@ async-trait = { workspace = true }
 futures = "0.3"
 
 
-ed25519-dalek = {  version = "2.1.1" , features = ["rand_core", "serde", "pkcs8"] }
+ed25519-dalek = { version = "3.0.0", features = ["rand_core", "serde", "pkcs8", "alloc"] }
 num-traits = "0.2.19"
 strum_macros = "0.27.2"
-chacha20poly1305 = "0.10.1"
-argon2 = "0.5.3"
+chacha20poly1305 = "0.11.0"
+argon2 = "0.6.0"
 chrono = "0.4.44"
 tokio = { version = "1.45", features = ["macros", "time", "rt", "io-util"] }
 tokio-util = { version = "0.7.18", features = ["codec", "rt"] }
@@ -60,6 +60,7 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter", "registry",
 ml-dsa = "0.1"
 falcon-rust = "0.1.2"
 bitflags="2.11.1"
+getrandom_4 = { package = "getrandom", version = "0.4.2" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 moka = { version = "0.12", features = ["sync"] }
