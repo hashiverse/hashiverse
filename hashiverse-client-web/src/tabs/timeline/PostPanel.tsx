@@ -301,7 +301,7 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 		// NB we dont mind this external reference to katex as it is for standalone copied-and-pasted exported post html
 		const has_math = sanitized_html.includes('data-type="inline-math"') || sanitized_html.includes('data-type="block-math"');
 		const katex_tags = has_math
-			? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css">\n<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js"></script>\n<script defer>document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[data-type="inline-math"][data-latex],[data-type="block-math"][data-latex]').forEach(function(el){katex.render(el.getAttribute('data-latex'),el,{displayMode:el.getAttribute('data-type')==='block-math',throwOnError:false})})});</script>\n`
+			? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18/dist/katex.min.css">\n<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18/dist/katex.min.js"></script>\n<script defer>document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[data-type="inline-math"][data-latex],[data-type="block-math"][data-latex]').forEach(function(el){katex.render(el.getAttribute('data-latex'),el,{displayMode:el.getAttribute('data-type')==='block-math',throwOnError:false})})});</script>\n`
 			: "";
 
 		const embed_html = `<!DOCTYPE html>\n${katex_tags}<style>\nbody { margin: 0; }\n.hashiverse-embed { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #fff; background: #242424; }\n${embed_css}\n</style>\n<div class="hashiverse-embed">\n${sanitized_html}\n</div>`;

@@ -23,7 +23,6 @@ use crate::environment::environment_store::EnvironmentStore;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use fjall::{Database, Keyspace};
-use fs2::FileExt;
 use hashiverse_lib::tools::time::{TimeMillis, TimeMillisBytes};
 use hashiverse_lib::tools::types::{ID_BYTES, Id, SALT_BYTES, Salt, Pow};
 use log::{info, trace, warn};
@@ -88,7 +87,7 @@ impl DiskEnvironmentStore {
         // Attempt to grab the lock
         let lock_path = path.join("lock");
         let lock_file = OpenOptions::new().create(true).truncate(true).read(true).write(true).open(&lock_path)?;
-        lock_file.try_lock_exclusive()?;
+        lock_file.try_lock()?;
 
         // Make sure the various stores exist
         let database = Database::builder(path.join("database")).open()?;
@@ -350,7 +349,7 @@ impl PostBundleFeedbackValue {
 #[cfg(test)]
 mod tests {
     use crate::environment;
-    use crate::environment::disk_environment_store::DiskEnvironmentFactory;
+    use crate::environment::disk_environment_store::{DiskEnvironmentFactory, DiskEnvironmentStore};
 
     #[tokio::test]
     async fn basics_test() -> anyhow::Result<()> {
@@ -366,6 +365,24 @@ mod tests {
     #[tokio::test]
     async fn feedback_put_if_more_powerful_test() -> anyhow::Result<()> {
         environment::environment::tests::feedback_put_if_more_powerful_test::<DiskEnvironmentFactory>().await
+    }
+
+    #[test]
+    fn second_store_on_same_environment_is_locked_until_first_dropped() -> anyhow::Result<()> {
+        let (_temp_dir_handle, temp_dir_path) = hashiverse_lib::tools::tools::get_temp_dir()?;
+
+        let first_disk_environment_store = DiskEnvironmentStore::new(&temp_dir_path, 1)?;
+        assert!(DiskEnvironmentStore::new(&temp_dir_path, 1).is_err(), "environment 1 must be locked while the first store is alive");
+
+        // A different environment id in the same base path is unaffected
+        let other_disk_environment_store = DiskEnvironmentStore::new(&temp_dir_path, 2)?;
+
+        drop(first_disk_environment_store);
+        let reopened_disk_environment_store = DiskEnvironmentStore::new(&temp_dir_path, 1);
+        assert!(reopened_disk_environment_store.is_ok(), "environment 1 must be claimable once the first store is dropped");
+
+        drop(other_disk_environment_store);
+        Ok(())
     }
 
     // These are brutally expensive on disk - we rely on the memory stub for the decimation tests
