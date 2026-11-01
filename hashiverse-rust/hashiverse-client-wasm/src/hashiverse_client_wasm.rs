@@ -1,4 +1,4 @@
-use crate::wasm_try;
+use crate::{wasm_try, wasm_try_ts, wasm_try_ts_vec};
 use hashiverse_lib::client::client_storage::wasm_client_storage::WasmClientStorage;
 use hashiverse_lib::client::key_locker::wasm_key_locker::WasmKeyLockerManager;
 use hashiverse_lib::transport::wasm_transport::WasmTransportFactory;
@@ -16,7 +16,7 @@ use log::warn;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use anyhow::anyhow;
-use tsify::Tsify;
+use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use bytes::Bytes;
@@ -108,7 +108,7 @@ impl HashiverseClientWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn post_v1(&self, post: &str) -> Result<Post, JsValue> {
+    pub async fn post_v1(&self, post: &str) -> Result<Ts<Post>, JsValue> {
         self.post_v2(post, true).await
     }
 
@@ -116,8 +116,8 @@ impl HashiverseClientWasm {
     /// secures its first User-bucket commit, finishing the remaining redundancy and secondary
     /// buckets on a background task (visible via the PoW busy indicator).
     #[wasm_bindgen]
-    pub async fn post_v2(&self, post: &str, wait_for_all_submissions: bool) -> Result<Post, JsValue> {
-        wasm_try!({
+    pub async fn post_v2(&self, post: &str, wait_for_all_submissions: bool) -> Result<Ts<Post>, JsValue> {
+        wasm_try_ts!({
             let (commit_tokens, (encoded_post, raw_bytes)) = self.hashiverse_client.submit_post_with_wait(post, wait_for_all_submissions).await?;
             let bucket_location = &commit_tokens[0].bucket_location;
             let client_id = encoded_post.header.client_id()?;
@@ -155,8 +155,8 @@ impl HashiverseClientWasm {
 
     #[wasm_bindgen]
     /// Gets a specific post
-    pub async fn get_post_v1(&self, bucket_location: String, post_id: String) -> Result<Post, JsValue> {
-        wasm_try!({
+    pub async fn get_post_v1(&self, bucket_location: String, post_id: String) -> Result<Ts<Post>, JsValue> {
+        wasm_try_ts!({
             let bucket_location = BucketLocation::from_html_attr(&bucket_location)?;
             let post_id = Id::from_hex_str(&post_id)?;
             let (bucket_location, post, raw_bytes, healed) = self.hashiverse_client.get_post(bucket_location, &post_id).await?;
@@ -188,8 +188,8 @@ impl HashiverseClientWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn get_bio(&self, id: String) -> Result<Bio, JsValue> {
-        wasm_try!({
+    pub async fn get_bio(&self, id: String) -> Result<Ts<Bio>, JsValue> {
+        wasm_try_ts!({
             let meta_post_public = self.meta_post_manager().get_meta_post_public(Id::from_hex_str(&id)?).await?;
             match meta_post_public {
                 Some(meta_post_public) => Bio {
@@ -211,8 +211,8 @@ impl HashiverseClientWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn get_all_bios(&self) -> Result<Vec<Bio>, JsValue> {
-        wasm_try!({
+    pub async fn get_all_bios(&self) -> Result<Vec<Ts<Bio>>, JsValue> {
+        wasm_try_ts_vec!({
             let meta_post_publics = self.meta_post_manager().get_all_meta_post_publics().await?;
             meta_post_publics.into_iter()
                 .map(|(client_id, meta_post_public)| Bio {
@@ -227,8 +227,8 @@ impl HashiverseClientWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn get_all_known_peers_v1(&self) -> Result<Vec<PeerInfoV1>, JsValue> {
-        wasm_try!({
+    pub async fn get_all_known_peers_v1(&self) -> Result<Vec<Ts<PeerInfoV1>>, JsValue> {
+        wasm_try_ts_vec!({
             self.hashiverse_client.get_all_known_peers().await
                 .into_iter()
                 .map(|peer| PeerInfoV1 {
@@ -255,8 +255,8 @@ impl HashiverseClientWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn get_active_pow_jobs_v1(&self) -> Result<Vec<PowJobStatusV1>, JsValue> {
-        wasm_try!({
+    pub async fn get_active_pow_jobs_v1(&self) -> Result<Vec<Ts<PowJobStatusV1>>, JsValue> {
+        wasm_try_ts_vec!({
             self.hashiverse_client.active_pow_jobs()
                 .into_iter()
                 .map(|job| PowJobStatusV1 {
@@ -325,56 +325,56 @@ impl HashiverseClientWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn single_timeline_get_more_me_v1(&self) -> Result<SingleTimelineGetMoreV1Response, JsValue> {
-        wasm_try!({
+    pub async fn single_timeline_get_more_me_v1(&self) -> Result<Ts<SingleTimelineGetMoreV1Response>, JsValue> {
+        wasm_try_ts!({
             let id = self.hashiverse_client.client_id().id;
             self.single_timeline_get_more(BucketType::User, &id).await?
         })
     }
 
     #[wasm_bindgen]
-    pub async fn single_timeline_get_more_me_mentioned_v1(&self) -> Result<SingleTimelineGetMoreV1Response, JsValue> {
-        wasm_try!({
+    pub async fn single_timeline_get_more_me_mentioned_v1(&self) -> Result<Ts<SingleTimelineGetMoreV1Response>, JsValue> {
+        wasm_try_ts!({
             let id = self.hashiverse_client.client_id().id;
             self.single_timeline_get_more(BucketType::Mention, &id).await?
         })
     }
 
     #[wasm_bindgen]
-    pub async fn single_timeline_get_more_hashtag_v1(&self, hashtag: String) -> Result<SingleTimelineGetMoreV1Response, JsValue> {
-        wasm_try!({
+    pub async fn single_timeline_get_more_hashtag_v1(&self, hashtag: String) -> Result<Ts<SingleTimelineGetMoreV1Response>, JsValue> {
+        wasm_try_ts!({
             let id = Id::from_hashtag_str(&hashtag)?;
             self.single_timeline_get_more(BucketType::Hashtag, &id).await?
         })
     }
 
     #[wasm_bindgen]
-    pub async fn single_timeline_get_more_user_v1(&self, client_id_hex: String) -> Result<SingleTimelineGetMoreV1Response, JsValue> {
-        wasm_try!({
+    pub async fn single_timeline_get_more_user_v1(&self, client_id_hex: String) -> Result<Ts<SingleTimelineGetMoreV1Response>, JsValue> {
+        wasm_try_ts!({
             let id = Id::from_hex_str(&client_id_hex)?;
             self.single_timeline_get_more(BucketType::User, &id).await?
         })
     }
 
     #[wasm_bindgen]
-    pub async fn single_timeline_get_more_user_mentioned_v1(&self, client_id_hex: String) -> Result<SingleTimelineGetMoreV1Response, JsValue> {
-        wasm_try!({
+    pub async fn single_timeline_get_more_user_mentioned_v1(&self, client_id_hex: String) -> Result<Ts<SingleTimelineGetMoreV1Response>, JsValue> {
+        wasm_try_ts!({
             let id = Id::from_hex_str(&client_id_hex)?;
             self.single_timeline_get_more(BucketType::Mention, &id).await?
         })
     }
 
     #[wasm_bindgen]
-    pub async fn single_timeline_get_more_reply_to_post_v1(&self, post_id: String) -> Result<SingleTimelineGetMoreV1Response, JsValue> {
-        wasm_try!({
+    pub async fn single_timeline_get_more_reply_to_post_v1(&self, post_id: String) -> Result<Ts<SingleTimelineGetMoreV1Response>, JsValue> {
+        wasm_try_ts!({
             let id = Id::from_hex_str(&post_id)?;
             self.single_timeline_get_more(BucketType::ReplyToPost, &id).await?
         })
     }
 
     #[wasm_bindgen]
-    pub async fn single_timeline_get_more_sequel_v1(&self, post_id: String) -> Result<SingleTimelineGetMoreV1Response, JsValue> {
-        wasm_try!({
+    pub async fn single_timeline_get_more_sequel_v1(&self, post_id: String) -> Result<Ts<SingleTimelineGetMoreV1Response>, JsValue> {
+        wasm_try_ts!({
             let id = Id::from_hex_str(&post_id)?;
             self.single_timeline_get_more(BucketType::Sequel, &id).await?
         })
@@ -393,8 +393,8 @@ impl HashiverseClientWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn multiple_timeline_get_more_followed_users(&self) -> Result<SingleTimelineGetMoreV1Response, JsValue> {
-        wasm_try!({
+    pub async fn multiple_timeline_get_more_followed_users(&self) -> Result<Ts<SingleTimelineGetMoreV1Response>, JsValue> {
+        wasm_try_ts!({
             let ids = self.meta_post_manager().get_followed_client_ids().await?;
             self.multiple_timeline_get_more(BucketType::User, &ids).await?
         })
@@ -426,8 +426,8 @@ impl HashiverseClientWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn multiple_timeline_get_more_followed_hashtags(&self) -> Result<SingleTimelineGetMoreV1Response, JsValue> {
-        wasm_try!({
+    pub async fn multiple_timeline_get_more_followed_hashtags(&self) -> Result<Ts<SingleTimelineGetMoreV1Response>, JsValue> {
+        wasm_try_ts!({
             let hashtags = self.meta_post_manager().get_followed_hashtags().await?;
             let ids = hashtags.iter().map(|h| Id::from_hashtag_str(h)).collect::<anyhow::Result<Vec<_>>>()?;
             self.multiple_timeline_get_more(BucketType::Hashtag, &ids).await?
@@ -521,8 +521,8 @@ impl HashiverseClientWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn fetch_url_preview_v1(&self, url: String) -> Result<UrlPreview, JsValue> {
-        wasm_try!({
+    pub async fn fetch_url_preview_v1(&self, url: String) -> Result<Ts<UrlPreview>, JsValue> {
+        wasm_try_ts!({
             let preview = self.hashiverse_client.fetch_url_preview(&url).await?;
             UrlPreview {
                 url: preview.url,
@@ -534,8 +534,8 @@ impl HashiverseClientWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn fetch_trending_hashtags_v1(&self, limit: u16) -> Result<TrendingHashtagsFetchResponse, JsValue> {
-        wasm_try!({
+    pub async fn fetch_trending_hashtags_v1(&self, limit: u16) -> Result<Ts<TrendingHashtagsFetchResponse>, JsValue> {
+        wasm_try_ts!({
             let response = self.hashiverse_client.fetch_trending_hashtags(limit).await?;
             TrendingHashtagsFetchResponse {
                 trending_hashtags: response.trending_hashtags.into_iter().map(|entry| TrendingHashtag {
@@ -548,14 +548,12 @@ impl HashiverseClientWasm {
 }
 
 #[derive(Tsify, Serialize, Deserialize)]
-#[tsify(into_wasm_abi)]
 pub struct SingleTimelineGetMoreV1Response {
     pub posts: Vec<Post>,
     pub oldest_processed_time_millis: Option<i64>,
 }
 
 #[derive(Tsify, Serialize, Deserialize)]
-#[tsify(into_wasm_abi)]
 pub struct Post {
     pub post_id: String,
     pub time_millis: i64,
@@ -567,7 +565,6 @@ pub struct Post {
 }
 
 #[derive(Tsify, Serialize, Deserialize)]
-#[tsify(into_wasm_abi)]
 pub struct Bio {
     pub client_id: String,
     pub nickname: String,
@@ -577,7 +574,6 @@ pub struct Bio {
 }
 
 #[derive(Tsify, Serialize, Deserialize)]
-#[tsify(into_wasm_abi)]
 pub struct UrlPreview {
     pub url: String,
     pub title: String,
@@ -586,20 +582,17 @@ pub struct UrlPreview {
 }
 
 #[derive(Tsify, Serialize, Deserialize)]
-#[tsify(into_wasm_abi)]
 pub struct TrendingHashtag {
     pub hashtag: String,
     pub count: u64,
 }
 
 #[derive(Tsify, Serialize, Deserialize)]
-#[tsify(into_wasm_abi)]
 pub struct TrendingHashtagsFetchResponse {
     pub trending_hashtags: Vec<TrendingHashtag>,
 }
 
 #[derive(Tsify, Serialize, Deserialize)]
-#[tsify(into_wasm_abi)]
 pub struct PeerInfoV1 {
     pub peer_id_hex: String,
     pub address: String,
@@ -611,7 +604,6 @@ pub struct PeerInfoV1 {
 }
 
 #[derive(Tsify, Serialize, Deserialize)]
-#[tsify(into_wasm_abi)]
 pub struct PowJobStatusV1 {
     pub label: String,
     pub pow_min: u8,

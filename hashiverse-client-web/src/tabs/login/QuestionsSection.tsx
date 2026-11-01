@@ -79,7 +79,7 @@ export const QuestionsSection: React.FC<Props> = ({ on_login }) => {
 
 				{LOGIN_QUESTIONS_FIXED.map((question, index) => (
 					<TextInput
-						key={`fixed-${index}-${question}`}
+						key={`fixed-${question}`}
 						label={t(`login.question.${question_to_i18n_key(question)}`, {
 							defaultValue: question,
 						})}
@@ -96,6 +96,7 @@ export const QuestionsSection: React.FC<Props> = ({ on_login }) => {
 
 				{questions_variable.map((question, index) => (
 					<TextInput
+						// biome-ignore lint/suspicious/noArrayIndexKey: fixed-size positional answer slots (answers_variable[index]); before the questions load every slot holds "", so the index is the only unique identity
 						key={`variable-${index}-${question}`}
 						label={t(`login.question.${question_to_i18n_key(question)}`, {
 							defaultValue: question,

@@ -38,7 +38,7 @@
 //! so a crafted ciphertext can't make a peer burn gigabytes of RAM trying to validate it.
 
 use anyhow::anyhow;
-use chacha20poly1305::aead::{Aead, AeadCore, AeadInPlace, KeyInit, OsRng};
+use chacha20poly1305::aead::{Aead, AeadInOut, Generate, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 
 const HEADER_FORMAT_VERSION: u8 = 1;
@@ -138,7 +138,7 @@ fn derive_wrap_key(argon2: &argon2::Argon2, password: &[u8]) -> anyhow::Result<K
     argon2
         .hash_password_into(password, b"hashiverse-key-wrap", &mut key_bytes)
         .map_err(|e| anyhow!("key derivation error: {}", e))?;
-    Ok(*Key::from_slice(&key_bytes))
+    Ok(Key::from(key_bytes))
 }
 
 fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &[Vec<u8>]) -> anyhow::Result<Vec<u8>> {
@@ -150,7 +150,7 @@ fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &[Vec
     }
 
     let argon2 = config.to_argon2()?;
-    let file_key = ChaCha20Poly1305::generate_key(&mut OsRng);
+    let file_key = Key::generate();
 
     let mut out = Vec::new();
     config.write_header_to(&mut out);
@@ -159,7 +159,7 @@ fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &[Vec
     // Wrap the file key for each recipient
     for password in passwords {
         let wrap_key = derive_wrap_key(&argon2, password)?;
-        let wrap_nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+        let wrap_nonce = Nonce::generate();
         let wrapped = ChaCha20Poly1305::new(&wrap_key)
             .encrypt(&wrap_nonce, file_key.as_slice())
             .map_err(|_| anyhow!("key wrap failed"))?;
@@ -168,12 +168,12 @@ fn encrypt_with_config(config: &Argon2Config, plaintext: &[u8], passwords: &[Vec
     }
 
     // Copy plaintext into out then encrypt in-place — no intermediate buffer
-    let body_nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+    let body_nonce = Nonce::generate();
     out.extend_from_slice(&body_nonce);
     let plaintext_start = out.len();
     out.extend_from_slice(plaintext);
     let tag = ChaCha20Poly1305::new(&file_key)
-        .encrypt_in_place_detached(&body_nonce, b"", &mut out[plaintext_start..])
+        .encrypt_inout_detached(&body_nonce, b"", (&mut out[plaintext_start..]).into())
         .map_err(|_| anyhow!("body encryption failed"))?;
     out.extend_from_slice(&tag);
 
@@ -221,17 +221,17 @@ pub fn decrypt(ciphertext: &[u8], password: &[u8]) -> anyhow::Result<Vec<u8>> {
     let mut file_key: Option<Key> = None;
     for i in 0..num_recipients {
         let slot = pos + i * RECIPIENT_SLOT_SIZE;
-        let nonce = Nonce::from_slice(&ciphertext[slot..slot + NONCE_SIZE]);
+        let nonce = <&Nonce>::try_from(&ciphertext[slot..slot + NONCE_SIZE]).map_err(|_| anyhow!("recipient nonce slice error"))?;
         let wrapped = &ciphertext[slot + NONCE_SIZE..slot + RECIPIENT_SLOT_SIZE];
         if let Ok(key_bytes) = wrap_cipher.decrypt(nonce, wrapped) {
-            file_key = Some(*Key::from_slice(&key_bytes));
+            file_key = Some(Key::try_from(key_bytes.as_slice()).map_err(|_| anyhow!("unwrapped file key has wrong length"))?);
             break;
         }
     }
 
     let file_key = file_key.ok_or_else(|| anyhow!("password did not match any recipient"))?;
 
-    let body_nonce = Nonce::from_slice(&ciphertext[recipients_end..recipients_end + NONCE_SIZE]);
+    let body_nonce = <&Nonce>::try_from(&ciphertext[recipients_end..recipients_end + NONCE_SIZE]).map_err(|_| anyhow!("body nonce slice error"))?;
     let body_ciphertext = &ciphertext[recipients_end + NONCE_SIZE..];
 
     ChaCha20Poly1305::new(&file_key)
@@ -460,5 +460,28 @@ mod tests {
         let result = decrypt(&header, b"any");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("p_cost too large"));
+    }
+
+    // Regression vectors: guard against a dependency bump (argon2, chacha20poly1305) changing key
+    // derivation or making previously encrypted data undecryptable.  Captured against the crate
+    // versions in Cargo.lock at the time of writing.
+
+    #[test]
+    fn derive_wrap_key_regression_vector() -> anyhow::Result<()> {
+        let argon2 = Argon2Config::weak().to_argon2()?;
+        let wrap_key = derive_wrap_key(&argon2, b"alice")?;
+        assert_eq!(hex::encode(wrap_key.as_slice()), "ccea58e70888b6bb262add34697fb1aaf48174d14f2828360f0356d4abfea0f6", "argon2 wrap-key drift");
+        Ok(())
+    }
+
+    /// Ciphertext produced by `encrypt_weak(plaintext, ["alice", "bob"])` must remain decryptable.
+    #[test]
+    fn decrypt_regression_vector() -> anyhow::Result<()> {
+        let ciphertext = hex::decode("010213000010000000000200000001023f6e16af1447be1b634ef1b5aa6bce22ed91a6fdef7555ce73b69e11a75427178052d18f2e690daffccd0f6612607a3d4bbc14080143619fd393c66120b2d686fa1d03b6a59bf1c4790edf963f281614d9d81236d926042ba97ee0c4a01254bc0526c72e1d2efc3254fe0e87803c02fc2b4e2f3f2f72a9c61cf863812a52d76b2cc9a9c8234fb9969a260906fb2570cc2470104841bd4af0ac6691b0bf1e2a7da8a11d645f89bd8e1bb55e009c6144429fad99")?;
+        let plaintext = b"Jimme was here and then some...";
+        assert_eq!(decrypt(&ciphertext, b"alice")?, plaintext);
+        assert_eq!(decrypt(&ciphertext, b"bob")?, plaintext);
+        assert!(decrypt(&ciphertext, b"charlie").is_err());
+        Ok(())
     }
 }

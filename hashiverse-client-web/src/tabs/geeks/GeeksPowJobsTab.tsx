@@ -66,6 +66,7 @@ export const GeeksPowJobsTab: React.FC<Props> = ({ hashiverse }) => {
 								{active_jobs.map((job, index) => {
 									const progress_percent = job.pow_min === 0 ? 100 : Math.min(100, (job.best_pow_so_far / job.pow_min) * 100);
 									return (
+										// biome-ignore lint/suspicious/noArrayIndexKey: PowJobStatusV1 has no id and several jobs can share a label; rows are a polled snapshot
 										<Table.Tr key={`${job.label}-${index}`}>
 											<Table.Td>
 												<Text size="xs" ff="monospace">

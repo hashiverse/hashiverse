@@ -21,7 +21,6 @@ use crate::tools::json;
 use crate::tools::time::DurationMillis;
 use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
 use crate::tools::BytesGatherer;
-use argon2::password_hash::rand_core::{OsRng, RngCore};
 use base64::Engine;
 use bytes::Bytes;
 use log::info;
@@ -52,7 +51,7 @@ pub async fn yield_now() {
 }
 
 pub fn random_fill_bytes(dest: &mut [u8]) {
-    OsRng.fill_bytes(dest);
+    getrandom_4::fill(dest).expect("OS random number generator failed");
 }
 
 pub fn random_bytes(n: usize) -> Vec<u8> {
@@ -70,17 +69,17 @@ pub fn reverse_bytes<const N: usize>(bytes: &[u8; N]) -> [u8; N] {
 }
 
 pub fn random_u32() -> u32 {
-    OsRng.next_u32()
+    getrandom_4::u32().expect("OS random number generator failed")
 }
 
 #[cfg(target_pointer_width = "64")]
 pub fn random_usize() -> usize {
-    OsRng.next_u64() as usize
+    getrandom_4::u64().expect("OS random number generator failed") as usize
 }
 
 #[cfg(target_pointer_width = "32")]
 pub fn random_usize() -> usize {
-    OsRng.next_u32() as usize
+    getrandom_4::u32().expect("OS random number generator failed") as usize
 }
 
 pub fn random_usize_bounded(upper: usize) -> usize {
@@ -97,7 +96,7 @@ pub fn random_usize_bounded(upper: usize) -> usize {
 }
 
 pub fn random_u8() -> u8 {
-    OsRng.next_u32() as u8
+    getrandom_4::u32().expect("OS random number generator failed") as u8
 }
 
 pub fn random_base64(length: usize) -> String {

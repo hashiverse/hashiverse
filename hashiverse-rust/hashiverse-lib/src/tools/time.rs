@@ -395,6 +395,17 @@ pub fn to_bucket(timestamp: &TimeMillis, bucket_size: DurationMillis) -> TimeMil
 mod tests {
     use crate::tools::time::{MILLIS_IN_HOUR, MILLIS_IN_MINUTE, MILLIS_IN_MONTH, DurationMillis, MILLIS_IN_SECOND, MILLIS_IN_WEEK, MILLIS_IN_DAY, TimeMillis};
 
+    /// `DurationMillis` arithmetic comes from `derive_more` derives — pin the semantics
+    /// (newtype + newtype, scalar `*` / `/`) so a macro-crate bump cannot silently change them.
+    #[tokio::test]
+    async fn duration_millis_derived_arithmetic() {
+        assert_eq!(DurationMillis(5) + DurationMillis(3), DurationMillis(8));
+        assert_eq!(DurationMillis(5) - DurationMillis(8), DurationMillis(-3));
+        assert_eq!(-DurationMillis(5), DurationMillis(-5));
+        assert_eq!(DurationMillis(5) * 3, DurationMillis(15));
+        assert_eq!(DurationMillis(15) / 4, DurationMillis(3));
+    }
+
     #[tokio::test]
     async fn duration_display_test() {
         assert_eq!(MILLIS_IN_MONTH.to_string(), "1M");

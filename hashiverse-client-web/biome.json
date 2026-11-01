@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.4.4/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.6.4/schema.json",
 	"assist": {
 		"actions": {
 			"source": {
@@ -29,7 +29,7 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true,
+			"preset": "recommended",
 			"suspicious": {
 				"noExplicitAny": "error"
 			},
@@ -49,5 +49,17 @@
 				"noConstantCondition": "off"
 			}
 		}
-	}
+	},
+	"overrides": [
+		{
+			"includes": ["src/media/**/*.svg"],
+			"linter": {
+				"rules": {
+					"a11y": {
+						"noSvgWithoutTitle": "off"
+					}
+				}
+			}
+		}
+	]
 }

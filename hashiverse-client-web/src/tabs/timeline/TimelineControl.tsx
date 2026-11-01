@@ -18,6 +18,44 @@ interface Props {
 	blur_images?: boolean;
 }
 
+// Virtuoso header/footer live at module level so their identity is stable across renders (a component defined inside
+// TimelineControl would be a new type every render and remount); the changing values reach them via Virtuoso's `context`.
+interface TimelineVirtuosoContext {
+	header?: React.ReactNode;
+	loading: boolean;
+	fetch_more_posts: () => Promise<void>;
+	oldest_processed_time_millis?: number;
+}
+
+const TimelineHeader = ({ context }: { context: TimelineVirtuosoContext }) => context.header ?? null;
+
+const TimelineFooter = ({ context }: { context: TimelineVirtuosoContext }) => {
+	const { t } = useTranslation();
+	const { loading, fetch_more_posts, oldest_processed_time_millis } = context;
+	return (
+		<Stack p="5px">
+			{loading ? (
+				<Stack gap="0" style={{ width: "100%" }}>
+					<Spinner size={40} />
+					<Skeleton height={8} mt={12} />
+					<Skeleton height={8} mt={6} />
+					<Skeleton height={8} mt={6} width="70%" />
+				</Stack>
+			) : (
+				<Button disabled={loading} onClick={fetch_more_posts}>
+					{oldest_processed_time_millis !== undefined
+						? t("timeline.load_more_before", {
+								date: new Date(oldest_processed_time_millis).toLocaleString(),
+							})
+						: t("timeline.load_more")}
+				</Button>
+			)}
+		</Stack>
+	);
+};
+
+const VIRTUOSO_COMPONENTS = { Header: TimelineHeader, Footer: TimelineFooter };
+
 export const TimelineControl: React.FC<Props> = ({ hashiverse, user_settings_cache, timeline_key, get_more, reset, header, blur_images }) => {
 	const [scroller, scroller_set] = useState<HTMLElement | null>(null);
 
@@ -112,40 +150,10 @@ export const TimelineControl: React.FC<Props> = ({ hashiverse, user_settings_cac
 		void fetch_more_posts();
 	}, [fetch_more_posts]);
 
-	const { t } = useTranslation();
-
-	const Header = useMemo(() => {
-		if (!header) return undefined;
-		const HeaderComponent: React.FC = () => <>{header}</>;
-		return HeaderComponent;
-	}, [header]);
-
-	const Footer = useMemo(() => {
-		const FooterComponent: React.FC = () => (
-			<Stack p="5px">
-				{loading ? (
-					<Stack gap="0" style={{ width: "100%" }}>
-						<Spinner size={40} />
-						<Skeleton height={8} mt={12} />
-						<Skeleton height={8} mt={6} />
-						<Skeleton height={8} mt={6} width="70%" />
-					</Stack>
-				) : (
-					<Button disabled={loading} onClick={fetch_more_posts}>
-						{oldest_processed_time_millis !== undefined
-							? t("timeline.load_more_before", {
-									date: new Date(oldest_processed_time_millis).toLocaleString(),
-								})
-							: t("timeline.load_more")}
-					</Button>
-				)}
-			</Stack>
-		);
-
-		return FooterComponent;
-	}, [loading, fetch_more_posts, oldest_processed_time_millis, t]);
-
-	const virtuoso_components = useMemo(() => ({ Header, Footer }), [Header, Footer]);
+	const virtuoso_context: TimelineVirtuosoContext = useMemo(
+		() => ({ header, loading, fetch_more_posts, oldest_processed_time_millis }),
+		[header, loading, fetch_more_posts, oldest_processed_time_millis],
+	);
 
 	const item_content = useCallback(
 		(_index: number, post: Post) => {
@@ -161,7 +169,8 @@ export const TimelineControl: React.FC<Props> = ({ hashiverse, user_settings_cac
 			computeItemKey={(_index, post: Post) => post.post_id}
 			endReached={virtuoso_end_reached}
 			increaseViewportBy={50}
-			components={virtuoso_components}
+			components={VIRTUOSO_COMPONENTS}
+			context={virtuoso_context}
 			itemContent={item_content}
 			scrollerRef={(el) => scroller_set(el instanceof HTMLElement ? el : null)}
 		/>

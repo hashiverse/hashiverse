@@ -99,15 +99,19 @@ const onMessage = async (event: MessageEvent<RPCRequest>) => {
 	}
 };
 
+// Leave two cores for the UI and this worker, never fewer than one PoW worker, never more than max_workers
+function pow_worker_count(max_workers: number): number {
+	return Math.min(max_workers, Math.max((navigator.hardwareConcurrency || 1) - 2, 1));
+}
+
 // Spawn pow sub-workers and hand them to WASM
 function initPowWorkers(): Promise<void> {
 	return new Promise((resolve) => {
 		// How many PoW workers shall we allow?
 		const IS_PRODUCTION = Tools.is_release_build();
-		const GET_WORKER_COUNT = (MAX_WORKERS: number) => Math.min(MAX_WORKERS, Math.max((navigator.hardwareConcurrency || 1) - 2, 1));
 		const MAX_WORKERS_DEV = 4;
 		const MAX_WORKERS_PROD = 16;
-		const numWorkers = IS_PRODUCTION ? GET_WORKER_COUNT(MAX_WORKERS_PROD) : GET_WORKER_COUNT(MAX_WORKERS_DEV);
+		const numWorkers = IS_PRODUCTION ? pow_worker_count(MAX_WORKERS_PROD) : pow_worker_count(MAX_WORKERS_DEV);
 
 		const workers: Worker[] = [];
 		let readyCount = 0;

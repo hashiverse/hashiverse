@@ -51,7 +51,7 @@ bytes = { version = "1.11.1", features = ["serde"] }
 digest = "0.11.3"
 scopeguard = "1.2.0"
 hex = "0.4.3"
-parking_lot = "0.12.5"
+parking_lot = "0.13.0"
 async-trait = "0.1.89"
 
 # Internal workspace members published to crates.io. The `version` constraint here

@@ -13,7 +13,7 @@ pub fn anyhow_to_py(err: anyhow::Error) -> PyErr {
 #[macro_export]
 macro_rules! py_try {
     ($py:expr, $runtime:expr, { $($tt:tt)* }) => {{
-        $py.allow_threads(|| {
+        $py.detach(|| {
             $runtime.block_on(async {
                 anyhow::Ok({ $($tt)* })
             })

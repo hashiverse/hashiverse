@@ -23,9 +23,9 @@ async fn main() -> anyhow::Result<()> {
     configure_logging_with_time_provider(&args.log_level, time_provider.clone());
 
     // Set up TLS
-    rustls::crypto::ring::default_provider()
+    rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
-        .expect("Failed to install Ring as the crypto provider");
+        .expect("Failed to install aws-lc-rs as the crypto provider");
 
     let environment_factory: Arc<dyn EnvironmentFactory> = Arc::new(DiskEnvironmentFactory::new(args.base_path.as_str()));
     let ddos_protection: Arc<dyn DdosProtection> = Arc::new(IpsetDdosProtection::new(config::SERVER_DDOS_IPSET_SET_NAME, config::SERVER_DDOS_SCORE_THRESHOLD, config::SERVER_DDOS_DECAY_PER_SECOND, config::SERVER_DDOS_BAD_REQUEST_PENALTY, config::SERVER_DDOS_MAX_CONNECTIONS_PER_IP, time_provider.clone()));

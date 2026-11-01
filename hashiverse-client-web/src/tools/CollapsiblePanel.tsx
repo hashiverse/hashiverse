@@ -33,7 +33,7 @@ export const CollapsiblePanel: React.FC<Props> = ({ title, children, defaultOpen
 					/>
 				</Group>
 			</UnstyledButton>
-			<Collapse in={open}>
+			<Collapse expanded={open}>
 				<Box pr="md" pb="md" pt="md" pl="xl">
 					{children}
 				</Box>

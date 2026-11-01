@@ -45,7 +45,12 @@ export const UserSearchDialogControl: React.FC<Props> = ({ ref_user_search_dialo
 		},
 	};
 
-	const select_on_change = (_value: string | null, option: ComboboxItem) => {
+	const select_on_change = (_value: string | null, option: ComboboxItem | null) => {
+		// Clearing the (clearable) Select reports a null option: that is not a selection, so keep the dialog open
+		if (option === null) {
+			setSearchValue("");
+			return;
+		}
 		if (resolveRef.current) {
 			resolveRef.current(option as unknown as Bio);
 			resolveRef.current = null;

@@ -27,6 +27,8 @@ use parking_lot::RwLock;
 use rcgen::{CertificateParams, SanType, generate_simple_self_signed};
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
+use rustls_pki_types::pem::PemObject;
+use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use std::fs;
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -118,7 +120,7 @@ impl HttpsTransportCertRefresher {
 
                     let cert_chain = vec![rustls_pki_types::CertificateDer::from(cert.der().to_vec())];
                     let key_der = rustls_pki_types::PrivatePkcs8KeyDer::from(key_pair.serialize_der());
-                    let key = rustls::crypto::ring::sign::any_supported_type(&rustls_pki_types::PrivateKeyDer::Pkcs8(key_der)).map_err(|_| anyhow::anyhow!("Unsupported key type"))?;
+                    let key = rustls::crypto::aws_lc_rs::sign::any_supported_type(&rustls_pki_types::PrivateKeyDer::Pkcs8(key_der)).map_err(|_| anyhow::anyhow!("Unsupported key type"))?;
 
                     let certified_key = CertifiedKey { cert: cert_chain, key, ocsp: None };
 
@@ -163,9 +165,13 @@ impl HttpsTransportCertRefresher {
             let bytes_key = fs::read(&self.filename_key)?;
 
             // Return the CertifiedKey
-            let cert_chain = rustls_pemfile::certs(&mut &bytes_cert[..]).collect::<Result<Vec<_>, _>>()?;
-            let key_der = rustls_pemfile::private_key(&mut &bytes_key[..])?.ok_or_else(|| anyhow::anyhow!("No private key found in {}", self.filename_key.display()))?;
-            let key = rustls::crypto::ring::sign::any_supported_type(&key_der).map_err(|_| anyhow::anyhow!("Unsupported key type"))?;
+            let cert_chain = CertificateDer::pem_slice_iter(&bytes_cert).collect::<Result<Vec<_>, _>>().with_context(|| format!("parsing certificates in {}", self.filename_cert.display()))?;
+            // An empty/truncated cert file must not replace the certificate we are currently serving
+            if cert_chain.is_empty() {
+                anyhow::bail!("No certificates found in {}", self.filename_cert.display());
+            }
+            let key_der = PrivateKeyDer::from_pem_slice(&bytes_key).map_err(|e| anyhow::anyhow!("No private key found in {}: {}", self.filename_key.display(), e))?;
+            let key = rustls::crypto::aws_lc_rs::sign::any_supported_type(&key_der).map_err(|_| anyhow::anyhow!("Unsupported key type"))?;
 
             CertifiedKey { cert: cert_chain, key, ocsp: None }
         };
@@ -314,5 +320,113 @@ impl ResolvesServerCert for HttpsTransportCertRefresher {
             // Return the standard certificate for your IP
             self.base_cert.read().clone()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hashiverse_lib::tools::tools::get_temp_dir;
+
+    const TEST_IP: &str = "127.0.0.1";
+
+    /// Writes a fresh rcgen self-signed cert + key into `path_certs` (before `new()` runs, so `new()` keeps them)
+    /// and returns the DER of the cert so tests can compare against an independently-known value.
+    fn write_self_signed_pem_files(path_certs: &Path, extra_chain_certificate_count: usize) -> anyhow::Result<Vec<Vec<u8>>> {
+        fs::create_dir_all(path_certs)?;
+        let mut expected_chain_ders = Vec::new();
+        let mut cert_chain_pem = String::new();
+
+        let leaf_certified_key = generate_simple_self_signed(vec![TEST_IP.to_string()])?;
+        expected_chain_ders.push(leaf_certified_key.cert.der().to_vec());
+        cert_chain_pem.push_str(&leaf_certified_key.cert.pem());
+
+        for _ in 0..extra_chain_certificate_count {
+            let intermediate_certified_key = generate_simple_self_signed(vec![TEST_IP.to_string()])?;
+            expected_chain_ders.push(intermediate_certified_key.cert.der().to_vec());
+            cert_chain_pem.push_str(&intermediate_certified_key.cert.pem());
+        }
+
+        fs::write(path_certs.join(FILENAME_CERT), cert_chain_pem)?;
+        write_private_key_file(&path_certs.join(FILENAME_KEY), leaf_certified_key.signing_key.serialize_pem().as_bytes())?;
+        Ok(expected_chain_ders)
+    }
+
+    fn loaded_chain_ders(https_transport_cert_refresher: &HttpsTransportCertRefresher) -> Option<Vec<Vec<u8>>> {
+        https_transport_cert_refresher.base_cert.read().as_ref().map(|certified_key| certified_key.cert.iter().map(|certificate_der| certificate_der.as_ref().to_vec()).collect())
+    }
+
+    #[test]
+    fn new_generates_self_signed_pems_that_reload_certs_accepts() -> anyhow::Result<()> {
+        let (_temp_dir_handle, temp_dir_path) = get_temp_dir()?;
+        let path_certs = PathBuf::from(&temp_dir_path).join("certs");
+
+        let https_transport_cert_refresher = HttpsTransportCertRefresher::new(path_certs.clone(), TEST_IP.to_string(), 0, true)?;
+        assert!(path_certs.join(FILENAME_CERT).exists());
+        assert!(path_certs.join(FILENAME_KEY).exists());
+        assert!(https_transport_cert_refresher.base_cert.read().is_none());
+
+        https_transport_cert_refresher.reload_certs()?;
+        let loaded_chain_ders = loaded_chain_ders(&https_transport_cert_refresher).expect("base_cert populated after reload");
+        assert_eq!(loaded_chain_ders.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn reload_certs_loads_full_chain_in_order() -> anyhow::Result<()> {
+        let (_temp_dir_handle, temp_dir_path) = get_temp_dir()?;
+        let path_certs = PathBuf::from(&temp_dir_path).join("certs");
+        let expected_chain_ders = write_self_signed_pem_files(&path_certs, 1)?;
+
+        let https_transport_cert_refresher = HttpsTransportCertRefresher::new(path_certs, TEST_IP.to_string(), 0, true)?;
+        https_transport_cert_refresher.reload_certs()?;
+
+        assert_eq!(loaded_chain_ders(&https_transport_cert_refresher), Some(expected_chain_ders));
+        Ok(())
+    }
+
+    #[test]
+    fn reload_certs_errors_when_key_file_has_no_private_key() -> anyhow::Result<()> {
+        let (_temp_dir_handle, temp_dir_path) = get_temp_dir()?;
+        let path_certs = PathBuf::from(&temp_dir_path).join("certs");
+        write_self_signed_pem_files(&path_certs, 0)?;
+
+        // A key file holding only a certificate block must be rejected, not silently accepted
+        let cert_pem = fs::read(path_certs.join(FILENAME_CERT))?;
+        fs::write(path_certs.join(FILENAME_KEY), cert_pem)?;
+
+        let https_transport_cert_refresher = HttpsTransportCertRefresher::new(path_certs, TEST_IP.to_string(), 0, true)?;
+        assert!(https_transport_cert_refresher.reload_certs().is_err());
+        assert!(https_transport_cert_refresher.base_cert.read().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn reload_certs_with_empty_cert_file_keeps_previous_certificate() -> anyhow::Result<()> {
+        let (_temp_dir_handle, temp_dir_path) = get_temp_dir()?;
+        let path_certs = PathBuf::from(&temp_dir_path).join("certs");
+        let expected_chain_ders = write_self_signed_pem_files(&path_certs, 0)?;
+
+        let https_transport_cert_refresher = HttpsTransportCertRefresher::new(path_certs.clone(), TEST_IP.to_string(), 0, true)?;
+        https_transport_cert_refresher.reload_certs()?;
+        assert_eq!(loaded_chain_ders(&https_transport_cert_refresher), Some(expected_chain_ders.clone()));
+
+        // e.g. a truncated write during refresh: the reload must fail and keep serving the previous certificate
+        fs::write(path_certs.join(FILENAME_CERT), b"")?;
+        assert!(https_transport_cert_refresher.reload_certs().is_err());
+        assert_eq!(loaded_chain_ders(&https_transport_cert_refresher), Some(expected_chain_ders));
+        Ok(())
+    }
+
+    #[test]
+    fn reload_certs_errors_when_files_missing() -> anyhow::Result<()> {
+        let (_temp_dir_handle, temp_dir_path) = get_temp_dir()?;
+        let path_certs = PathBuf::from(&temp_dir_path).join("certs");
+
+        let https_transport_cert_refresher = HttpsTransportCertRefresher::new(path_certs.clone(), TEST_IP.to_string(), 0, true)?;
+        fs::remove_file(path_certs.join(FILENAME_KEY))?;
+        assert!(https_transport_cert_refresher.reload_certs().is_err());
+        assert!(https_transport_cert_refresher.base_cert.read().is_none());
+        Ok(())
     }
 }

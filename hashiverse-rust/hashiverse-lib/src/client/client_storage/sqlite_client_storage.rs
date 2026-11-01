@@ -61,11 +61,12 @@ impl ClientStorage for SqliteClientStorage {
     async fn count(&self, bucket: &str) -> anyhow::Result<usize> {
         let table_name = sanitize_bucket_name(bucket);
         let connection = self.connection.lock();
-        let count: usize = connection.query_row(
+        let count: i64 = connection.query_row(
             &format!("SELECT COUNT(*) FROM [{table_name}]"),
             [],
             |row| row.get(0),
         )?;
+        let count = usize::try_from(count)?;
         Ok(count)
     }
 
@@ -125,17 +126,18 @@ impl ClientStorage for SqliteClientStorage {
         let table_name = sanitize_bucket_name(bucket);
         let connection = self.connection.lock();
 
-        let count: usize = connection.query_row(
+        let count: i64 = connection.query_row(
             &format!("SELECT COUNT(*) FROM [{table_name}]"),
             [],
             |row| row.get(0),
         )?;
+        let count = usize::try_from(count)?;
 
         if count > max_count {
             let num_to_delete = count - max_count;
             connection.execute(
                 &format!("DELETE FROM [{table_name}] WHERE key IN (SELECT key FROM [{table_name}] ORDER BY last_accessed ASC LIMIT ?1)"),
-                [num_to_delete],
+                [i64::try_from(num_to_delete)?],
             )?;
         }
 

@@ -1462,6 +1462,20 @@ mod tests {
     }
 
     #[test]
+    fn test_payload_kind_wire_values_and_display_are_stable() {
+        // `FromRepr` / `Display` come from strum_macros; the u16 values are on the wire.
+        use crate::protocol::payload::payload::{PayloadRequestKind, PayloadResponseKind};
+        assert_eq!(PayloadRequestKind::from_u16(0).unwrap(), PayloadRequestKind::ErrorV1);
+        assert_eq!(PayloadRequestKind::from_u16(4).unwrap(), PayloadRequestKind::GetPostBundleV1);
+        assert_eq!(PayloadRequestKind::from_u16(17).unwrap(), PayloadRequestKind::AnnounceV2);
+        assert_eq!(PayloadResponseKind::from_u16(0).unwrap(), PayloadResponseKind::ErrorResponseV1);
+        assert_eq!(PayloadResponseKind::from_u16(17).unwrap(), PayloadResponseKind::AnnounceResponseV2);
+        assert!(PayloadResponseKind::from_u16(18).is_err());
+        assert_eq!(PayloadRequestKind::GetPostBundleV1.to_string(), "GetPostBundleV1");
+        assert_eq!(PayloadResponseKind::AnnounceResponseV2.to_string(), "AnnounceResponseV2");
+    }
+
+    #[test]
     #[allow(non_snake_case)]
     fn test_PAYLOAD_REQUEST_KIND_COUNT_matches_variants() {
         use crate::protocol::payload::payload::{PayloadRequestKind, PAYLOAD_REQUEST_KIND_COUNT};

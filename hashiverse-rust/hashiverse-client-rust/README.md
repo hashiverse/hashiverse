@@ -13,7 +13,7 @@ This crate picks sensible defaults for every pluggable trait in [`hashiverse-lib
 | `ClientStorage` | sqlite, under `<data_dir>/client_storage/` |
 | `KeyLockerManager` | disk-backed, under `<data_dir>/` |
 | `BootstrapProvider` | DNSSEC-validated public seed list |
-| `TransportFactory` | HTTPS with rustls + ring |
+| `TransportFactory` | HTTPS with rustls + aws-lc-rs |
 | `PowGenerator` | native parallel (rayon) |
 | `TimeProvider` | real-time |
 

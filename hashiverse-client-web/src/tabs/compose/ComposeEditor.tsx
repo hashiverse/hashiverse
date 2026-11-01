@@ -38,7 +38,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { Typography } from "@tiptap/extension-typography";
 import { Youtube } from "@tiptap/extension-youtube";
-import { useEditor } from "@tiptap/react";
+import { type Editor, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import React, { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -49,7 +49,7 @@ import { sanitize } from "../../tools/PostPurifier.ts";
 import { Spinner } from "../../tools/Spinner.tsx";
 import { Toast } from "../../tools/Toast.ts";
 import { Tools } from "../../tools/Tools.ts";
-import { GiphyDialogControl, type GiphyDialogControlManager } from "./GiphyDialogControl.tsx";
+import { GifDialogControl, type GifDialogControlManager } from "./GifDialogControl.tsx";
 import { Hashtag } from "./HashtagExtension.ts";
 import { BlockMathEditor, DEFAULT_LATEX_BLOCK, DEFAULT_LATEX_INLINE, InlineMathEditor, MathInputRules, MathNodeNavigation } from "./MathEditorExtension.tsx";
 import { Mention } from "./MentionExtension.ts";
@@ -91,14 +91,318 @@ interface Props {
 	on_html_change?: (html_sanitized: string, html_raw: string) => void;
 }
 
+// Toolbar controls live at module level so each keeps a stable component identity across ComposeEditor renders.
+// Defined inside ComposeEditor they were a new component type on every render, so React remounted them (and any open Menu closed).
+
+function InsertImageControl({ ref_file_input_image }: { ref_file_input_image: React.RefObject<HTMLInputElement | null> }) {
+	const { t } = useTranslation();
+	return (
+		<RichTextEditor.Control
+			onClick={(e) => {
+				e.preventDefault();
+				ref_file_input_image.current?.click();
+			}}
+			aria-label={t("compose.insert_image")}
+			title={t("compose.insert_image")}
+		>
+			<IconPhoto strokeWidth={1.5} size={16} />
+		</RichTextEditor.Control>
+	);
+}
+
+function InsertHashtagControl({ editor }: { editor: Editor | null }) {
+	const { t } = useTranslation();
+	return (
+		<RichTextEditor.Control
+			aria-label={t("compose.insert_hashtag")}
+			title={t("compose.insert_hashtag")}
+			onClick={(e) => {
+				e.preventDefault();
+				editor?.commands.insertHashtag();
+			}}
+		>
+			<IconHash strokeWidth={1.5} size={16} />
+		</RichTextEditor.Control>
+	);
+}
+
+function InsertMentionControl({ editor }: { editor: Editor | null }) {
+	const { t } = useTranslation();
+	return (
+		<RichTextEditor.Control
+			aria-label={t("compose.insert_mention")}
+			title={t("compose.insert_mention")}
+			onClick={(e) => {
+				e.preventDefault();
+				editor?.commands.insertMention();
+			}}
+		>
+			<IconAt strokeWidth={1.5} size={16} />
+		</RichTextEditor.Control>
+	);
+}
+
+function InsertYouTubeControl({ editor, ref_youtube_dialog_manager }: { editor: Editor | null; ref_youtube_dialog_manager: React.RefObject<YouTubeDialogControlManager | null> }) {
+	const { t } = useTranslation();
+	return (
+		<RichTextEditor.Control
+			onClick={async (e) => {
+				e.preventDefault();
+				const url = await ref_youtube_dialog_manager.current?.modal_command_open();
+				if (url) editor?.commands.setYoutubeVideo({ src: url });
+			}}
+			aria-label={t("compose.insert_youtube")}
+			title={t("compose.insert_youtube")}
+		>
+			<IconBrandYoutube strokeWidth={1.5} size={16} />
+		</RichTextEditor.Control>
+	);
+}
+
+function InsertMathMenuControl({ editor }: { editor: Editor | null }) {
+	const { t } = useTranslation();
+	return (
+		<Menu shadow="md" position="bottom-start" trapFocus={false} returnFocus={false}>
+			<Menu.Target>
+				<RichTextEditor.Control aria-label={t("compose.insert_math")} title={t("compose.insert_math")}>
+					<IconMath strokeWidth={1.5} size={16} />
+				</RichTextEditor.Control>
+			</Menu.Target>
+			<Menu.Dropdown>
+				<Menu.Item
+					leftSection={<IconMath strokeWidth={1.5} size={16} />}
+					onClick={() =>
+						editor
+							?.chain()
+							.focus()
+							.insertContent({
+								type: "inlineMathEditor",
+								attrs: { latex: DEFAULT_LATEX_INLINE, select_all: true },
+							})
+							.run()
+					}
+				>
+					{t("compose.insert_math_inline")}
+				</Menu.Item>
+				<Menu.Item
+					leftSection={<IconMathIntegral strokeWidth={1.5} size={16} />}
+					onClick={() =>
+						editor
+							?.chain()
+							.focus()
+							.insertContent({
+								type: "blockMathEditor",
+								attrs: { latex: DEFAULT_LATEX_BLOCK, select_all: true },
+							})
+							.run()
+					}
+				>
+					{t("compose.insert_math_block")}
+				</Menu.Item>
+			</Menu.Dropdown>
+		</Menu>
+	);
+}
+
+function InsertGifControl({ editor, ref_gif_dialog_manager }: { editor: Editor | null; ref_gif_dialog_manager: React.RefObject<GifDialogControlManager | null> }) {
+	const { t } = useTranslation();
+	return (
+		<RichTextEditor.Control
+			onClick={async (e) => {
+				e.preventDefault();
+				const url = await ref_gif_dialog_manager.current?.modal_command_open();
+				if (url) editor?.commands.setImage({ src: url });
+			}}
+			aria-label={t("compose.insert_giphy")}
+			title={t("compose.insert_giphy")}
+		>
+			<IconGif strokeWidth={1.5} size={16} />
+		</RichTextEditor.Control>
+	);
+}
+
+function TextColorControl({ editor }: { editor: Editor | null }) {
+	const { t } = useTranslation();
+	const [text_color_menu_open, set_text_color_menu_open] = useState(false);
+	const active_color: string | undefined = editor?.getAttributes("textStyle").color;
+	return (
+		<Menu shadow="md" position="bottom-start" trapFocus={false} returnFocus={false} opened={text_color_menu_open} onChange={set_text_color_menu_open}>
+			<Menu.Target>
+				<RichTextEditor.Control
+					aria-label={t("editor.text_color")}
+					title={t("editor.text_color")}
+					data-active={active_color ? true : undefined}
+					style={active_color ? { background: active_color } : undefined}
+				>
+					<IconPalette strokeWidth={1.5} size={16} />
+				</RichTextEditor.Control>
+			</Menu.Target>
+			<Menu.Dropdown>
+				<div
+					style={{
+						display: "grid",
+						gridTemplateColumns: "repeat(5, 1fr)",
+						gap: 4,
+						padding: 8,
+					}}
+				>
+					{TEXT_COLORS.map((color) => (
+						<ColorSwatch
+							key={color}
+							color={color}
+							size={22}
+							style={{ cursor: "pointer" }}
+							onClick={() => {
+								editor?.chain().focus().extendMarkRange("textStyle").setColor(color).run();
+								set_text_color_menu_open(false);
+							}}
+						/>
+					))}
+				</div>
+				<Menu.Divider />
+				<Menu.Item
+					onClick={() => {
+						editor?.chain().focus().extendMarkRange("textStyle").unsetColor().run();
+						set_text_color_menu_open(false);
+					}}
+				>
+					{t("editor.remove_color")}
+				</Menu.Item>
+			</Menu.Dropdown>
+		</Menu>
+	);
+}
+
+function HighlightColorControl({ editor }: { editor: Editor | null }) {
+	const { t } = useTranslation();
+	const [highlight_menu_open, set_highlight_menu_open] = useState(false);
+	const active_highlight: string | undefined = editor?.getAttributes("highlight").color;
+	return (
+		<Menu shadow="md" position="bottom-start" trapFocus={false} returnFocus={false} opened={highlight_menu_open} onChange={set_highlight_menu_open}>
+			<Menu.Target>
+				<RichTextEditor.Control
+					aria-label={t("editor.highlight")}
+					title={t("editor.highlight")}
+					data-active={active_highlight ? true : undefined}
+					style={active_highlight ? { background: active_highlight } : undefined}
+				>
+					<IconHighlight strokeWidth={1.5} size={16} />
+				</RichTextEditor.Control>
+			</Menu.Target>
+			<Menu.Dropdown>
+				<div
+					style={{
+						display: "grid",
+						gridTemplateColumns: "repeat(5, 1fr)",
+						gap: 4,
+						padding: 8,
+					}}
+				>
+					{HIGHLIGHT_COLORS.map((color) => (
+						<ColorSwatch
+							key={color}
+							color={color}
+							size={22}
+							style={{ cursor: "pointer" }}
+							onClick={() => {
+								editor?.chain().focus().extendMarkRange("highlight").setHighlight({ color }).run();
+								set_highlight_menu_open(false);
+							}}
+						/>
+					))}
+				</div>
+				<Menu.Divider />
+				<Menu.Item
+					onClick={() => {
+						editor?.chain().focus().extendMarkRange("highlight").unsetHighlight().run();
+						set_highlight_menu_open(false);
+					}}
+				>
+					{t("editor.remove_highlight")}
+				</Menu.Item>
+			</Menu.Dropdown>
+		</Menu>
+	);
+}
+
+function InsertTableMenuControl({ editor }: { editor: Editor | null }) {
+	const { t } = useTranslation();
+	const in_table = editor?.isActive("table") ?? false;
+	return (
+		<Menu shadow="md" position="bottom-start" trapFocus={false} returnFocus={false}>
+			<Menu.Target>
+				<RichTextEditor.Control aria-label={t("editor.table")} title={t("editor.table")} data-active={in_table || undefined}>
+					<IconTable strokeWidth={1.5} size={16} />
+				</RichTextEditor.Control>
+			</Menu.Target>
+			<Menu.Dropdown>
+				{!in_table && (
+					<Menu.Item leftSection={<IconTablePlus strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>
+						{t("editor.table_insert")}
+					</Menu.Item>
+				)}
+				{in_table && (
+					<>
+						<Menu.Item leftSection={<IconColumnInsertLeft strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().addColumnBefore().run()}>
+							{t("editor.table_add_col_before")}
+						</Menu.Item>
+						<Menu.Item leftSection={<IconColumnInsertRight strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().addColumnAfter().run()}>
+							{t("editor.table_add_col_after")}
+						</Menu.Item>
+						<Menu.Item leftSection={<IconColumnRemove strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().deleteColumn().run()}>
+							{t("editor.table_delete_col")}
+						</Menu.Item>
+						<Menu.Divider />
+						<Menu.Item leftSection={<IconRowInsertTop strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().addRowBefore().run()}>
+							{t("editor.table_add_row_before")}
+						</Menu.Item>
+						<Menu.Item leftSection={<IconRowInsertBottom strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().addRowAfter().run()}>
+							{t("editor.table_add_row_after")}
+						</Menu.Item>
+						<Menu.Item leftSection={<IconRowRemove strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().deleteRow().run()}>
+							{t("editor.table_delete_row")}
+						</Menu.Item>
+						<Menu.Divider />
+						<Menu.Item leftSection={<IconTableOff strokeWidth={1.5} size={16} />} color="red" onClick={() => editor?.chain().focus().deleteTable().run()}>
+							{t("editor.table_delete")}
+						</Menu.Item>
+					</>
+				)}
+			</Menu.Dropdown>
+		</Menu>
+	);
+}
+
+function HeadingMenuControl({ editor }: { editor: Editor | null }) {
+	const { t } = useTranslation();
+	const active_level = HEADING_LEVELS.find((level) => editor?.isActive("heading", { level }));
+	return (
+		<Menu shadow="md" position="bottom-start" trapFocus={false} returnFocus={false}>
+			<Menu.Target>
+				<RichTextEditor.Control aria-label={t("editor.heading")} title={t("editor.heading")} data-active={active_level !== undefined || undefined}>
+					<IconHeading strokeWidth={1.5} size={16} />
+				</RichTextEditor.Control>
+			</Menu.Target>
+			<Menu.Dropdown>
+				<RichTextEditor.ControlsGroup>
+					<RichTextEditor.H1 />
+					<RichTextEditor.H2 />
+					<RichTextEditor.H3 />
+					<RichTextEditor.H4 />
+					<RichTextEditor.H5 />
+					<RichTextEditor.H6 />
+				</RichTextEditor.ControlsGroup>
+			</Menu.Dropdown>
+		</Menu>
+	);
+}
+
 export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ hashiverse, restore_draft, on_posted, on_submit_complete, on_html_change }, ref) => {
 	const { t } = useTranslation();
 	const ref_file_input_image = useRef<HTMLInputElement>(null);
 	const ref_user_search_dialog_control_manager = useRef<UserSearchDialogControlManager>(null);
 	const ref_youtube_dialog_manager = useRef<YouTubeDialogControlManager | null>(null);
-	const ref_giphy_dialog_manager = useRef<GiphyDialogControlManager | null>(null);
-	const [text_color_menu_open, set_text_color_menu_open] = useState(false);
-	const [highlight_menu_open, set_highlight_menu_open] = useState(false);
+	const ref_gif_dialog_manager = useRef<GifDialogControlManager | null>(null);
 	const ref_do_submit = useRef<() => Promise<void>>(null);
 	const ref_draft_save_timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [submitting, set_submitting] = useState(false);
@@ -262,127 +566,6 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 	};
 	ref_do_submit.current = do_submit;
 
-	function InsertImageControl() {
-		return (
-			<RichTextEditor.Control
-				onClick={(e) => {
-					e.preventDefault();
-					ref_file_input_image.current?.click();
-				}}
-				aria-label={t("compose.insert_image")}
-				title={t("compose.insert_image")}
-			>
-				<IconPhoto strokeWidth={1.5} size={16} />
-			</RichTextEditor.Control>
-		);
-	}
-
-	function InsertHashtagControl() {
-		return (
-			<RichTextEditor.Control
-				aria-label={t("compose.insert_hashtag")}
-				title={t("compose.insert_hashtag")}
-				onClick={(e) => {
-					e.preventDefault();
-					editor?.commands.insertHashtag();
-				}}
-			>
-				<IconHash strokeWidth={1.5} size={16} />
-			</RichTextEditor.Control>
-		);
-	}
-
-	function InsertMentionControl() {
-		return (
-			<RichTextEditor.Control
-				aria-label={t("compose.insert_mention")}
-				title={t("compose.insert_mention")}
-				onClick={(e) => {
-					e.preventDefault();
-					editor?.commands.insertMention();
-				}}
-			>
-				<IconAt strokeWidth={1.5} size={16} />
-			</RichTextEditor.Control>
-		);
-	}
-
-	function InsertYouTubeControl() {
-		return (
-			<RichTextEditor.Control
-				onClick={async (e) => {
-					e.preventDefault();
-					const url = await ref_youtube_dialog_manager.current?.modal_command_open();
-					if (url) editor?.commands.setYoutubeVideo({ src: url });
-				}}
-				aria-label={t("compose.insert_youtube")}
-				title={t("compose.insert_youtube")}
-			>
-				<IconBrandYoutube strokeWidth={1.5} size={16} />
-			</RichTextEditor.Control>
-		);
-	}
-
-	function InsertMathMenuControl() {
-		return (
-			<Menu shadow="md" position="bottom-start" trapFocus={false} returnFocus={false}>
-				<Menu.Target>
-					<RichTextEditor.Control aria-label={t("compose.insert_math")} title={t("compose.insert_math")}>
-						<IconMath strokeWidth={1.5} size={16} />
-					</RichTextEditor.Control>
-				</Menu.Target>
-				<Menu.Dropdown>
-					<Menu.Item
-						leftSection={<IconMath strokeWidth={1.5} size={16} />}
-						onClick={() =>
-							editor
-								?.chain()
-								.focus()
-								.insertContent({
-									type: "inlineMathEditor",
-									attrs: { latex: DEFAULT_LATEX_INLINE, select_all: true },
-								})
-								.run()
-						}
-					>
-						{t("compose.insert_math_inline")}
-					</Menu.Item>
-					<Menu.Item
-						leftSection={<IconMathIntegral strokeWidth={1.5} size={16} />}
-						onClick={() =>
-							editor
-								?.chain()
-								.focus()
-								.insertContent({
-									type: "blockMathEditor",
-									attrs: { latex: DEFAULT_LATEX_BLOCK, select_all: true },
-								})
-								.run()
-						}
-					>
-						{t("compose.insert_math_block")}
-					</Menu.Item>
-				</Menu.Dropdown>
-			</Menu>
-		);
-	}
-
-	function InsertGiphyControl() {
-		return (
-			<RichTextEditor.Control
-				onClick={async (e) => {
-					e.preventDefault();
-					const url = await ref_giphy_dialog_manager.current?.modal_command_open();
-					if (url) editor?.commands.setImage({ src: url });
-				}}
-				aria-label={t("compose.insert_giphy")}
-				title={t("compose.insert_giphy")}
-			>
-				<IconGif strokeWidth={1.5} size={16} />
-			</RichTextEditor.Control>
-		);
-	}
-
 	const rte_labels = {
 		linkControlLabel: t("editor.link"),
 		boldControlLabel: t("editor.bold"),
@@ -419,176 +602,6 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 		linkEditorSave: t("editor.link_save"),
 	};
 
-	function TextColorControl() {
-		const active_color: string | undefined = editor?.getAttributes("textStyle").color;
-		return (
-			<Menu shadow="md" position="bottom-start" trapFocus={false} returnFocus={false} opened={text_color_menu_open} onChange={set_text_color_menu_open}>
-				<Menu.Target>
-					<RichTextEditor.Control
-						aria-label={t("editor.text_color")}
-						title={t("editor.text_color")}
-						data-active={active_color ? true : undefined}
-						style={active_color ? { background: active_color } : undefined}
-					>
-						<IconPalette strokeWidth={1.5} size={16} />
-					</RichTextEditor.Control>
-				</Menu.Target>
-				<Menu.Dropdown>
-					<div
-						style={{
-							display: "grid",
-							gridTemplateColumns: "repeat(5, 1fr)",
-							gap: 4,
-							padding: 8,
-						}}
-					>
-						{TEXT_COLORS.map((color) => (
-							<ColorSwatch
-								key={color}
-								color={color}
-								size={22}
-								style={{ cursor: "pointer" }}
-								onClick={() => {
-									editor?.chain().focus().extendMarkRange("textStyle").setColor(color).run();
-									set_text_color_menu_open(false);
-								}}
-							/>
-						))}
-					</div>
-					<Menu.Divider />
-					<Menu.Item
-						onClick={() => {
-							editor?.chain().focus().extendMarkRange("textStyle").unsetColor().run();
-							set_text_color_menu_open(false);
-						}}
-					>
-						{t("editor.remove_color")}
-					</Menu.Item>
-				</Menu.Dropdown>
-			</Menu>
-		);
-	}
-
-	function HighlightColorControl() {
-		const active_highlight: string | undefined = editor?.getAttributes("highlight").color;
-		return (
-			<Menu shadow="md" position="bottom-start" trapFocus={false} returnFocus={false} opened={highlight_menu_open} onChange={set_highlight_menu_open}>
-				<Menu.Target>
-					<RichTextEditor.Control
-						aria-label={t("editor.highlight")}
-						title={t("editor.highlight")}
-						data-active={active_highlight ? true : undefined}
-						style={active_highlight ? { background: active_highlight } : undefined}
-					>
-						<IconHighlight strokeWidth={1.5} size={16} />
-					</RichTextEditor.Control>
-				</Menu.Target>
-				<Menu.Dropdown>
-					<div
-						style={{
-							display: "grid",
-							gridTemplateColumns: "repeat(5, 1fr)",
-							gap: 4,
-							padding: 8,
-						}}
-					>
-						{HIGHLIGHT_COLORS.map((color) => (
-							<ColorSwatch
-								key={color}
-								color={color}
-								size={22}
-								style={{ cursor: "pointer" }}
-								onClick={() => {
-									editor?.chain().focus().extendMarkRange("highlight").setHighlight({ color }).run();
-									set_highlight_menu_open(false);
-								}}
-							/>
-						))}
-					</div>
-					<Menu.Divider />
-					<Menu.Item
-						onClick={() => {
-							editor?.chain().focus().extendMarkRange("highlight").unsetHighlight().run();
-							set_highlight_menu_open(false);
-						}}
-					>
-						{t("editor.remove_highlight")}
-					</Menu.Item>
-				</Menu.Dropdown>
-			</Menu>
-		);
-	}
-
-	function InsertTableMenuControl() {
-		const in_table = editor?.isActive("table") ?? false;
-		return (
-			<Menu shadow="md" position="bottom-start" trapFocus={false} returnFocus={false}>
-				<Menu.Target>
-					<RichTextEditor.Control aria-label={t("editor.table")} title={t("editor.table")} data-active={in_table || undefined}>
-						<IconTable strokeWidth={1.5} size={16} />
-					</RichTextEditor.Control>
-				</Menu.Target>
-				<Menu.Dropdown>
-					{!in_table && (
-						<Menu.Item leftSection={<IconTablePlus strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>
-							{t("editor.table_insert")}
-						</Menu.Item>
-					)}
-					{in_table && (
-						<>
-							<Menu.Item leftSection={<IconColumnInsertLeft strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().addColumnBefore().run()}>
-								{t("editor.table_add_col_before")}
-							</Menu.Item>
-							<Menu.Item leftSection={<IconColumnInsertRight strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().addColumnAfter().run()}>
-								{t("editor.table_add_col_after")}
-							</Menu.Item>
-							<Menu.Item leftSection={<IconColumnRemove strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().deleteColumn().run()}>
-								{t("editor.table_delete_col")}
-							</Menu.Item>
-							<Menu.Divider />
-							<Menu.Item leftSection={<IconRowInsertTop strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().addRowBefore().run()}>
-								{t("editor.table_add_row_before")}
-							</Menu.Item>
-							<Menu.Item leftSection={<IconRowInsertBottom strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().addRowAfter().run()}>
-								{t("editor.table_add_row_after")}
-							</Menu.Item>
-							<Menu.Item leftSection={<IconRowRemove strokeWidth={1.5} size={16} />} onClick={() => editor?.chain().focus().deleteRow().run()}>
-								{t("editor.table_delete_row")}
-							</Menu.Item>
-							<Menu.Divider />
-							<Menu.Item leftSection={<IconTableOff strokeWidth={1.5} size={16} />} color="red" onClick={() => editor?.chain().focus().deleteTable().run()}>
-								{t("editor.table_delete")}
-							</Menu.Item>
-						</>
-					)}
-				</Menu.Dropdown>
-			</Menu>
-		);
-	}
-
-	function HeadingMenuControl() {
-		const active_level = HEADING_LEVELS.find((level) => editor?.isActive("heading", { level }));
-		return (
-			<Menu shadow="md" position="bottom-start" trapFocus={false} returnFocus={false}>
-				<Menu.Target>
-					<RichTextEditor.Control aria-label={t("editor.heading")} title={t("editor.heading")} data-active={active_level !== undefined || undefined}>
-						<IconHeading strokeWidth={1.5} size={16} />
-					</RichTextEditor.Control>
-				</Menu.Target>
-				<Menu.Dropdown>
-					<RichTextEditor.ControlsGroup>
-						<RichTextEditor.H1 />
-						<RichTextEditor.H2 />
-						<RichTextEditor.H3 />
-						<RichTextEditor.H4 />
-						<RichTextEditor.H5 />
-						<RichTextEditor.H6 />
-					</RichTextEditor.ControlsGroup>
-				</Menu.Dropdown>
-			</Menu>
-		);
-	}
-
 	const toolbar = (
 		<RichTextEditor.Toolbar
 			sticky
@@ -601,11 +614,11 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 			}}
 		>
 			<RichTextEditor.ControlsGroup>
-				<InsertHashtagControl />
-				<InsertMentionControl />
-				<InsertImageControl />
-				<InsertYouTubeControl />
-				<InsertGiphyControl />
+				<InsertHashtagControl editor={editor} />
+				<InsertMentionControl editor={editor} />
+				<InsertImageControl ref_file_input_image={ref_file_input_image} />
+				<InsertYouTubeControl editor={editor} ref_youtube_dialog_manager={ref_youtube_dialog_manager} />
+				<InsertGifControl editor={editor} ref_gif_dialog_manager={ref_gif_dialog_manager} />
 			</RichTextEditor.ControlsGroup>
 
 			<RichTextEditor.ControlsGroup>
@@ -625,11 +638,11 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 			</RichTextEditor.ControlsGroup>
 
 			<RichTextEditor.ControlsGroup>
-				{HeadingMenuControl()}
+				<HeadingMenuControl editor={editor} />
 				<RichTextEditor.CodeBlock />
 				<RichTextEditor.Blockquote />
-				{InsertMathMenuControl()}
-				{InsertTableMenuControl()}
+				<InsertMathMenuControl editor={editor} />
+				<InsertTableMenuControl editor={editor} />
 			</RichTextEditor.ControlsGroup>
 
 			<RichTextEditor.ControlsGroup>
@@ -641,8 +654,8 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 			</RichTextEditor.ControlsGroup>
 
 			<RichTextEditor.ControlsGroup>
-				{TextColorControl()}
-				{HighlightColorControl()}
+				<TextColorControl editor={editor} />
+				<HighlightColorControl editor={editor} />
 				<RichTextEditor.Control
 					onClick={() => editor?.chain().focus().clearNodes().unsetAllMarks().run()}
 					aria-label={t("editor.clear_formatting")}
@@ -683,7 +696,7 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 		<div className="FullColumnChildAndParent" style={{ position: "relative" }}>
 			<UserSearchDialogControl ref_user_search_dialog_control_manager={ref_user_search_dialog_control_manager} hashiverse={hashiverse} />
 			<YouTubeDialogControl ref_manager={ref_youtube_dialog_manager} />
-			<GiphyDialogControl ref_manager={ref_giphy_dialog_manager} />
+			<GifDialogControl ref_manager={ref_gif_dialog_manager} />
 			<RichTextEditor editor={editor} variant="subtle" className="FullColumnChildAndParent" labels={rte_labels}>
 				{toolbar}
 				<RichTextEditor.Content className="FullColumnChild" />

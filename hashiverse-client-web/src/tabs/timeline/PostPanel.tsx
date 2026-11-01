@@ -30,6 +30,33 @@ interface Props {
 	user_settings_cache: UserSettingsCache;
 }
 
+const format_count = (n: number): string => {
+	if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(n >= 10_000_000_000 ? 0 : 1)}B`;
+	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+	if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}k`;
+	return `${n}`;
+};
+
+// Module level so its identity is stable across PostPanel renders (a nested component would remount every render)
+const ActionWithCount: React.FC<{
+	icon: React.ReactNode;
+	count: number;
+	onClick?: () => void;
+	tooltip?: string;
+	disabled?: boolean;
+}> = ({ icon, count, onClick, tooltip, disabled }) => (
+	<Stack gap={0} align="center" style={{ cursor: onClick && !disabled ? "pointer" : "default" }}>
+		<Tooltip label={tooltip} disabled={!tooltip}>
+			<ActionIcon onClick={disabled ? undefined : onClick} disabled={disabled}>
+				{icon}
+			</ActionIcon>
+		</Tooltip>
+		<Text size="xs" lh={1}>
+			{format_count(count)}
+		</Text>
+	</Stack>
+);
+
 export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_images, user_settings_cache }) => {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
@@ -267,6 +294,7 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 	}, [post_url]);
 
 	const on_copy_text = useCallback(() => {
+		// biome-ignore lint/performance/useDomNodeTextContent: innerText is deliberate, it keeps the rendered line breaks between paragraphs that textContent would drop
 		const text = content_ref.current?.innerText || "";
 		navigator.clipboard.writeText(text).catch(console.error);
 	}, []);
@@ -301,7 +329,7 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 		// NB we dont mind this external reference to katex as it is for standalone copied-and-pasted exported post html
 		const has_math = sanitized_html.includes('data-type="inline-math"') || sanitized_html.includes('data-type="block-math"');
 		const katex_tags = has_math
-			? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css">\n<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js"></script>\n<script defer>document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[data-type="inline-math"][data-latex],[data-type="block-math"][data-latex]').forEach(function(el){katex.render(el.getAttribute('data-latex'),el,{displayMode:el.getAttribute('data-type')==='block-math',throwOnError:false})})});</script>\n`
+			? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18/dist/katex.min.css">\n<script defer src="https://cdn.jsdelivr.net/npm/katex@0.18/dist/katex.min.js"></script>\n<script defer>document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[data-type="inline-math"][data-latex],[data-type="block-math"][data-latex]').forEach(function(el){katex.render(el.getAttribute('data-latex'),el,{displayMode:el.getAttribute('data-type')==='block-math',throwOnError:false})})});</script>\n`
 			: "";
 
 		const embed_html = `<!DOCTYPE html>\n${katex_tags}<style>\nbody { margin: 0; }\n.hashiverse-embed { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #fff; background: #242424; }\n${embed_css}\n</style>\n<div class="hashiverse-embed">\n${sanitized_html}\n</div>`;
@@ -380,32 +408,6 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 			set_reposting(false);
 		}
 	};
-
-	const format_count = (n: number): string => {
-		if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(n >= 10_000_000_000 ? 0 : 1)}B`;
-		if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
-		if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}k`;
-		return `${n}`;
-	};
-
-	const ActionWithCount: React.FC<{
-		icon: React.ReactNode;
-		count: number;
-		onClick?: () => void;
-		tooltip?: string;
-		disabled?: boolean;
-	}> = ({ icon, count, onClick, tooltip, disabled }) => (
-		<Stack gap={0} align="center" style={{ cursor: onClick && !disabled ? "pointer" : "default" }}>
-			<Tooltip label={tooltip} disabled={!tooltip}>
-				<ActionIcon onClick={disabled ? undefined : onClick} disabled={disabled}>
-					{icon}
-				</ActionIcon>
-			</Tooltip>
-			<Text size="xs" lh={1}>
-				{format_count(count)}
-			</Text>
-		</Stack>
-	);
 
 	const on_interaction_positive_click = async (feedback_type: number) => {
 		Tools.play_ui_sound(sound_interaction_positive);
@@ -576,7 +578,7 @@ export const PostPanel: React.FC<Props> = React.memo(({ hashiverse, post, blur_i
 							onClick={() => set_is_expanded(!is_expanded)}
 							style={{ border: "none", cursor: "pointer", font: "inherit", color: "inherit", width: "100%" }}
 						>
-							{is_expanded ? "▲ " + t("post.show_less") + " ▲" : "▼ " + t("post.read_more") + " ▼"}
+							{is_expanded ? `▲ ${t("post.show_less")} ▲` : `▼ ${t("post.read_more")} ▼`}
 						</button>
 					)}
 				</div>

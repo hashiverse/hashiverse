@@ -6,13 +6,7 @@ import { defineConfig } from "vitest/config";
 // held until V8 GC runs, so without this rmSync hits EPERM.
 export default defineConfig({
     test: {
-        poolOptions: {
-            forks: {
-                execArgv: ["--expose-gc"],
-            },
-            threads: {
-                execArgv: ["--expose-gc"],
-            },
-        },
+        // vitest 4+ replaced per-pool `poolOptions` with a top-level `execArgv` that applies to every pool
+        execArgv: ["--expose-gc"],
     },
 });
