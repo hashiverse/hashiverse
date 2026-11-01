@@ -289,15 +289,103 @@ impl EncodedPostBundleV1 {
 
 
 #[cfg(test)]
+pub(crate) mod test_fixtures {
+    use super::*;
+    use crate::client::key_locker::key_locker::{KeyLocker, KeyLockerManager};
+    use crate::client::key_locker::mem_key_locker::MemKeyLockerManager;
+    use crate::tools::buckets::BucketType;
+    use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
+    use crate::tools::server_id::ServerId;
+    use crate::tools::time::MILLIS_IN_YEAR;
+    use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
+    use std::sync::Arc;
+
+    /// A genuine server, a genuine client, and that client's current User bucket.
+    pub(crate) struct BucketBundleFixture {
+        pub(crate) server_id: ServerId,
+        pub(crate) key_locker: Arc<dyn KeyLocker>,
+        pub(crate) bucket_location: BucketLocation,
+        pub(crate) time_millis_now: TimeMillis,
+    }
+
+    impl BucketBundleFixture {
+        pub(crate) async fn new() -> anyhow::Result<Self> {
+            let time_provider = RealTimeProvider;
+            let pow_generator = SingleThreadedPowGenerator::new();
+            let server_id = ServerId::new("bucket_bundle", &time_provider, config::SERVER_KEY_POW_MIN, true, &pow_generator).await?;
+            let key_locker_manager = MemKeyLockerManager::new().await?;
+            let key_locker: Arc<dyn KeyLocker> = key_locker_manager.create("bucket bundle keyphrase".to_string()).await?;
+            let time_millis_now = time_provider.current_time_millis();
+            let bucket_location = BucketLocation::new(BucketType::User, key_locker.client_id().id, MILLIS_IN_YEAR, time_millis_now)?;
+            Ok(Self { server_id, key_locker, bucket_location, time_millis_now })
+        }
+
+        pub(crate) async fn make_post(&self, timestamp: TimeMillis, linked_base_ids: Vec<Id>) -> anyhow::Result<(Id, Bytes)> {
+            let mut encoded_post = EncodedPostV1::new(self.key_locker.client_id(), timestamp, linked_base_ids, "bucket bundle post");
+            let encoded_post_bytes = encoded_post.encode_to_bytes_direct(&self.key_locker).await?;
+            Ok((encoded_post.post_id, Bytes::copy_from_slice(encoded_post_bytes.bytes())))
+        }
+
+        pub(crate) async fn make_own_posts(&self, num_posts: usize) -> anyhow::Result<Vec<(Id, Bytes)>> {
+            let mut posts = Vec::with_capacity(num_posts);
+            for _ in 0..num_posts {
+                posts.push(self.make_post(self.time_millis_now, vec![self.bucket_location.base_id]).await?);
+            }
+            Ok(posts)
+        }
+
+        pub(crate) fn make_bundle_signed_by(&self, server_id: &ServerId, peer: Peer, time_millis: TimeMillis, posts: &[(Id, Bytes)]) -> anyhow::Result<EncodedPostBundleV1> {
+            let mut encoded_posts_bytes = BytesMut::new();
+            for (_, post_bytes) in posts {
+                encoded_posts_bytes.put_slice(post_bytes);
+            }
+            let mut header = EncodedPostBundleHeaderV1 {
+                time_millis,
+                location_id: self.bucket_location.location_id,
+                overflowed: false,
+                sealed: false,
+                num_posts: posts.len() as u8,
+                encoded_post_ids: posts.iter().map(|(post_id, _)| *post_id).collect(),
+                encoded_post_lengths: posts.iter().map(|(_, post_bytes)| post_bytes.len()).collect(),
+                encoded_post_healed: HashSet::new(),
+                peer,
+                signature: Signature::zero(),
+            };
+            header.signature_generate(&server_id.keys.signature_key)?;
+            Ok(EncodedPostBundleV1 { header, encoded_posts_bytes: encoded_posts_bytes.freeze() })
+        }
+
+        pub(crate) fn make_bundle(&self, posts: &[(Id, Bytes)]) -> anyhow::Result<EncodedPostBundleV1> {
+            let peer = self.server_id.to_peer(&RealTimeProvider)?;
+            self.make_bundle_signed_by(&self.server_id, peer, self.time_millis_now, posts)
+        }
+
+        pub(crate) fn resign(&self, encoded_post_bundle: &mut EncodedPostBundleV1) -> anyhow::Result<()> {
+            encoded_post_bundle.header.signature_generate(&self.server_id.keys.signature_key)
+        }
+
+        /// Another genuine server identity, to play a second (third, ...) originator.
+        pub(crate) async fn new_server_id() -> anyhow::Result<ServerId> {
+            ServerId::new("bucket_bundle", &RealTimeProvider, config::SERVER_KEY_POW_MIN, true, &SingleThreadedPowGenerator::new()).await
+        }
+
+        pub(crate) fn make_bundle_from(&self, server_id: &ServerId, posts: &[(Id, Bytes)]) -> anyhow::Result<EncodedPostBundleV1> {
+            self.make_bundle_signed_by(server_id, server_id.to_peer(&RealTimeProvider)?, self.time_millis_now, posts)
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    use super::test_fixtures::BucketBundleFixture;
     use crate::client::key_locker::key_locker::{KeyLocker, KeyLockerManager};
     use crate::client::key_locker::mem_key_locker::MemKeyLockerManager;
     use std::sync::Arc;
     use crate::protocol::posting::encoded_post::EncodedPostV1;
     use crate::tools::buckets::BucketType;
     use crate::tools::server_id::ServerId;
-    use crate::tools::time::{MILLIS_IN_DAY, MILLIS_IN_SECOND, MILLIS_IN_YEAR};
+    use crate::tools::time::{MILLIS_IN_DAY, MILLIS_IN_SECOND};
     use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
     use crate::tools::tools;
     use crate::tools::types::Pow;
@@ -421,71 +509,6 @@ mod tests {
     }
 
     // ── verify_for_bucket / normalise_flags_for_bucket ──
-
-    /// A genuine server, a genuine client, and that client's current User bucket.
-    struct BucketBundleFixture {
-        server_id: ServerId,
-        key_locker: Arc<dyn KeyLocker>,
-        bucket_location: BucketLocation,
-        time_millis_now: TimeMillis,
-    }
-
-    impl BucketBundleFixture {
-        async fn new() -> anyhow::Result<Self> {
-            let time_provider = RealTimeProvider;
-            let pow_generator = SingleThreadedPowGenerator::new();
-            let server_id = ServerId::new("bucket_bundle", &time_provider, config::SERVER_KEY_POW_MIN, true, &pow_generator).await?;
-            let key_locker_manager = MemKeyLockerManager::new().await?;
-            let key_locker: Arc<dyn KeyLocker> = key_locker_manager.create("bucket bundle keyphrase".to_string()).await?;
-            let time_millis_now = time_provider.current_time_millis();
-            let bucket_location = BucketLocation::new(BucketType::User, key_locker.client_id().id, MILLIS_IN_YEAR, time_millis_now)?;
-            Ok(Self { server_id, key_locker, bucket_location, time_millis_now })
-        }
-
-        async fn make_post(&self, timestamp: TimeMillis, linked_base_ids: Vec<Id>) -> anyhow::Result<(Id, Bytes)> {
-            let mut encoded_post = EncodedPostV1::new(self.key_locker.client_id(), timestamp, linked_base_ids, "bucket bundle post");
-            let encoded_post_bytes = encoded_post.encode_to_bytes_direct(&self.key_locker).await?;
-            Ok((encoded_post.post_id, Bytes::copy_from_slice(encoded_post_bytes.bytes())))
-        }
-
-        async fn make_own_posts(&self, num_posts: usize) -> anyhow::Result<Vec<(Id, Bytes)>> {
-            let mut posts = Vec::with_capacity(num_posts);
-            for _ in 0..num_posts {
-                posts.push(self.make_post(self.time_millis_now, vec![self.bucket_location.base_id]).await?);
-            }
-            Ok(posts)
-        }
-
-        fn make_bundle_signed_by(&self, server_id: &ServerId, peer: Peer, time_millis: TimeMillis, posts: &[(Id, Bytes)]) -> anyhow::Result<EncodedPostBundleV1> {
-            let mut encoded_posts_bytes = BytesMut::new();
-            for (_, post_bytes) in posts {
-                encoded_posts_bytes.put_slice(post_bytes);
-            }
-            let mut header = EncodedPostBundleHeaderV1 {
-                time_millis,
-                location_id: self.bucket_location.location_id,
-                overflowed: false,
-                sealed: false,
-                num_posts: posts.len() as u8,
-                encoded_post_ids: posts.iter().map(|(post_id, _)| *post_id).collect(),
-                encoded_post_lengths: posts.iter().map(|(_, post_bytes)| post_bytes.len()).collect(),
-                encoded_post_healed: HashSet::new(),
-                peer,
-                signature: Signature::zero(),
-            };
-            header.signature_generate(&server_id.keys.signature_key)?;
-            Ok(EncodedPostBundleV1 { header, encoded_posts_bytes: encoded_posts_bytes.freeze() })
-        }
-
-        fn make_bundle(&self, posts: &[(Id, Bytes)]) -> anyhow::Result<EncodedPostBundleV1> {
-            let peer = self.server_id.to_peer(&RealTimeProvider)?;
-            self.make_bundle_signed_by(&self.server_id, peer, self.time_millis_now, posts)
-        }
-
-        fn resign(&self, encoded_post_bundle: &mut EncodedPostBundleV1) -> anyhow::Result<()> {
-            encoded_post_bundle.header.signature_generate(&self.server_id.keys.signature_key)
-        }
-    }
 
     #[tokio::test]
     async fn test_verify_for_bucket_accepts_genuine_bundles() -> anyhow::Result<()> {

@@ -25,6 +25,7 @@ use crate::client::peer_tracker::peer_tracker::PeerTracker;
 use crate::client::post_bundle::post_bundle_healing;
 use crate::client::post_bundle::post_bundle_manager::PostBundleManager;
 use crate::protocol::payload::payload::{CacheRequestTokenV1, GetPostBundleResponseV1, GetPostBundleV1, PayloadRequestKind, PayloadResponseKind};
+use crate::protocol::peer::Peer;
 use crate::protocol::posting::encoded_post_bundle::EncodedPostBundleV1;
 use crate::protocol::rpc;
 use crate::tools::buckets::BucketLocation;
@@ -95,6 +96,8 @@ impl PostBundleManager
             let result: anyhow::Result<Option<EncodedPostBundleV1>> = try {
                 let raw = self.client_storage.get(BUCKET_POST_BUNDLE, &location_id.to_hex_str(), time_millis).await?;
                 if let Some(raw) = raw {
+                    // NB: deliberately not re-verified.  We only ever cache bundles we verified on receipt, but their overflowed/sealed flags
+                    // were then merged/normalised locally (see AcceptedPostBundles::select_best) so the header signature may not cover them.
                     let bundle = EncodedPostBundleV1::from_bytes(Bytes::from(raw), true)?;
                     if bundle.header.sealed {
                         trace!("Using cached sealed PostBundle for {} at {}", location_id, reason);
@@ -147,16 +150,14 @@ impl PostBundleManager
 
         // We need to refresh...
         let mut peers_visited = Vec::new();
-        let mut already_retrieved_peer_ids: Vec<Id> = Vec::new();
-        let mut encoded_post_bundles = Vec::new();
+        let mut accepted_post_bundles = AcceptedPostBundles::new(bucket_location.clone(), time_millis);
         let mut cache_request_tokens: Vec<CacheRequestTokenV1> = Vec::new();
         let mut positive_responder_leading_agreement_bits: Vec<LeadingAgreementBits> = Vec::new();
-        let mut bundle_bytes_for_upload: Vec<(Id, Bytes)> = Vec::new();
         {
             let mut peer_tracker = self.peer_tracker.write().await;
             let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, 2 * config::REDUNDANT_SERVERS_PER_POST, cache_radius).await?;
             while let Some((peer, leading_agreement_bits)) = peer_iter.next_peer() {
-                if already_retrieved_peer_ids.contains(&peer.id) {
+                if accepted_post_bundles.accepted_originator_ids().contains(&peer.id) {
                     continue;
                 }
 
@@ -166,7 +167,7 @@ impl PostBundleManager
                     let request = GetPostBundleV1 {
                         bucket_location: bucket_location.clone(),
                         peers_visited: peers_visited.clone(),
-                        already_retrieved_peer_ids: already_retrieved_peer_ids.clone(),
+                        already_retrieved_peer_ids: accepted_post_bundles.accepted_originator_ids().to_vec(),
                     };
                     let request = json::struct_to_bytes(&request)?;
                     let response = rpc::rpc::rpc_server_known(&self.runtime_services, &self.sponsor_id, &peer, PayloadRequestKind::GetPostBundleV1, request).await?;
@@ -183,37 +184,22 @@ impl PostBundleManager
                     let mut found_bundle_from_this_peer = false;
 
                     for cached_bytes in response.post_bundles_cached {
-                        let process_result: anyhow::Result<()> = try {
-                            let post_bundle = EncodedPostBundleV1::from_bytes(cached_bytes.clone(), true)?;
-                            post_bundle.header.verify()?;
-                            trace!("Retrieved cached PostBundle from peer.id={} with {} posts", post_bundle.header.peer.id, post_bundle.header.num_posts);
-
-                            already_retrieved_peer_ids.push(post_bundle.header.peer.id);
-                            bundle_bytes_for_upload.push((post_bundle.header.peer.id, cached_bytes));
-                            encoded_post_bundles.push(post_bundle);
-                            found_bundle_from_this_peer = true;
-                        };
-                        if let Err(e) = process_result {
-                            warn!("Error processing cached PostBundle: {}", e);
+                        match accepted_post_bundles.offer_cached(cached_bytes) {
+                            Ok(accepted) => found_bundle_from_this_peer |= accepted,
+                            Err(e) => warn!("Rejecting cached PostBundle from peer {}: {}", peer, e),
                         }
                     }
 
+                    // A peer that hands us an unacceptable bundle of its own is misbehaving, so this one propagates and drops the peer
                     if let Some(post_bundle_raw) = response.post_bundle {
-                        let post_bundle = EncodedPostBundleV1::from_bytes(post_bundle_raw.clone(), true)?;
-                        post_bundle.header.verify()?;
-                        trace!("Retrieved PostBundle from peer.id={} with {} posts", post_bundle.header.peer.id, post_bundle.header.num_posts);
-
-                        already_retrieved_peer_ids.push(post_bundle.header.peer.id);
-                        bundle_bytes_for_upload.push((post_bundle.header.peer.id, post_bundle_raw));
-                        encoded_post_bundles.push(post_bundle);
-                        found_bundle_from_this_peer = true;
+                        found_bundle_from_this_peer |= accepted_post_bundles.offer_direct(post_bundle_raw, &peer)?;
                     }
 
                     if found_bundle_from_this_peer {
                         positive_responder_leading_agreement_bits.push(leading_agreement_bits);
                     }
 
-                    if encoded_post_bundles.len() >= config::REDUNDANT_SERVERS_PER_POST {
+                    if accepted_post_bundles.quorum_count() >= config::REDUNDANT_SERVERS_PER_POST {
                         break;
                     }
                 };
@@ -230,33 +216,280 @@ impl PostBundleManager
             }
         }
 
-        info!("Discovered {} post bundles after visiting {} peers", encoded_post_bundles.len(), peers_visited.len());
+        info!("Accepted post bundles from {} originators after visiting {} peers", accepted_post_bundles.quorum_count(), peers_visited.len());
 
         // Store our new cache radius - the peer "furthest out" from our bundle's location_id
         if let Some(new_radius) = positive_responder_leading_agreement_bits.iter().copied().min() {
             self.post_bundle_cache_radius_tracker.update(bucket_location.location_id, new_radius, time_millis);
         }
 
-        // Select the best bundle (most posts) from everything collected, including cached copies.
-        let best_encoded_post_bundle = {
-            encoded_post_bundles
-                .iter()
-                .max_by_key(|b| b.header.num_posts)
-                .cloned()
-                .ok_or_else(|| anyhow::anyhow!("No post bundles discovered for {}", bucket_location.location_id))?
-        };
+        let best_encoded_post_bundle = accepted_post_bundles.select_best().ok_or_else(|| anyhow::anyhow!("No post bundles discovered for {}", bucket_location.location_id))?;
 
-        // Cache it
+        // Cache it.  NB: its flags have been merged/normalised locally, so its header signature may no longer cover them - fine for our own cache, never forward it.
         trace!("Caching PostBundle for {} with {} posts", bucket_location.location_id, best_encoded_post_bundle.header.num_posts);
         let encoded_post_bundle_bytes = best_encoded_post_bundle.to_bytes()?;
         self.client_storage.put(BUCKET_POST_BUNDLE, &bucket_location.location_id.to_hex_str(), encoded_post_bundle_bytes.to_vec(), time_millis).await?;
 
         // Kick off healing
-        post_bundle_healing::heal_post_bundles(self.runtime_services.clone(), self.sponsor_id, bucket_location.clone(), &peers_visited, encoded_post_bundles);
+        post_bundle_healing::heal_post_bundles(self.runtime_services.clone(), self.sponsor_id, bucket_location.clone(), &accepted_post_bundles.donor_bundles(), accepted_post_bundles.direct_bundles());
 
-        // Kick off remote cache populating
-        post_bundle_cache_uploader::upload_post_bundle_caches(self.runtime_services.clone(), self.sponsor_id, cache_request_tokens, bundle_bytes_for_upload);
+        // Kick off remote cache populating - with the original signed bytes of authoritative bundles only
+        post_bundle_cache_uploader::upload_post_bundle_caches(self.runtime_services.clone(), self.sponsor_id, cache_request_tokens, accepted_post_bundles.bundle_bytes_for_upload());
 
         Ok(best_encoded_post_bundle)
+    }
+}
+
+/// The post bundles accepted so far while walking towards a bucket's location.
+///
+/// - An **authoritative** bundle passes [`EncodedPostBundleV1::verify_for_bucket`] and holds at least one post.  Only a genuinely signed,
+///   admissible post proves anything - any server can sign an empty bundle.  Authoritative bundles may come directly from the peer we asked,
+///   or be cached snapshots it relays (possibly signed by servers that have since died).
+/// - A **direct-empty** bundle passes the same checks but holds no posts, and came directly from the peer we asked.  It counts towards
+///   deciding we have asked enough servers (empty buckets are the common case), but carries no content.  Empty cached snapshots are ignored.
+///
+/// Each originating server counts at most once.
+struct AcceptedPostBundles {
+    bucket_location: BucketLocation,
+    time_millis: TimeMillis,
+    accepted_originator_ids: Vec<Id>,
+    authoritative_bundles: Vec<(Bytes, EncodedPostBundleV1)>,
+    direct_bundles: Vec<(Peer, EncodedPostBundleV1)>,
+}
+
+impl AcceptedPostBundles {
+    fn new(bucket_location: BucketLocation, time_millis: TimeMillis) -> Self {
+        Self { bucket_location, time_millis, accepted_originator_ids: Vec::new(), authoritative_bundles: Vec::new(), direct_bundles: Vec::new() }
+    }
+
+    /// Originators whose bundles we have accepted - passed to servers so they don't send us those again.
+    fn accepted_originator_ids(&self) -> &[Id] {
+        &self.accepted_originator_ids
+    }
+
+    /// How many distinct servers' views we have accepted, authoritative or direct-empty.
+    fn quorum_count(&self) -> usize {
+        self.accepted_originator_ids.len()
+    }
+
+    /// A cached snapshot relayed by some peer.  Returns whether it was accepted; errors if it was unacceptable.
+    fn offer_cached(&mut self, encoded_post_bundle_bytes: Bytes) -> anyhow::Result<bool> {
+        let encoded_post_bundle = EncodedPostBundleV1::from_bytes(encoded_post_bundle_bytes.clone(), true)?;
+        if !self.verify_new_originator(&encoded_post_bundle)? {
+            return Ok(false);
+        }
+        if encoded_post_bundle.header.num_posts == 0 {
+            trace!("Ignoring empty cached PostBundle from peer.id={}", encoded_post_bundle.header.peer.id);
+            return Ok(false);
+        }
+
+        trace!("Accepted cached PostBundle from peer.id={} with {} posts", encoded_post_bundle.header.peer.id, encoded_post_bundle.header.num_posts);
+        self.accepted_originator_ids.push(encoded_post_bundle.header.peer.id);
+        self.authoritative_bundles.push((encoded_post_bundle_bytes, encoded_post_bundle));
+        Ok(true)
+    }
+
+    /// The bundle `responding_peer` holds itself.  Returns whether it was accepted; errors if it was unacceptable.
+    fn offer_direct(&mut self, encoded_post_bundle_bytes: Bytes, responding_peer: &Peer) -> anyhow::Result<bool> {
+        let encoded_post_bundle = EncodedPostBundleV1::from_bytes(encoded_post_bundle_bytes.clone(), true)?;
+        if encoded_post_bundle.header.peer.id != responding_peer.id {
+            anyhow::bail!("PostBundle from peer {} claims to be published by {}", responding_peer.id, encoded_post_bundle.header.peer.id);
+        }
+        if !self.verify_new_originator(&encoded_post_bundle)? {
+            return Ok(false);
+        }
+
+        trace!("Accepted PostBundle from peer.id={} with {} posts", encoded_post_bundle.header.peer.id, encoded_post_bundle.header.num_posts);
+        self.accepted_originator_ids.push(encoded_post_bundle.header.peer.id);
+        if encoded_post_bundle.header.num_posts > 0 {
+            self.authoritative_bundles.push((encoded_post_bundle_bytes, encoded_post_bundle.clone()));
+        }
+        self.direct_bundles.push((responding_peer.clone(), encoded_post_bundle));
+        Ok(true)
+    }
+
+    /// Ok(false) if we have already accepted a bundle from this originator; Err if the bundle is not legitimate for our bucket.
+    fn verify_new_originator(&self, encoded_post_bundle: &EncodedPostBundleV1) -> anyhow::Result<bool> {
+        if self.accepted_originator_ids.contains(&encoded_post_bundle.header.peer.id) {
+            return Ok(false);
+        }
+        encoded_post_bundle.verify_for_bucket(&self.bucket_location, self.time_millis)?;
+        Ok(true)
+    }
+
+    /// The bundle to hand to the caller: the authoritative bundle with the most posts (falling back to a direct-empty one).
+    /// Healing is relied upon to eventually give every responsible server the union of posts.
+    ///
+    /// Its `overflowed` flag is the OR across every accepted bundle: a bundle can win on post count while claiming not to have overflowed,
+    /// which would hide the child buckets, whereas a false "overflowed" only costs some extra fetches.  `sealed` is then recomputed locally.
+    fn select_best(&self) -> Option<EncodedPostBundleV1> {
+        let authoritative = self.authoritative_bundles.iter().map(|(_, encoded_post_bundle)| encoded_post_bundle);
+        let direct = self.direct_bundles.iter().map(|(_, encoded_post_bundle)| encoded_post_bundle);
+
+        let mut best_encoded_post_bundle = authoritative.clone().max_by_key(|encoded_post_bundle| encoded_post_bundle.header.num_posts).or_else(|| direct.clone().next())?.clone();
+        best_encoded_post_bundle.header.overflowed = authoritative
+            .chain(direct)
+            .any(|encoded_post_bundle| encoded_post_bundle.header.overflowed || encoded_post_bundle.header.num_posts > config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS);
+        best_encoded_post_bundle.normalise_flags_for_bucket(&self.bucket_location);
+        Some(best_encoded_post_bundle)
+    }
+
+    fn donor_bundles(&self) -> Vec<EncodedPostBundleV1> {
+        self.authoritative_bundles.iter().map(|(_, encoded_post_bundle)| encoded_post_bundle.clone()).collect()
+    }
+
+    fn direct_bundles(&self) -> &[(Peer, EncodedPostBundleV1)] {
+        &self.direct_bundles
+    }
+
+    fn bundle_bytes_for_upload(&self) -> Vec<(Id, Bytes)> {
+        self.authoritative_bundles.iter().map(|(encoded_post_bundle_bytes, encoded_post_bundle)| (encoded_post_bundle.header.peer.id, encoded_post_bundle_bytes.clone())).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::posting::encoded_post_bundle::test_fixtures::BucketBundleFixture;
+    use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
+    use crate::tools::server_id::ServerId;
+    use crate::tools::time_provider::time_provider::RealTimeProvider;
+    use crate::tools::types::Pow;
+
+    fn new_accepted_post_bundles(fixture: &BucketBundleFixture) -> AcceptedPostBundles {
+        AcceptedPostBundles::new(fixture.bucket_location.clone(), fixture.time_millis_now)
+    }
+
+    #[tokio::test]
+    async fn forged_or_empty_cached_bundles_do_not_count() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(1).await?;
+        let mut accepted_post_bundles = new_accepted_post_bundles(&fixture);
+
+        // Three empty bundles from genuine servers, relayed as cached snapshots: proves nothing
+        for _ in 0..config::REDUNDANT_SERVERS_PER_POST {
+            let server_id = BucketBundleFixture::new_server_id().await?;
+            assert!(!accepted_post_bundles.offer_cached(fixture.make_bundle_from(&server_id, &[])?.to_bytes()?)?);
+        }
+
+        // A bundle of genuine posts from a keypair with no server PoW behind it
+        let unworked_server_id = loop {
+            let server_id = ServerId::new("unworked", &RealTimeProvider, Pow(0), true, &SingleThreadedPowGenerator::new()).await?;
+            if server_id.pow < config::SERVER_KEY_POW_MIN {
+                break server_id;
+            }
+        };
+        assert!(accepted_post_bundles.offer_cached(fixture.make_bundle_from(&unworked_server_id, &posts)?.to_bytes()?).is_err());
+
+        assert_eq!(accepted_post_bundles.quorum_count(), 0);
+        assert!(accepted_post_bundles.accepted_originator_ids().is_empty());
+        assert!(accepted_post_bundles.select_best().is_none());
+        assert!(accepted_post_bundles.bundle_bytes_for_upload().is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn direct_bundle_naming_another_peer_is_rejected() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(1).await?;
+        let mut accepted_post_bundles = new_accepted_post_bundles(&fixture);
+
+        let responding_server_id = BucketBundleFixture::new_server_id().await?;
+        let other_server_id = BucketBundleFixture::new_server_id().await?;
+        let other_bundle = fixture.make_bundle_from(&other_server_id, &posts)?;
+        assert!(accepted_post_bundles.offer_direct(other_bundle.to_bytes()?, &responding_server_id.to_peer(&RealTimeProvider)?).is_err());
+        assert_eq!(accepted_post_bundles.quorum_count(), 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn empty_bucket_reaches_quorum_via_direct_empties() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let mut accepted_post_bundles = new_accepted_post_bundles(&fixture);
+
+        for _ in 0..config::REDUNDANT_SERVERS_PER_POST {
+            let server_id = BucketBundleFixture::new_server_id().await?;
+            assert!(accepted_post_bundles.offer_direct(fixture.make_bundle_from(&server_id, &[])?.to_bytes()?, &server_id.to_peer(&RealTimeProvider)?)?);
+        }
+
+        assert_eq!(accepted_post_bundles.quorum_count(), config::REDUNDANT_SERVERS_PER_POST);
+        let best_encoded_post_bundle = accepted_post_bundles.select_best().expect("an empty bundle");
+        assert_eq!(best_encoded_post_bundle.header.num_posts, 0);
+        assert!(accepted_post_bundles.donor_bundles().is_empty(), "empty bundles have nothing to donate");
+        assert!(accepted_post_bundles.bundle_bytes_for_upload().is_empty(), "empty bundles are not worth uploading to caches");
+        assert_eq!(accepted_post_bundles.direct_bundles().len(), config::REDUNDANT_SERVERS_PER_POST, "but they are heal targets");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn each_originator_counts_once() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(1).await?;
+        let mut accepted_post_bundles = new_accepted_post_bundles(&fixture);
+
+        let server_id = BucketBundleFixture::new_server_id().await?;
+        let encoded_post_bundle_bytes = fixture.make_bundle_from(&server_id, &posts)?.to_bytes()?;
+        assert!(accepted_post_bundles.offer_cached(encoded_post_bundle_bytes.clone())?);
+        assert!(!accepted_post_bundles.offer_cached(encoded_post_bundle_bytes.clone())?);
+        assert!(!accepted_post_bundles.offer_direct(encoded_post_bundle_bytes, &server_id.to_peer(&RealTimeProvider)?)?);
+        assert_eq!(accepted_post_bundles.quorum_count(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn selects_largest_bundle_with_overflowed_or_merged() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(5).await?;
+        let mut accepted_post_bundles = new_accepted_post_bundles(&fixture);
+
+        // A: 3 posts, says overflowed (e.g. it granted many posts that have not all arrived yet)
+        let server_id_a = BucketBundleFixture::new_server_id().await?;
+        let mut encoded_post_bundle_a = fixture.make_bundle_from(&server_id_a, &posts[..3])?;
+        encoded_post_bundle_a.header.overflowed = true;
+        encoded_post_bundle_a.header.sealed = true;
+        encoded_post_bundle_a.header.signature_generate(&server_id_a.keys.signature_key)?;
+        let encoded_post_bundle_bytes_a = encoded_post_bundle_a.to_bytes()?;
+
+        // B: 5 posts, says not overflowed
+        let server_id_b = BucketBundleFixture::new_server_id().await?;
+        let encoded_post_bundle_b = fixture.make_bundle_from(&server_id_b, &posts)?;
+        let encoded_post_bundle_bytes_b = encoded_post_bundle_b.to_bytes()?;
+
+        assert!(accepted_post_bundles.offer_direct(encoded_post_bundle_bytes_a.clone(), &server_id_a.to_peer(&RealTimeProvider)?)?);
+        assert!(accepted_post_bundles.offer_cached(encoded_post_bundle_bytes_b.clone())?);
+
+        let best_encoded_post_bundle = accepted_post_bundles.select_best().expect("a bundle");
+        assert_eq!(best_encoded_post_bundle.header.encoded_post_ids, encoded_post_bundle_b.header.encoded_post_ids, "posts come from the largest bundle");
+        assert!(best_encoded_post_bundle.header.overflowed, "overflowed is OR-ed across all accepted bundles");
+        assert!(best_encoded_post_bundle.header.sealed, "an overflowed bucket is sealed");
+
+        // The merged flag survives the round trip through our local cache format
+        let cached_encoded_post_bundle = EncodedPostBundleV1::from_bytes(best_encoded_post_bundle.to_bytes()?, true)?;
+        assert!(cached_encoded_post_bundle.header.overflowed);
+
+        // Nothing we pass on to the network carries the mutated header
+        let mut bundle_bytes_for_upload = accepted_post_bundles.bundle_bytes_for_upload();
+        bundle_bytes_for_upload.sort_by_key(|(originator_id, _)| *originator_id);
+        let mut expected_bundle_bytes_for_upload = vec![(server_id_a.id, encoded_post_bundle_bytes_a), (server_id_b.id, encoded_post_bundle_bytes_b)];
+        expected_bundle_bytes_for_upload.sort_by_key(|(originator_id, _)| *originator_id);
+        assert_eq!(bundle_bytes_for_upload, expected_bundle_bytes_for_upload);
+        assert!(accepted_post_bundles.donor_bundles().iter().any(|donor_bundle| *donor_bundle == encoded_post_bundle_b));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn premature_sealed_claim_is_dropped() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(1).await?;
+        let mut accepted_post_bundles = new_accepted_post_bundles(&fixture);
+
+        let server_id = BucketBundleFixture::new_server_id().await?;
+        let mut encoded_post_bundle = fixture.make_bundle_from(&server_id, &posts)?;
+        encoded_post_bundle.header.sealed = true; // Would pin this bundle in our cache forever
+        encoded_post_bundle.header.signature_generate(&server_id.keys.signature_key)?;
+        assert!(accepted_post_bundles.offer_cached(encoded_post_bundle.to_bytes()?)?);
+
+        assert!(!accepted_post_bundles.select_best().expect("a bundle").header.sealed);
+        Ok(())
     }
 }
