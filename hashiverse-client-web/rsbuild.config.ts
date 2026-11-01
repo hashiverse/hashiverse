@@ -13,6 +13,11 @@ export default defineConfig({
 		},
 	},
 
+	server: {
+		// rsbuild 2 defaults to "localhost"; we listen on all interfaces so the dev server is reachable on the machine's real network IP (firewall/port-forward setups, LAN devices).
+		host: "0.0.0.0",
+	},
+
 	dev: {
 		hmr: true,
 		liveReload: true,

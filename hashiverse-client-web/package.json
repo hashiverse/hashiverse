@@ -52,16 +52,13 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.4",
-		"@rsbuild/core": "^1.7.3",
-		"@rsbuild/plugin-basic-ssl": "^1.2.2",
-		"@rsbuild/plugin-react": "^1.4.5",
+		"@rsbuild/core": "^2.3.0",
+		"@rsbuild/plugin-basic-ssl": "^2.0.0",
+		"@rsbuild/plugin-react": "^2.1.1",
 		"@tabler/icons-react": "^3.37.1",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
 		"typedoc": "^0.28.20",
 		"typescript": "^5.9.3"
-	},
-	"overrides": {
-		"node-forge": "^1.4.1"
 	}
 }
