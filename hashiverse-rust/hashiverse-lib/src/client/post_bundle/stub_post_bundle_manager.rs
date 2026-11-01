@@ -72,12 +72,12 @@ impl PostBundleManager for StubPostBundleManager {
                 let mut post_bundle = post_bundle.clone();
                 post_bundle.header.time_millis = time_millis;
                 post_bundle.header.overflowed = post_bundle.header.num_posts > config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS;
-                post_bundle.header.sealed = post_bundle.header.overflowed || time_millis > bucket_location.bucket_time_millis + bucket_location.duration + config::ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS;
+                post_bundle.header.sealed = bucket_location.is_sealed_at(time_millis, post_bundle.header.overflowed);
                 trace!("Returning stub postbundle: {}", post_bundle);
                 post_bundle
             }
             None => {
-                let sealed = time_millis > bucket_location.bucket_time_millis + bucket_location.duration + config::ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS;
+                let sealed = bucket_location.is_sealed_at(time_millis, false);
                 let mut post_bundle = EncodedPostBundleV1::stub();
                 post_bundle.header.time_millis = time_millis;
                 post_bundle.header.location_id = bucket_location.location_id;

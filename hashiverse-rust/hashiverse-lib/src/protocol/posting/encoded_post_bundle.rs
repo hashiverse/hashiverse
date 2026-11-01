@@ -23,9 +23,10 @@ use std::collections::HashSet;
 use crate::{anyhow_assert_eq, anyhow_assert_ge};
 use crate::protocol::peer::Peer;
 use crate::protocol::posting::encoded_post::EncodedPostV1;
+use crate::tools::buckets::BucketLocation;
 use crate::tools::time::TimeMillis;
 use crate::tools::types::{Hash, Id, ID_BYTES, Signature, SignatureKey, VerificationKey};
-use crate::tools::{hashing, json, signing};
+use crate::tools::{config, hashing, json, signing};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display};
@@ -190,6 +191,62 @@ impl EncodedPostBundleV1 {
     /// 3. Each post slice can be decrypted using `base_id`, which also verifies the
     ///    per-post signature and hash integrity.
     pub fn verify(&self, base_id: &Id) -> anyhow::Result<()> {
+        self.verify_and_decode_post_headers(base_id)?;
+        Ok(())
+    }
+
+    /// Verifies that this bundle is a legitimate bundle for `bucket_location`, as received from the network.
+    ///
+    /// On top of [`EncodedPostBundleV1::verify`]:
+    /// 1. The publishing peer is a genuine server identity (server-id PoW, id derived from its key, self-signed).
+    ///    [`EncodedPostBundleHeaderV1::verify`] alone only checks the header against the key the header itself supplies.
+    /// 2. The bundle is for this bucket's location_id.
+    /// 3. No post appears twice.
+    /// 4. The header timestamp is plausible: not before the bucket starts and not in the future (both allowing for clock drift).
+    /// 5. Every post could legitimately have been admitted into this bucket - see [`EncodedPostV1::check_admissible_to_bucket`].
+    ///
+    /// An empty bundle can pass: whether an empty bundle is acceptable is up to the caller.
+    /// The `sealed` / `overflowed` flags are not checked here - see [`EncodedPostBundleV1::normalise_flags_for_bucket`].
+    pub fn verify_for_bucket(&self, bucket_location: &BucketLocation, time_millis_now: TimeMillis) -> anyhow::Result<()> {
+        self.header.peer.verify().map_err(|e| anyhow::anyhow!("bundle peer {} failed verification: {}", self.header.peer.id, e))?;
+
+        if self.header.location_id != bucket_location.location_id {
+            anyhow::bail!("bundle location_id {} does not match bucket location_id {}", self.header.location_id, bucket_location.location_id);
+        }
+
+        let unique_post_ids: HashSet<&Id> = self.header.encoded_post_ids.iter().collect();
+        if unique_post_ids.len() != self.header.encoded_post_ids.len() {
+            anyhow::bail!("bundle contains duplicate post ids");
+        }
+
+        if self.header.time_millis + config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD < bucket_location.bucket_time_millis {
+            anyhow::bail!("bundle time_millis {} is before its bucket starts at {}", self.header.time_millis, bucket_location.bucket_time_millis);
+        }
+        if self.header.time_millis > time_millis_now + config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD {
+            anyhow::bail!("bundle time_millis {} is in the future (now {})", self.header.time_millis, time_millis_now);
+        }
+
+        let decoded_posts = self.verify_and_decode_post_headers(&bucket_location.base_id)?;
+        for decoded_post in &decoded_posts {
+            decoded_post.check_admissible_to_bucket(bucket_location, self.header.time_millis)?;
+        }
+
+        Ok(())
+    }
+
+    /// Replaces the publisher-asserted `overflowed` / `sealed` flags with values the receiver can stand behind:
+    /// - a bundle holding more posts than the overflow threshold is overflowed, whatever it says,
+    /// - `sealed` is recomputed from the bucket and the (already bounds-checked) header timestamp, as the server would have.
+    ///
+    /// This deliberately normalises rather than rejects: the posts in such a bundle are still genuine, and older servers
+    /// can legitimately produce inconsistent flags (e.g. by healing posts in without recomputing them).
+    /// NB: the header signature no longer covers the flags after this, so only use the result locally - never forward it.
+    pub fn normalise_flags_for_bucket(&mut self, bucket_location: &BucketLocation) {
+        self.header.overflowed |= self.header.num_posts > config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS;
+        self.header.sealed = bucket_location.is_sealed_at(self.header.time_millis, self.header.overflowed);
+    }
+
+    fn verify_and_decode_post_headers(&self, base_id: &Id) -> anyhow::Result<Vec<EncodedPostV1>> {
         // (1) Header structure and signature
         self.header.verify()?;
 
@@ -204,6 +261,7 @@ impl EncodedPostBundleV1 {
         }
 
         // (2) + (3) Per-post checks
+        let mut decoded_posts = Vec::with_capacity(self.header.encoded_post_ids.len());
         let mut offset = 0usize;
         for (i, (&length, expected_post_id)) in self.header.encoded_post_lengths.iter().zip(self.header.encoded_post_ids.iter()).enumerate() {
             let post_bytes = self.encoded_posts_bytes.slice(offset..offset + length);
@@ -218,13 +276,14 @@ impl EncodedPostBundleV1 {
             }
 
             // Decrypt header (expect_body=true, decode_body=false): verifies per-post signature and hashes
-            EncodedPostV1::decode_from_bytes(post_bytes, base_id, true, false)
+            let decoded_post = EncodedPostV1::decode_from_bytes(post_bytes, base_id, true, false)
                 .map_err(|e| anyhow::anyhow!("post {}: failed to verify with base_id: {}", i, e))?;
+            decoded_posts.push(decoded_post);
 
             offset += length;
         }
 
-        Ok(())
+        Ok(decoded_posts)
     }
 }
 
@@ -236,7 +295,9 @@ mod tests {
     use crate::client::key_locker::mem_key_locker::MemKeyLockerManager;
     use std::sync::Arc;
     use crate::protocol::posting::encoded_post::EncodedPostV1;
+    use crate::tools::buckets::BucketType;
     use crate::tools::server_id::ServerId;
+    use crate::tools::time::{MILLIS_IN_DAY, MILLIS_IN_SECOND, MILLIS_IN_YEAR};
     use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
     use crate::tools::tools;
     use crate::tools::types::Pow;
@@ -356,6 +417,227 @@ mod tests {
         let mut bundle = make_valid_bundle(base_id).await?;
         bundle.header.signature = Signature::zero(); // corrupt the bundle header signature
         assert!(bundle.verify(&base_id).is_err());
+        Ok(())
+    }
+
+    // ── verify_for_bucket / normalise_flags_for_bucket ──
+
+    /// A genuine server, a genuine client, and that client's current User bucket.
+    struct BucketBundleFixture {
+        server_id: ServerId,
+        key_locker: Arc<dyn KeyLocker>,
+        bucket_location: BucketLocation,
+        time_millis_now: TimeMillis,
+    }
+
+    impl BucketBundleFixture {
+        async fn new() -> anyhow::Result<Self> {
+            let time_provider = RealTimeProvider;
+            let pow_generator = SingleThreadedPowGenerator::new();
+            let server_id = ServerId::new("bucket_bundle", &time_provider, config::SERVER_KEY_POW_MIN, true, &pow_generator).await?;
+            let key_locker_manager = MemKeyLockerManager::new().await?;
+            let key_locker: Arc<dyn KeyLocker> = key_locker_manager.create("bucket bundle keyphrase".to_string()).await?;
+            let time_millis_now = time_provider.current_time_millis();
+            let bucket_location = BucketLocation::new(BucketType::User, key_locker.client_id().id, MILLIS_IN_YEAR, time_millis_now)?;
+            Ok(Self { server_id, key_locker, bucket_location, time_millis_now })
+        }
+
+        async fn make_post(&self, timestamp: TimeMillis, linked_base_ids: Vec<Id>) -> anyhow::Result<(Id, Bytes)> {
+            let mut encoded_post = EncodedPostV1::new(self.key_locker.client_id(), timestamp, linked_base_ids, "bucket bundle post");
+            let encoded_post_bytes = encoded_post.encode_to_bytes_direct(&self.key_locker).await?;
+            Ok((encoded_post.post_id, Bytes::copy_from_slice(encoded_post_bytes.bytes())))
+        }
+
+        async fn make_own_posts(&self, num_posts: usize) -> anyhow::Result<Vec<(Id, Bytes)>> {
+            let mut posts = Vec::with_capacity(num_posts);
+            for _ in 0..num_posts {
+                posts.push(self.make_post(self.time_millis_now, vec![self.bucket_location.base_id]).await?);
+            }
+            Ok(posts)
+        }
+
+        fn make_bundle_signed_by(&self, server_id: &ServerId, peer: Peer, time_millis: TimeMillis, posts: &[(Id, Bytes)]) -> anyhow::Result<EncodedPostBundleV1> {
+            let mut encoded_posts_bytes = BytesMut::new();
+            for (_, post_bytes) in posts {
+                encoded_posts_bytes.put_slice(post_bytes);
+            }
+            let mut header = EncodedPostBundleHeaderV1 {
+                time_millis,
+                location_id: self.bucket_location.location_id,
+                overflowed: false,
+                sealed: false,
+                num_posts: posts.len() as u8,
+                encoded_post_ids: posts.iter().map(|(post_id, _)| *post_id).collect(),
+                encoded_post_lengths: posts.iter().map(|(_, post_bytes)| post_bytes.len()).collect(),
+                encoded_post_healed: HashSet::new(),
+                peer,
+                signature: Signature::zero(),
+            };
+            header.signature_generate(&server_id.keys.signature_key)?;
+            Ok(EncodedPostBundleV1 { header, encoded_posts_bytes: encoded_posts_bytes.freeze() })
+        }
+
+        fn make_bundle(&self, posts: &[(Id, Bytes)]) -> anyhow::Result<EncodedPostBundleV1> {
+            let peer = self.server_id.to_peer(&RealTimeProvider)?;
+            self.make_bundle_signed_by(&self.server_id, peer, self.time_millis_now, posts)
+        }
+
+        fn resign(&self, encoded_post_bundle: &mut EncodedPostBundleV1) -> anyhow::Result<()> {
+            encoded_post_bundle.header.signature_generate(&self.server_id.keys.signature_key)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_verify_for_bucket_accepts_genuine_bundles() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(2).await?;
+        fixture.make_bundle(&posts)?.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now)?;
+
+        // Empty bundles pass too - it is up to the caller whether they count for anything
+        fixture.make_bundle(&[])?.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now)?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_verify_for_bucket_rejects_peer_without_server_pow() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(1).await?;
+
+        // A freshly generated keypair with no meaningful PoW behind it: the header signature is fine, but it is not a genuine server
+        let pow_generator = SingleThreadedPowGenerator::new();
+        let unworked_server_id = loop {
+            let server_id = ServerId::new("unworked", &RealTimeProvider, Pow(0), true, &pow_generator).await?;
+            if server_id.pow < config::SERVER_KEY_POW_MIN {
+                break server_id;
+            }
+        };
+        let unworked_peer = unworked_server_id.to_peer(&RealTimeProvider)?;
+        let encoded_post_bundle = fixture.make_bundle_signed_by(&unworked_server_id, unworked_peer, fixture.time_millis_now, &posts)?;
+        encoded_post_bundle.verify(&fixture.bucket_location.base_id)?; // The old check is happy...
+        assert!(encoded_post_bundle.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now).is_err()); // ...the new one is not
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_verify_for_bucket_rejects_peer_impersonating_another_id() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(1).await?;
+
+        // Claim someone else's server id while signing everything with our own key
+        let mut impersonating_peer = fixture.server_id.to_peer(&RealTimeProvider)?;
+        impersonating_peer.id = Id::random();
+        impersonating_peer.sign(&RealTimeProvider, &fixture.server_id.keys.signature_key)?;
+        let encoded_post_bundle = fixture.make_bundle_signed_by(&fixture.server_id, impersonating_peer, fixture.time_millis_now, &posts)?;
+        encoded_post_bundle.verify(&fixture.bucket_location.base_id)?;
+        assert!(encoded_post_bundle.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_verify_for_bucket_rejects_wrong_location() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(1).await?;
+        let mut encoded_post_bundle = fixture.make_bundle(&posts)?;
+        encoded_post_bundle.header.location_id = Id::random();
+        fixture.resign(&mut encoded_post_bundle)?;
+        assert!(encoded_post_bundle.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_verify_for_bucket_rejects_duplicate_post_ids() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(1).await?;
+        let duplicated_posts = vec![posts[0].clone(), posts[0].clone()];
+        let encoded_post_bundle = fixture.make_bundle(&duplicated_posts)?;
+        encoded_post_bundle.verify(&fixture.bucket_location.base_id)?;
+        assert!(encoded_post_bundle.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_verify_for_bucket_rejects_implausible_header_time() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let peer = fixture.server_id.to_peer(&RealTimeProvider)?;
+
+        let future_time_millis = fixture.time_millis_now + config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD + MILLIS_IN_SECOND;
+        let future_encoded_post_bundle = fixture.make_bundle_signed_by(&fixture.server_id, peer.clone(), future_time_millis, &[])?;
+        assert!(future_encoded_post_bundle.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now).is_err());
+
+        let before_bucket_time_millis = fixture.bucket_location.bucket_time_millis - config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD - MILLIS_IN_SECOND;
+        let before_bucket_encoded_post_bundle = fixture.make_bundle_signed_by(&fixture.server_id, peer, before_bucket_time_millis, &[])?;
+        assert!(before_bucket_encoded_post_bundle.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_verify_for_bucket_rejects_inadmissible_posts() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let own_posts = fixture.make_own_posts(1).await?;
+
+        // A genuine, correctly signed post by the same user from the previous bucket, replayed into this one
+        let old_post = fixture.make_post(fixture.bucket_location.bucket_time_millis - MILLIS_IN_SECOND, vec![fixture.bucket_location.base_id]).await?;
+        let replayed_encoded_post_bundle = fixture.make_bundle(&[own_posts[0].clone(), old_post])?;
+        replayed_encoded_post_bundle.verify(&fixture.bucket_location.base_id)?;
+        assert!(replayed_encoded_post_bundle.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now).is_err());
+
+        // A post that claims to be newer than the bundle that supposedly already held it
+        let post_after_bundle = fixture.make_post(fixture.time_millis_now + config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD, vec![fixture.bucket_location.base_id]).await?;
+        let peer = fixture.server_id.to_peer(&RealTimeProvider)?;
+        let stale_header_encoded_post_bundle = fixture.make_bundle_signed_by(&fixture.server_id, peer, fixture.time_millis_now - MILLIS_IN_SECOND, &[post_after_bundle])?;
+        assert!(stale_header_encoded_post_bundle.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now + config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_verify_for_bucket_rejects_foreign_author_in_user_bucket() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+
+        // Another client links our user id so that their post decrypts under our base_id
+        let other_key_locker_manager = MemKeyLockerManager::new().await?;
+        let other_key_locker: Arc<dyn KeyLocker> = other_key_locker_manager.create("other keyphrase".to_string()).await?;
+        let mut foreign_post = EncodedPostV1::new(other_key_locker.client_id(), fixture.time_millis_now, vec![fixture.bucket_location.base_id], "not your post");
+        let foreign_post_bytes = foreign_post.encode_to_bytes_direct(&other_key_locker).await?;
+
+        let encoded_post_bundle = fixture.make_bundle(&[(foreign_post.post_id, Bytes::copy_from_slice(foreign_post_bytes.bytes()))])?;
+        encoded_post_bundle.verify(&fixture.bucket_location.base_id)?;
+        assert!(encoded_post_bundle.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_normalise_flags_for_bucket() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+
+        // A premature "sealed" claim is dropped
+        let posts = fixture.make_own_posts(1).await?;
+        let mut prematurely_sealed_encoded_post_bundle = fixture.make_bundle(&posts)?;
+        prematurely_sealed_encoded_post_bundle.header.sealed = true;
+        prematurely_sealed_encoded_post_bundle.normalise_flags_for_bucket(&fixture.bucket_location);
+        assert!(!prematurely_sealed_encoded_post_bundle.header.sealed);
+        assert!(!prematurely_sealed_encoded_post_bundle.header.overflowed);
+
+        // An overflowed bundle is legitimately sealed early
+        let mut overflowed_encoded_post_bundle = fixture.make_bundle(&posts)?;
+        overflowed_encoded_post_bundle.header.overflowed = true;
+        overflowed_encoded_post_bundle.normalise_flags_for_bucket(&fixture.bucket_location);
+        assert!(overflowed_encoded_post_bundle.header.overflowed);
+        assert!(overflowed_encoded_post_bundle.header.sealed);
+
+        // Too many posts to not be overflowed, whatever the publisher claims
+        let many_posts = fixture.make_own_posts(config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS as usize + 1).await?;
+        let mut understated_encoded_post_bundle = fixture.make_bundle(&many_posts)?;
+        understated_encoded_post_bundle.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now)?;
+        understated_encoded_post_bundle.normalise_flags_for_bucket(&fixture.bucket_location);
+        assert!(understated_encoded_post_bundle.header.overflowed);
+        assert!(understated_encoded_post_bundle.header.sealed);
+
+        // A bundle published after the bucket's grace period is sealed even if it forgot to say so
+        let past_bucket_location = BucketLocation::new(BucketType::User, fixture.bucket_location.base_id, MILLIS_IN_DAY, fixture.time_millis_now - MILLIS_IN_DAY.const_mul(2))?;
+        let mut unsealed_past_encoded_post_bundle = fixture.make_bundle(&[])?;
+        unsealed_past_encoded_post_bundle.header.location_id = past_bucket_location.location_id;
+        unsealed_past_encoded_post_bundle.normalise_flags_for_bucket(&past_bucket_location);
+        assert!(unsealed_past_encoded_post_bundle.header.sealed);
         Ok(())
     }
 

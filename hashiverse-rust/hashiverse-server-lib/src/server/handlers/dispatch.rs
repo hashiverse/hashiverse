@@ -413,7 +413,7 @@ impl HashiverseServer {
 
                     // Has the PostBundle become sealed since the last time it was written to disk?  Perhaps enough time has passed
                     if !post_bundle_metadata.sealed {
-                        let sealed = time_millis > request.bucket_location.bucket_time_millis + request.bucket_location.duration + config::ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS;
+                        let sealed = request.bucket_location.is_sealed_at(time_millis, false);
                         if sealed {
                             // We can rewrite the postbundle on disk for the final time now that it is sealed
                             if let Some(encoded_post_bundle_bytes_old) = encoded_post_bundle_bytes {
@@ -446,7 +446,7 @@ impl HashiverseServer {
                 // If we dont have the metadata, or the bytes on disk, return a fresh one
                 // Generally if we have the metadata, we should always have bytes on disk, except if a request ot post was granted but they then never came back with the data...
                 if encoded_post_bundle_bytes.is_none() {
-                    let sealed = time_millis > request.bucket_location.bucket_time_millis + request.bucket_location.duration + config::ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS;
+                    let sealed = request.bucket_location.is_sealed_at(time_millis, false);
 
                     let mut header = EncodedPostBundleHeaderV1 {
                         time_millis,
@@ -650,7 +650,7 @@ impl HashiverseServer {
                 if !post_bundle_metadata.sealed {
                     post_bundle_metadata.num_posts_granted += 1;
                     post_bundle_metadata.overflowed = post_bundle_metadata.num_posts > config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS || post_bundle_metadata.num_posts_granted > config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS_GRANTED;
-                    post_bundle_metadata.sealed = post_bundle_metadata.overflowed || time_millis > request.bucket_location.bucket_time_millis + request.bucket_location.duration + config::ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS;
+                    post_bundle_metadata.sealed = request.bucket_location.is_sealed_at(time_millis, post_bundle_metadata.overflowed);
 
                     self.environment.put_post_bundle_metadata(time_millis, &request.bucket_location.location_id, &post_bundle_metadata, 0)?;
                 }
@@ -770,7 +770,7 @@ impl HashiverseServer {
         post_bundle.header.time_millis = time_millis;
         post_bundle.header.num_posts += 1;
         post_bundle.header.overflowed = post_bundle.header.num_posts > config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS || post_bundle_metadata.num_posts_granted > config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS_GRANTED;
-        post_bundle.header.sealed = post_bundle.header.overflowed || time_millis > request.bucket_location.bucket_time_millis + request.bucket_location.duration + config::ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS;
+        post_bundle.header.sealed = request.bucket_location.is_sealed_at(time_millis, post_bundle.header.overflowed);
         post_bundle.header.encoded_post_ids.push(decoded_post.post_id);
         post_bundle.header.encoded_post_lengths.push(request.encoded_post_bytes.len());
         post_bundle.header.signature_generate(&self.server_id.keys.signature_key)?;
