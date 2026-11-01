@@ -1011,6 +1011,9 @@ impl HashiverseServer {
 
         // Validate each post: it must decrypt and verify under the bucket's base_id, be the post it claims to be,
         // and pass the same admission rules we would have applied had it been submitted to us directly.
+        // The reference time is the earlier of the donor's time and ours: the donor header may itself be up to the threshold ahead of
+        // our clock, and using it alone would let healed posts sit twice the threshold in the future.
+        let admission_reference_time_millis = std::cmp::min(request.donor_header.time_millis, time_millis);
         for (post_id, post_bytes) in &posts_to_add {
             let decoded_post = EncodedPostV1::decode_from_bytes(post_bytes.clone(), &request.token.bucket_location.base_id, true, true)
                 .map_err(|e| anyhow::anyhow!("HealPostBundleCommitV1: post {} failed decryption: {}", post_id, e))?;
@@ -2028,6 +2031,29 @@ mod tests {
             })?;
 
             assert!(fixture.claim(&donor_header).await.is_err());
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn future_post_is_judged_against_our_clock_not_a_future_donor_clock() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let donor_server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+
+            // The donor header is just inside the future-time allowance, and the post is within the allowance of the donor's time
+            // but beyond the allowance of ours
+            let donor_time_millis = fixture.time_millis_now + config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD - MILLIS_IN_SECOND;
+            let future_post_time_millis = fixture.time_millis_now + config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD + MILLIS_IN_SECOND.const_mul(60);
+            if BucketLocation::round_down_to_bucket_start(future_post_time_millis, fixture.bucket_location.duration) != fixture.bucket_location.bucket_time_millis {
+                return Ok(()); // Too close to the end of the month for this test to be meaningful
+            }
+            let future_post = HealFixture::make_post_by(&fixture.key_locker, future_post_time_millis, vec![fixture.bucket_location.base_id]).await?;
+            let posts = vec![future_post];
+            let donor_header = fixture.make_donor_header(&donor_server_id, &posts, |donor_header| {
+                donor_header.time_millis = donor_time_millis;
+            })?;
+
+            assert!(fixture.heal(&donor_header, &posts).await.is_err());
+            assert!(fixture.stored_bundle().is_err(), "nothing must have been stored");
             Ok(())
         }
 
