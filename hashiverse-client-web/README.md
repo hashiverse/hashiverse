@@ -18,7 +18,7 @@ When the badge above is red, run `node hashiverse-client-web/translations/check-
 
 ## Get started
 
-- Install dependencies with `npm install` 
+- Install dependencies with `npm install`
 - Start the dev server with `npm run dev`
 - Build the app for production with `npm run build`
 - Preview the production build locally with `npm run preview`
