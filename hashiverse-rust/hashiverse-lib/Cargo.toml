@@ -67,7 +67,6 @@ moka = { version = "0.12", features = ["sync"] }
 rayon = "1.10"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
-dirs-next = "2.0"
 hickory-resolver = { version = "0.26", features = ["https-aws-lc-rs", "dnssec-aws-lc-rs", "webpki-roots"] }
 # Cert-chain validation (server-side ownership-proof verification only). Pulls in `aws-lc-rs`,
 # which needs a C toolchain and does not build for wasm — kept off the wasm target so

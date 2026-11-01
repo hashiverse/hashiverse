@@ -8,17 +8,15 @@ use hashiverse_lib::tools::BytesGatherer;
 use hashiverse_lib::transport::ddos::noop_ddos::NoopDdosProtection;
 use hashiverse_lib::transport::mem_transport::MemTransportFactory;
 use hashiverse_lib::transport::transport::{IncomingRequest, TransportFactory, TransportServerHandler};
-use lazy_static::lazy_static;
 use serial_test::serial;
+use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use hashiverse_lib::transport::bootstrap_provider::manual_bootstrap_provider::ManualBootstrapProvider;
 
-lazy_static! {
-    static ref BYTES: Bytes = Bytes::from("test_request");
-}
+static BYTES: LazyLock<Bytes> = LazyLock::new(|| Bytes::from("test_request"));
 
 // Rustls 0.23+ requires a process-global CryptoProvider. Binaries install it from `main`
 // (see hashiverse-server/src/main.rs:26); library tests have no main, so each TLS-touching

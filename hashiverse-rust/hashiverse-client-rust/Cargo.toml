@@ -21,7 +21,7 @@ log = { workspace = true }
 bytes = { workspace = true }
 hex = { workspace = true }
 tokio = { version = "1.45", features = ["macros", "rt-multi-thread"] }
-dirs-next = "2.0"
+dirs = "6.0"
 shellexpand = "3"
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "tls12", "logging", "std"] }
 

@@ -67,7 +67,7 @@ impl HashiverseBuilder {
     }
 
     /// Directory for the sqlite client storage and the on-disk key locker.
-    /// Default: the platform data-dir (`dirs_next::data_dir()`) joined with
+    /// Default: the platform data-dir (`dirs::data_dir()`) joined with
     /// `"hashiverse"`. Tildes in the supplied path are expanded.
     pub fn data_dir(mut self, dir: impl Into<PathBuf>) -> Self {
         let dir = dir.into();
@@ -171,7 +171,7 @@ impl std::ops::Deref for Hashiverse {
 }
 
 fn default_data_dir() -> PathBuf {
-    dirs_next::data_dir().unwrap_or_else(std::env::temp_dir).join("hashiverse")
+    dirs::data_dir().unwrap_or_else(std::env::temp_dir).join("hashiverse")
 }
 
 #[cfg(test)]
