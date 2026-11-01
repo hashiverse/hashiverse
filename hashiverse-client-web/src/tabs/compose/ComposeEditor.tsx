@@ -49,7 +49,7 @@ import { sanitize } from "../../tools/PostPurifier.ts";
 import { Spinner } from "../../tools/Spinner.tsx";
 import { Toast } from "../../tools/Toast.ts";
 import { Tools } from "../../tools/Tools.ts";
-import { GiphyDialogControl, type GiphyDialogControlManager } from "./GiphyDialogControl.tsx";
+import { GifDialogControl, type GifDialogControlManager } from "./GifDialogControl.tsx";
 import { Hashtag } from "./HashtagExtension.ts";
 import { BlockMathEditor, DEFAULT_LATEX_BLOCK, DEFAULT_LATEX_INLINE, InlineMathEditor, MathInputRules, MathNodeNavigation } from "./MathEditorExtension.tsx";
 import { Mention } from "./MentionExtension.ts";
@@ -204,13 +204,13 @@ function InsertMathMenuControl({ editor }: { editor: Editor | null }) {
 	);
 }
 
-function InsertGiphyControl({ editor, ref_giphy_dialog_manager }: { editor: Editor | null; ref_giphy_dialog_manager: React.RefObject<GiphyDialogControlManager | null> }) {
+function InsertGifControl({ editor, ref_gif_dialog_manager }: { editor: Editor | null; ref_gif_dialog_manager: React.RefObject<GifDialogControlManager | null> }) {
 	const { t } = useTranslation();
 	return (
 		<RichTextEditor.Control
 			onClick={async (e) => {
 				e.preventDefault();
-				const url = await ref_giphy_dialog_manager.current?.modal_command_open();
+				const url = await ref_gif_dialog_manager.current?.modal_command_open();
 				if (url) editor?.commands.setImage({ src: url });
 			}}
 			aria-label={t("compose.insert_giphy")}
@@ -402,7 +402,7 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 	const ref_file_input_image = useRef<HTMLInputElement>(null);
 	const ref_user_search_dialog_control_manager = useRef<UserSearchDialogControlManager>(null);
 	const ref_youtube_dialog_manager = useRef<YouTubeDialogControlManager | null>(null);
-	const ref_giphy_dialog_manager = useRef<GiphyDialogControlManager | null>(null);
+	const ref_gif_dialog_manager = useRef<GifDialogControlManager | null>(null);
 	const ref_do_submit = useRef<() => Promise<void>>(null);
 	const ref_draft_save_timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [submitting, set_submitting] = useState(false);
@@ -618,7 +618,7 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 				<InsertMentionControl editor={editor} />
 				<InsertImageControl ref_file_input_image={ref_file_input_image} />
 				<InsertYouTubeControl editor={editor} ref_youtube_dialog_manager={ref_youtube_dialog_manager} />
-				<InsertGiphyControl editor={editor} ref_giphy_dialog_manager={ref_giphy_dialog_manager} />
+				<InsertGifControl editor={editor} ref_gif_dialog_manager={ref_gif_dialog_manager} />
 			</RichTextEditor.ControlsGroup>
 
 			<RichTextEditor.ControlsGroup>
@@ -696,7 +696,7 @@ export const ComposeEditor = React.forwardRef<ComposeEditorHandle, Props>(({ has
 		<div className="FullColumnChildAndParent" style={{ position: "relative" }}>
 			<UserSearchDialogControl ref_user_search_dialog_control_manager={ref_user_search_dialog_control_manager} hashiverse={hashiverse} />
 			<YouTubeDialogControl ref_manager={ref_youtube_dialog_manager} />
-			<GiphyDialogControl ref_manager={ref_giphy_dialog_manager} />
+			<GifDialogControl ref_manager={ref_gif_dialog_manager} />
 			<RichTextEditor editor={editor} variant="subtle" className="FullColumnChildAndParent" labels={rte_labels}>
 				{toolbar}
 				<RichTextEditor.Content className="FullColumnChild" />
