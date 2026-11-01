@@ -45,7 +45,6 @@ i18n
 			loadPath: "/locales/{{lng}}.json",
 		},
 		interpolation: { escapeValue: false }, // React already escapes
-		showSupportNotice: false,
 	});
 
 export default i18n;

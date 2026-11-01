@@ -53,10 +53,11 @@ export class Tools {
 	}
 
 	public static async crush_image(img: Blob | File, max_width: number): Promise<string> {
-		const image_webp = await fromBlob(img, 0.8, max_width, "auto", "webp");
-		const image_webp_base64 = (await blobToURL(image_webp)) as string;
-		const image_jpeg = await fromBlob(img, 0.8, max_width, "auto", "jpeg");
-		const image_jpeg_base64 = (await blobToURL(image_jpeg)) as string;
+		// image-resize-compress v3+ takes quality on a 0-100 scale (v2's 0.8 == 80 here)
+		const image_webp = await fromBlob(img, { quality: 80, width: max_width, height: "auto", format: "webp" });
+		const image_webp_base64 = await blobToURL(image_webp);
+		const image_jpeg = await fromBlob(img, { quality: 80, width: max_width, height: "auto", format: "jpeg" });
+		const image_jpeg_base64 = await blobToURL(image_jpeg);
 
 		return image_webp_base64.length <= image_jpeg_base64.length ? image_webp_base64 : image_jpeg_base64;
 	}
