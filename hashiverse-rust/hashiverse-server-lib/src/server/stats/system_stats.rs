@@ -50,7 +50,9 @@ mod tests {
         for field in ["memory_total_bytes", "memory_free_bytes", "disk_total_bytes", "disk_free_bytes", "load_1m", "load_5m", "load_15m"] {
             assert!(system_stats[field].is_number(), "field {} missing or not numeric: {}", field, system_stats);
         }
-        assert!(system_stats["memory_total_bytes"].as_u64().unwrap() > 0, "every test host has some memory: {}", system_stats);
-        assert!(system_stats["disk_total_bytes"].as_u64().unwrap() > 0, "every test host has some disk: {}", system_stats);
+        // Totals may legitimately be 0 (the documented fallback when sysinfo can't read a metric, e.g. containers
+        // without listed disks), so only check invariants that hold for both real values and the 0/0 fallback.
+        assert!(system_stats["memory_free_bytes"].as_u64().unwrap() <= system_stats["memory_total_bytes"].as_u64().unwrap(), "free memory exceeds total: {}", system_stats);
+        assert!(system_stats["disk_free_bytes"].as_u64().unwrap() <= system_stats["disk_total_bytes"].as_u64().unwrap(), "free disk exceeds total: {}", system_stats);
     }
 }

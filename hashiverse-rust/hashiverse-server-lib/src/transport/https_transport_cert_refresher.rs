@@ -166,6 +166,10 @@ impl HttpsTransportCertRefresher {
 
             // Return the CertifiedKey
             let cert_chain = CertificateDer::pem_slice_iter(&bytes_cert).collect::<Result<Vec<_>, _>>().with_context(|| format!("parsing certificates in {}", self.filename_cert.display()))?;
+            // An empty/truncated cert file must not replace the certificate we are currently serving
+            if cert_chain.is_empty() {
+                anyhow::bail!("No certificates found in {}", self.filename_cert.display());
+            }
             let key_der = PrivateKeyDer::from_pem_slice(&bytes_key).map_err(|e| anyhow::anyhow!("No private key found in {}: {}", self.filename_key.display(), e))?;
             let key = rustls::crypto::aws_lc_rs::sign::any_supported_type(&key_der).map_err(|_| anyhow::anyhow!("Unsupported key type"))?;
 
@@ -394,6 +398,23 @@ mod tests {
         let https_transport_cert_refresher = HttpsTransportCertRefresher::new(path_certs, TEST_IP.to_string(), 0, true)?;
         assert!(https_transport_cert_refresher.reload_certs().is_err());
         assert!(https_transport_cert_refresher.base_cert.read().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn reload_certs_with_empty_cert_file_keeps_previous_certificate() -> anyhow::Result<()> {
+        let (_temp_dir_handle, temp_dir_path) = get_temp_dir()?;
+        let path_certs = PathBuf::from(&temp_dir_path).join("certs");
+        let expected_chain_ders = write_self_signed_pem_files(&path_certs, 0)?;
+
+        let https_transport_cert_refresher = HttpsTransportCertRefresher::new(path_certs.clone(), TEST_IP.to_string(), 0, true)?;
+        https_transport_cert_refresher.reload_certs()?;
+        assert_eq!(loaded_chain_ders(&https_transport_cert_refresher), Some(expected_chain_ders.clone()));
+
+        // e.g. a truncated write during refresh: the reload must fail and keep serving the previous certificate
+        fs::write(path_certs.join(FILENAME_CERT), b"")?;
+        assert!(https_transport_cert_refresher.reload_certs().is_err());
+        assert_eq!(loaded_chain_ders(&https_transport_cert_refresher), Some(expected_chain_ders));
         Ok(())
     }
 

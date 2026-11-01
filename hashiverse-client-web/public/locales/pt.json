@@ -54,7 +54,7 @@
 	"compose.gif_no_results": "Nenhum GIF encontrado",
 	"compose.gif_powered_by": "Com tecnologia KLIPY",
 	"compose.gif_search_failed": "A pesquisa de GIF falhou: {{message}}",
-	"compose.giphy_search_placeholder": "Pesquisar GIFs...",
+	"compose.giphy_search_placeholder": "Pesquisar no KLIPY",
 	"compose.insert_giphy": "Inserir GIF",
 	"compose.insert_hashtag": "Inserir hashtag",
 	"compose.insert_image": "Inserir imagem",

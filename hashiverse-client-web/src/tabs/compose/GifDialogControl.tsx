@@ -96,6 +96,7 @@ export const GifDialogControl: React.FC<Props> = ({ ref_manager }) => {
 				set_results([]);
 				set_search_error(null);
 				set_searched_query("");
+				set_loading(false);
 				open();
 			}),
 	};
@@ -108,14 +109,19 @@ export const GifDialogControl: React.FC<Props> = ({ ref_manager }) => {
 			set_results([]);
 			set_search_error(null);
 			set_searched_query("");
+			set_loading(false);
 			return;
 		}
+		// One controller per (query, dialog session): the cleanup below aborts it whenever the query changes or the
+		// dialog closes, so a slow response for an old query or a previous session can never overwrite current state.
+		const abort_controller = new AbortController();
 		ref_debounce_timer.current = setTimeout(async () => {
 			set_loading(true);
 			try {
 				const search_url = `https://api.klipy.com/api/v1/${KLIPY_API_KEY}/gifs/search?q=${encodeURIComponent(trimmed_query)}&per_page=${KLIPY_RESULTS_PER_PAGE}`;
-				const response = await fetch(search_url);
+				const response = await fetch(search_url, { signal: abort_controller.signal });
 				const klipy_search_response = (await response.json().catch(() => null)) as KlipySearchResponse | null;
+				if (abort_controller.signal.aborted) return;
 				if (!response.ok || !klipy_search_response?.result) {
 					const provider_message = klipy_search_response?.errors?.message?.join(" ") || `HTTP ${response.status}`;
 					throw new Error(provider_message);
@@ -123,16 +129,20 @@ export const GifDialogControl: React.FC<Props> = ({ ref_manager }) => {
 				set_results(klipy_items_to_gif_results(klipy_search_response.data?.data ?? []));
 				set_search_error(null);
 			} catch (error) {
+				if (abort_controller.signal.aborted) return;
 				console.error("GIF search failed", error);
 				set_results([]);
 				set_search_error(error instanceof Error ? error.message : String(error));
 			} finally {
-				set_searched_query(trimmed_query);
-				set_loading(false);
+				if (!abort_controller.signal.aborted) {
+					set_searched_query(trimmed_query);
+					set_loading(false);
+				}
 			}
 		}, 400);
 		return () => {
 			if (ref_debounce_timer.current) clearTimeout(ref_debounce_timer.current);
+			abort_controller.abort();
 		};
 	}, [query, opened]);
 
