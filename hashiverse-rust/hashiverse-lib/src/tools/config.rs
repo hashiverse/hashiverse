@@ -21,6 +21,7 @@ pub const POW_REDUCTION_FACTOR: u8 = if TESTING { 16 } else { 1 };
 pub const CLOCK_LENIENCE_FACTOR: i64 = if TESTING { 8 } else { 1 };
 
 use crate::tools::time::{DurationMillis, MILLIS_IN_DAY, MILLIS_IN_HOUR, MILLIS_IN_MINUTE};
+use crate::tools::tools::LeadingAgreementBits;
 use crate::tools::types::Pow;
 
 pub const PROTOCOL_MAX_BLOB_SIZE_REQUEST: usize = 4 * 1024 * 1024;
@@ -61,6 +62,14 @@ pub const BOOTSTRAP_V1_NUM_PEERS: usize = 32;
 
 // Across how many server should each post be stored?
 pub const REDUNDANT_SERVERS_PER_POST: usize = 3;
+
+// A server only accepts healed posts from a donor bundle whose publishing server is (or was) plausibly responsible for the location:
+// its leading agreement bits with the location_id must be no more than this many bits worse than the REDUNDANT_SERVERS_PER_POST-th nearest
+// server in the receiver's own view.  The donor does not need to be alive (the original servers holding a post eventually die, and
+// cached snapshots they signed are what healing recovers from), so the slack absorbs churn and network growth since the donor signed.
+// NB: this number must only ever GROW in future versions.  Shrinking it would make upgraded servers refuse donors that older servers
+// accepted, breaking the chain of heals that keeps long-lived posts alive after their original servers have gone.
+pub const HEAL_DONOR_LEADING_AGREEMENT_BITS_SLACK: LeadingAgreementBits = 2;
 pub const CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD: DurationMillis =  MILLIS_IN_MINUTE.const_mul(10).const_mul(CLOCK_LENIENCE_FACTOR);
 pub const CLIENT_POST_BUNDLE_CACHE_DURATION: DurationMillis = MILLIS_IN_MINUTE.const_mul(5);
 pub const CLIENT_POST_BUNDLE_FEEDBACK_CACHE_DURATION: DurationMillis = MILLIS_IN_MINUTE.const_mul(15);

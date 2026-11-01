@@ -43,6 +43,7 @@ use hashiverse_lib::tools::time::{TimeMillis, MILLIS_IN_SECOND};
 use hashiverse_lib::tools::types::{Id, Signature};
 use hashiverse_lib::tools::{hashing, url_preview};
 use hashiverse_lib::tools::{compression, config, json, signing, BytesGatherer};
+use hashiverse_lib::tools::tools::{self, LeadingAgreementBits};
 use hashiverse_lib::transport::transport::IncomingRequest;
 use log::{info, trace, warn};
 use std::collections::HashSet;
@@ -73,6 +74,27 @@ fn normalise_hashtag(hashtag: &str) -> String {
 /// `limit`, skipping any fallback whose normalised form already appears in the list.
 /// Filler entries are inserted with `count = 0`. No-op if the list is already at
 /// or above the limit.
+/// Is `donor_id` close enough to `location_id` that it plausibly is (or was) one of the servers responsible for that location?
+///
+/// `nearest_peer_ids` is our own view of the nearest servers to the location (as returned by `get_peers_for_key(location_id, required_count)`,
+/// which may include ties beyond `required_count`).  The donor must be no more than `HEAL_DONOR_LEADING_AGREEMENT_BITS_SLACK` bits further out
+/// than the furthest of those.  Deliberately a distance test rather than "is the donor in our view": the donor may have died long ago.
+/// If we do not yet know `required_count` servers we cannot rule anyone out.
+fn is_plausible_heal_donor(donor_id: &Id, location_id: &Id, nearest_peer_ids: &[Id], required_count: usize) -> bool {
+    if nearest_peer_ids.len() < required_count {
+        return true;
+    }
+
+    let furthest_nearest_leading_agreement_bits = nearest_peer_ids
+        .iter()
+        .map(|nearest_peer_id| tools::leading_agreement_bits_xor(location_id.as_ref(), nearest_peer_id.as_ref()))
+        .min()
+        .unwrap_or(LeadingAgreementBits::MIN);
+    let donor_leading_agreement_bits = tools::leading_agreement_bits_xor(location_id.as_ref(), donor_id.as_ref());
+
+    donor_leading_agreement_bits >= furthest_nearest_leading_agreement_bits - config::HEAL_DONOR_LEADING_AGREEMENT_BITS_SLACK
+}
+
 fn top_up_trending_hashtags_with_fallback(trending_hashtags: &mut Vec<TrendingHashtagV1>, limit: u16, fallback_hashtags: &[&str]) {
     let target_length = limit as usize;
     if trending_hashtags.len() >= target_length {
@@ -852,6 +874,27 @@ impl HashiverseServer {
         Ok((PayloadResponseKind::SubmitPostFeedbackResponseV1, BytesGatherer::from_bytes(json::struct_to_bytes(&response)?)))
     }
 
+    /// A heal lets a client push posts into our bundle that we never admitted ourselves (and so never saw the post PoW for).
+    /// We only accept that on the word of a donor bundle published by a genuine server that is - or was, it may since have died -
+    /// plausibly responsible for this location: that server admitted the posts, or itself healed them from such a server.
+    fn verify_heal_donor_header(&self, donor_header: &EncodedPostBundleHeaderV1, time_millis: TimeMillis) -> anyhow::Result<()> {
+        donor_header.verify()?;
+        donor_header.peer.verify().map_err(|e| anyhow::anyhow!("heal donor peer {} failed verification: {}", donor_header.peer.id, e))?;
+
+        // The donor's timestamp bounds the post timestamps we will accept, so it must not be in the future
+        if donor_header.time_millis > time_millis + config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD {
+            anyhow::bail!("heal donor header time_millis {} is in the future (now {})", donor_header.time_millis, time_millis);
+        }
+
+        let (nearest_peers, _) = self.kademlia.read().get_peers_for_key(&donor_header.location_id, config::REDUNDANT_SERVERS_PER_POST);
+        let nearest_peer_ids: Vec<Id> = nearest_peers.iter().map(|peer| peer.id).collect();
+        if !is_plausible_heal_donor(&donor_header.peer.id, &donor_header.location_id, &nearest_peer_ids, config::REDUNDANT_SERVERS_PER_POST) {
+            anyhow::bail!("heal donor peer {} is too far from location_id {}", donor_header.peer.id, donor_header.location_id);
+        }
+
+        Ok(())
+    }
+
     #[allow(non_snake_case)]
     async fn dispatch_network_payload_x_HealPostBundleClaimV1(&self, _cancellation_token: CancellationToken, payload_request_kind: PayloadRequestKind, mut bytes: Bytes) -> anyhow::Result<(PayloadResponseKind, BytesGatherer)> {
         anyhow_assert_eq!(&PayloadRequestKind::HealPostBundleClaimV1, &payload_request_kind);
@@ -871,8 +914,8 @@ impl HashiverseServer {
             anyhow::bail!("HealPostBundleClaimV1: bucket_location.location_id does not match donor_header.location_id");
         }
 
-        // Verify the donor_header provided by the client is self-consistent and properly signed
-        request.donor_header.verify()?;
+        // Verify the donor_header provided by the client is self-consistent, properly signed, and published by a plausible server
+        self.verify_heal_donor_header(&request.donor_header, time_millis)?;
 
         // Only heal if we are among the nearest peers for this location
         let (_, among_peers_nearer) = self.kademlia.read().get_peers_for_key(&request.donor_header.location_id, config::REDUNDANT_SERVERS_PER_POST);
@@ -936,7 +979,7 @@ impl HashiverseServer {
         if request.donor_header.signature != request.token.donor_header_signature {
             anyhow::bail!("HealPostBundleCommitV1: donor_header signature does not match token");
         }
-        request.donor_header.verify()?;
+        self.verify_heal_donor_header(&request.donor_header, time_millis)?;
 
         if request.token.bucket_location.location_id != request.donor_header.location_id {
             anyhow::bail!("HealPostBundleCommitV1: token location_id does not match donor_header");
@@ -966,9 +1009,17 @@ impl HashiverseServer {
             anyhow::bail!("HealPostBundleCommitV1: {} excess bytes", remaining_bytes.len());
         }
 
-        // Validate each post decrypts successfully with the provided base_id
+        // Validate each post: it must decrypt and verify under the bucket's base_id, be the post it claims to be,
+        // and pass the same admission rules we would have applied had it been submitted to us directly.
         for (post_id, post_bytes) in &posts_to_add {
-            EncodedPostV1::decode_from_bytes(post_bytes.clone(), &request.token.bucket_location.base_id, true, true).map_err(|e| anyhow::anyhow!("HealPostBundleCommitV1: post {} failed decryption: {}", post_id, e))?;
+            let decoded_post = EncodedPostV1::decode_from_bytes(post_bytes.clone(), &request.token.bucket_location.base_id, true, true)
+                .map_err(|e| anyhow::anyhow!("HealPostBundleCommitV1: post {} failed decryption: {}", post_id, e))?;
+            if decoded_post.post_id != *post_id {
+                anyhow::bail!("HealPostBundleCommitV1: post bytes are for {} not {}", decoded_post.post_id, post_id);
+            }
+            decoded_post
+                .check_admissible_to_bucket(&request.token.bucket_location, request.donor_header.time_millis)
+                .map_err(|e| anyhow::anyhow!("HealPostBundleCommitV1: {}", e))?;
         }
 
         // Load our current bundle (or start empty)
@@ -983,8 +1034,8 @@ impl HashiverseServer {
                 header: EncodedPostBundleHeaderV1 {
                     time_millis: TimeMillis::zero(),
                     location_id,
-                    overflowed: request.donor_header.overflowed,
-                    sealed: request.donor_header.sealed,
+                    overflowed: false, // Never adopt the donor's flags - they are recomputed from our own state below
+                    sealed: false,
                     num_posts: 0,
                     encoded_post_ids: vec![],
                     encoded_post_lengths: vec![],
@@ -1001,6 +1052,10 @@ impl HashiverseServer {
         let mut posts_mut = BytesMut::from(post_bundle.encoded_posts_bytes.as_ref());
         let mut added_any = false;
         for (post_id, post_bytes) in posts_to_add {
+            if post_bundle.header.encoded_post_ids.len() >= u8::MAX as usize {
+                warn!("HealPostBundleCommitV1: bundle for location_id={} is full so not healing any more posts into it", location_id);
+                break;
+            }
             if !our_post_ids.contains(&post_id) {
                 let len = post_bytes.len();
                 posts_mut.extend_from_slice(&post_bytes);
@@ -1015,11 +1070,15 @@ impl HashiverseServer {
         if added_any {
             post_bundle.header.time_millis = time_millis;
             post_bundle.header.num_posts = post_bundle.header.encoded_post_ids.len() as u8;
+            post_bundle.header.overflowed = post_bundle.header.num_posts > config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS || post_bundle_metadata.num_posts_granted > config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS_GRANTED;
+            post_bundle.header.sealed = request.token.bucket_location.is_sealed_at(time_millis, post_bundle.header.overflowed);
             post_bundle.header.signature_generate(&self.server_id.keys.signature_key)?;
 
             let new_bytes = post_bundle.to_bytes()?;
             post_bundle_metadata.num_posts = post_bundle.header.num_posts;
             post_bundle_metadata.size = post_bundle.header.encoded_post_lengths.iter().sum();
+            post_bundle_metadata.overflowed = post_bundle.header.overflowed;
+            post_bundle_metadata.sealed = post_bundle.header.sealed;
 
             self.environment.put_post_bundle_bytes(time_millis, &location_id, &new_bytes)?;
             self.environment.put_post_bundle_metadata(time_millis, &location_id, &post_bundle_metadata, 0)?;
@@ -1735,5 +1794,296 @@ mod tests {
             assert!(!peers.iter().any(|p| p.id == announcing_peer_id), "rejected peer must not be reachable through get_peers_for_key");
         }
     }
-}
 
+    mod heal_donor_plausibility {
+        use super::*;
+
+        /// An id that agrees with `location_id` in exactly `leading_agreement_bits` leading bits.
+        fn id_with_leading_agreement_bits(location_id: &Id, leading_agreement_bits: usize) -> Id {
+            let mut bytes = location_id.as_ref().to_vec();
+            bytes[leading_agreement_bits / 8] ^= 0x80 >> (leading_agreement_bits % 8);
+            Id::from_slice(&bytes).expect("32 bytes")
+        }
+
+        #[test]
+        fn id_helper_produces_requested_agreement() {
+            let location_id = Id::random();
+            for leading_agreement_bits in [0usize, 1, 7, 8, 13, 40] {
+                let id = id_with_leading_agreement_bits(&location_id, leading_agreement_bits);
+                assert_eq!(tools::leading_agreement_bits_xor(location_id.as_ref(), id.as_ref()), leading_agreement_bits as LeadingAgreementBits);
+            }
+        }
+
+        #[test]
+        fn accepts_anyone_when_we_know_too_few_servers() {
+            let location_id = Id::random();
+            let nearest_peer_ids = vec![id_with_leading_agreement_bits(&location_id, 20), id_with_leading_agreement_bits(&location_id, 21)];
+            let far_donor_id = id_with_leading_agreement_bits(&location_id, 0);
+            assert!(is_plausible_heal_donor(&far_donor_id, &location_id, &nearest_peer_ids, 3));
+        }
+
+        #[test]
+        fn accepts_donors_within_slack_of_furthest_nearest_and_refuses_beyond() {
+            let location_id = Id::random();
+            // Our view: the 3 nearest live servers agree with the location in 12, 14 and 10 bits; the furthest of them is 10
+            let nearest_peer_ids = vec![
+                id_with_leading_agreement_bits(&location_id, 12),
+                id_with_leading_agreement_bits(&location_id, 14),
+                id_with_leading_agreement_bits(&location_id, 10),
+            ];
+            let slack = config::HEAL_DONOR_LEADING_AGREEMENT_BITS_SLACK as usize;
+
+            // A current stand-in, or a dead original that was nearer than anyone we know now
+            assert!(is_plausible_heal_donor(&id_with_leading_agreement_bits(&location_id, 10), &location_id, &nearest_peer_ids, 3));
+            assert!(is_plausible_heal_donor(&id_with_leading_agreement_bits(&location_id, 30), &location_id, &nearest_peer_ids, 3));
+
+            // A dead original that has since been slightly out-ranked by newer, closer servers
+            assert!(is_plausible_heal_donor(&id_with_leading_agreement_bits(&location_id, 10 - slack), &location_id, &nearest_peer_ids, 3));
+
+            // Too far away to ever have been responsible
+            assert!(!is_plausible_heal_donor(&id_with_leading_agreement_bits(&location_id, 10 - slack - 1), &location_id, &nearest_peer_ids, 3));
+            assert!(!is_plausible_heal_donor(&id_with_leading_agreement_bits(&location_id, 0), &location_id, &nearest_peer_ids, 3));
+        }
+    }
+
+    mod heal_post_bundle {
+        use super::*;
+        use crate::environment::environment::EnvironmentFactory;
+        use crate::environment::mem_environment_store::MemEnvironmentFactory;
+        use crate::server::args::Args;
+        use crate::server::hashiverse_server::HashiverseServer;
+        use hashiverse_lib::client::key_locker::key_locker::{KeyLocker, KeyLockerManager};
+        use hashiverse_lib::client::key_locker::mem_key_locker::MemKeyLockerManager;
+        use hashiverse_lib::protocol::peer::Peer;
+        use hashiverse_lib::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
+        use hashiverse_lib::tools::runtime_services::RuntimeServices;
+        use hashiverse_lib::tools::server_id::ServerId;
+        use hashiverse_lib::tools::time::MILLIS_IN_MONTH;
+        use hashiverse_lib::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
+        use hashiverse_lib::tools::types::Pow;
+        use hashiverse_lib::transport::mem_transport::MemTransportFactory;
+        use std::sync::Arc;
+
+        struct HealFixture {
+            server: Arc<HashiverseServer>,
+            key_locker: Arc<dyn KeyLocker>,
+            bucket_location: BucketLocation,
+            time_millis_now: TimeMillis,
+        }
+
+        impl HealFixture {
+            async fn new() -> anyhow::Result<Self> {
+                let time_provider = Arc::new(RealTimeProvider);
+                let transport_factory = MemTransportFactory::default();
+                let pow_generator = Arc::new(SingleThreadedPowGenerator::new());
+                let runtime_services = Arc::new(RuntimeServices { time_provider, transport_factory, pow_generator });
+                let environment_factory = Arc::new(MemEnvironmentFactory::new(""));
+                let server = HashiverseServer::new(runtime_services, environment_factory, Args::default_for_testing()).await?;
+
+                let key_locker_manager = MemKeyLockerManager::new().await?;
+                let key_locker: Arc<dyn KeyLocker> = key_locker_manager.create("heal keyphrase".to_string()).await?;
+                let time_millis_now = RealTimeProvider.current_time_millis();
+                let bucket_location = BucketLocation::new(BucketType::User, key_locker.client_id().id, MILLIS_IN_MONTH, time_millis_now)?;
+                Ok(Self { server, key_locker, bucket_location, time_millis_now })
+            }
+
+            async fn make_server_id(pow_min: Pow) -> anyhow::Result<ServerId> {
+                ServerId::new("heal_donor", &RealTimeProvider, pow_min, true, &SingleThreadedPowGenerator::new()).await
+            }
+
+            async fn make_post_by(key_locker: &Arc<dyn KeyLocker>, timestamp: TimeMillis, linked_base_ids: Vec<Id>) -> anyhow::Result<(Id, Bytes)> {
+                let mut encoded_post = EncodedPostV1::new(key_locker.client_id(), timestamp, linked_base_ids, "healed post");
+                let encoded_post_bytes = encoded_post.encode_to_bytes_direct(key_locker).await?;
+                Ok((encoded_post.post_id, Bytes::copy_from_slice(encoded_post_bytes.bytes())))
+            }
+
+            async fn make_own_post(&self) -> anyhow::Result<(Id, Bytes)> {
+                Self::make_post_by(&self.key_locker, self.time_millis_now, vec![self.bucket_location.base_id]).await
+            }
+
+            fn make_donor_header(&self, donor_server_id: &ServerId, posts: &[(Id, Bytes)], customise: impl FnOnce(&mut EncodedPostBundleHeaderV1)) -> anyhow::Result<EncodedPostBundleHeaderV1> {
+                let mut donor_header = EncodedPostBundleHeaderV1 {
+                    time_millis: self.time_millis_now,
+                    location_id: self.bucket_location.location_id,
+                    overflowed: false,
+                    sealed: false,
+                    num_posts: posts.len() as u8,
+                    encoded_post_ids: posts.iter().map(|(post_id, _)| *post_id).collect(),
+                    encoded_post_lengths: posts.iter().map(|(_, post_bytes)| post_bytes.len()).collect(),
+                    encoded_post_healed: HashSet::new(),
+                    peer: donor_server_id.to_peer(&RealTimeProvider)?,
+                    signature: Signature::zero(),
+                };
+                customise(&mut donor_header);
+                donor_header.signature_generate(&donor_server_id.keys.signature_key)?;
+                Ok(donor_header)
+            }
+
+            async fn claim(&self, donor_header: &EncodedPostBundleHeaderV1) -> anyhow::Result<HealPostBundleClaimResponseV1> {
+                let request_bytes = HealPostBundleClaimV1::new_to_bytes(donor_header, &self.bucket_location)?;
+                let (_, bytes_gatherer) = self.server.dispatch_network_payload_x_HealPostBundleClaimV1(CancellationToken::new(), PayloadRequestKind::HealPostBundleClaimV1, request_bytes).await?;
+                json::bytes_to_struct::<HealPostBundleClaimResponseV1>(&bytes_gatherer.to_bytes())
+            }
+
+            /// Claims then commits; returns whether the commit was accepted.
+            async fn heal(&self, donor_header: &EncodedPostBundleHeaderV1, posts: &[(Id, Bytes)]) -> anyhow::Result<bool> {
+                let claim_response = self.claim(donor_header).await?;
+                let token = claim_response.token.ok_or_else(|| anyhow::anyhow!("no claim token"))?;
+                let mut encoded_posts_bytes = Vec::new();
+                for needed_post_id in &token.needed_post_ids {
+                    let (_, post_bytes) = posts.iter().find(|(post_id, _)| post_id == needed_post_id).ok_or_else(|| anyhow::anyhow!("missing post"))?;
+                    encoded_posts_bytes.extend_from_slice(post_bytes);
+                }
+                let request_bytes = HealPostBundleCommitV1::new_to_bytes(&token, donor_header, &encoded_posts_bytes)?;
+                let (_, bytes_gatherer) = self.server.dispatch_network_payload_x_HealPostBundleCommitV1(CancellationToken::new(), PayloadRequestKind::HealPostBundleCommitV1, request_bytes).await?;
+                Ok(json::bytes_to_struct::<HealPostBundleCommitResponseV1>(&bytes_gatherer.to_bytes())?.accepted)
+            }
+
+            fn stored_bundle(&self) -> anyhow::Result<EncodedPostBundleV1> {
+                let post_bundle_bytes = self.server.environment.get_post_bundle_bytes(self.time_millis_now, &self.bucket_location.location_id)?.ok_or_else(|| anyhow::anyhow!("no stored bundle"))?;
+                EncodedPostBundleV1::from_bytes(post_bundle_bytes, true)
+            }
+
+            async fn make_server_id_at_distance(&self, predicate: impl Fn(LeadingAgreementBits) -> bool) -> anyhow::Result<ServerId> {
+                loop {
+                    let server_id = Self::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+                    if predicate(tools::leading_agreement_bits_xor(self.bucket_location.location_id.as_ref(), server_id.id.as_ref())) {
+                        return Ok(server_id);
+                    }
+                }
+            }
+
+            /// Fills our kademlia with genuine servers that agree with the location in at least `minimum_leading_agreement_bits` bits.
+            async fn add_near_servers_to_kademlia(&self, count: usize, minimum_leading_agreement_bits: LeadingAgreementBits) -> anyhow::Result<()> {
+                for _ in 0..count {
+                    let server_id = self.make_server_id_at_distance(|leading_agreement_bits| leading_agreement_bits >= minimum_leading_agreement_bits).await?;
+                    let peer: Peer = server_id.to_peer(&RealTimeProvider)?;
+                    self.server.kademlia.write().add_peer(peer, self.time_millis_now)?;
+                }
+                Ok(())
+            }
+        }
+
+        #[tokio::test]
+        async fn honest_heal_succeeds_and_does_not_adopt_donor_flags() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let donor_server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            let posts = vec![fixture.make_own_post().await?];
+            // The donor claims sealed + overflowed for a bucket that is neither
+            let donor_header = fixture.make_donor_header(&donor_server_id, &posts, |donor_header| {
+                donor_header.sealed = true;
+                donor_header.overflowed = true;
+            })?;
+
+            assert!(fixture.heal(&donor_header, &posts).await?);
+
+            let stored_bundle = fixture.stored_bundle()?;
+            assert_eq!(stored_bundle.header.encoded_post_ids, vec![posts[0].0]);
+            assert!(stored_bundle.header.encoded_post_healed.contains(&posts[0].0));
+            assert!(!stored_bundle.header.sealed, "donor's sealed flag must not be adopted");
+            assert!(!stored_bundle.header.overflowed, "donor's overflowed flag must not be adopted");
+            stored_bundle.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now)?;
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn stand_in_donor_whose_posts_are_all_healed_is_accepted() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let donor_server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            let posts = vec![fixture.make_own_post().await?, fixture.make_own_post().await?];
+            let donor_header = fixture.make_donor_header(&donor_server_id, &posts, |donor_header| {
+                donor_header.encoded_post_healed = donor_header.encoded_post_ids.iter().copied().collect();
+            })?;
+
+            assert!(fixture.heal(&donor_header, &posts).await?);
+            assert_eq!(fixture.stored_bundle()?.header.num_posts, 2);
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn donor_without_server_pow_is_refused() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let unworked_server_id = loop {
+                let server_id = HealFixture::make_server_id(Pow(0)).await?;
+                if server_id.pow < config::SERVER_KEY_POW_MIN {
+                    break server_id;
+                }
+            };
+            let posts = vec![fixture.make_own_post().await?];
+            let donor_header = fixture.make_donor_header(&unworked_server_id, &posts, |_| {})?;
+            donor_header.verify()?; // The old, self-keyed check was happy with this
+
+            assert!(fixture.claim(&donor_header).await.is_err());
+            assert!(fixture.stored_bundle().is_err(), "nothing must have been stored");
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn donor_with_future_timestamp_is_refused() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let donor_server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            let posts = vec![fixture.make_own_post().await?];
+            let donor_header = fixture.make_donor_header(&donor_server_id, &posts, |donor_header| {
+                donor_header.time_millis = donor_header.time_millis + config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD + MILLIS_IN_SECOND;
+            })?;
+
+            assert!(fixture.claim(&donor_header).await.is_err());
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn far_donor_is_refused_but_dead_near_donor_is_accepted() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let slack = config::HEAL_DONOR_LEADING_AGREEMENT_BITS_SLACK;
+            let near_leading_agreement_bits = slack + 2;
+
+            // Our view of the location's nearest servers is populated with servers at least this close
+            fixture.add_near_servers_to_kademlia(config::REDUNDANT_SERVERS_PER_POST, near_leading_agreement_bits).await?;
+            let posts = vec![fixture.make_own_post().await?];
+
+            // A donor that could never have been responsible for this location
+            let far_donor_server_id = fixture.make_server_id_at_distance(|leading_agreement_bits| leading_agreement_bits < near_leading_agreement_bits - slack).await?;
+            let far_donor_header = fixture.make_donor_header(&far_donor_server_id, &posts, |_| {})?;
+            assert!(fixture.claim(&far_donor_header).await.is_err());
+
+            // A donor at least as close as our nearest servers, which is not in our kademlia at all (e.g. it has since died)
+            let dead_near_donor_server_id = fixture.make_server_id_at_distance(|leading_agreement_bits| leading_agreement_bits >= near_leading_agreement_bits).await?;
+            assert!(!fixture.server.kademlia.read().get_all_peers().iter().any(|peer| peer.id == dead_near_donor_server_id.id));
+            let dead_near_donor_header = fixture.make_donor_header(&dead_near_donor_server_id, &posts, |_| {})?;
+            // Passes the donor checks (whether we then go on to heal depends on whether we are among the nearest ourselves)
+            fixture.claim(&dead_near_donor_header).await?;
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn out_of_bucket_post_is_refused() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let donor_server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            // A genuine post by the same user, but from the previous bucket
+            let old_post = HealFixture::make_post_by(&fixture.key_locker, fixture.bucket_location.bucket_time_millis - MILLIS_IN_SECOND, vec![fixture.bucket_location.base_id]).await?;
+            let posts = vec![old_post];
+            let donor_header = fixture.make_donor_header(&donor_server_id, &posts, |_| {})?;
+
+            assert!(fixture.heal(&donor_header, &posts).await.is_err());
+            assert!(fixture.stored_bundle().is_err(), "nothing must have been stored");
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn foreign_author_in_user_bucket_is_refused() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let donor_server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+
+            // An attacker links the victim's id so that their post decrypts under the victim's User bucket
+            let attacker_key_locker_manager = MemKeyLockerManager::new().await?;
+            let attacker_key_locker: Arc<dyn KeyLocker> = attacker_key_locker_manager.create("attacker keyphrase".to_string()).await?;
+            let foreign_post = HealFixture::make_post_by(&attacker_key_locker, fixture.time_millis_now, vec![fixture.bucket_location.base_id]).await?;
+            let posts = vec![foreign_post];
+            let donor_header = fixture.make_donor_header(&donor_server_id, &posts, |_| {})?;
+
+            assert!(fixture.heal(&donor_header, &posts).await.is_err());
+            assert!(fixture.stored_bundle().is_err(), "nothing must have been stored");
+            Ok(())
+        }
+    }
+}
