@@ -169,6 +169,20 @@ impl EncodedPostBundleFeedbackV1 {
         Ok(())
     }
 
+    /// Verifies that this bundle is a legitimate feedback bundle for `location_id`, as received from the network.
+    ///
+    /// On top of [`EncodedPostBundleFeedbackV1::verify`]:
+    /// 1. The publishing peer is a genuine server identity (server-id PoW, id derived from its key, self-signed).
+    ///    [`EncodedPostBundleFeedbackHeaderV1::verify`] alone only checks the header against the key the header itself supplies.
+    /// 2. The bundle is for this location_id.
+    pub fn verify_for_location(&self, location_id: &Id) -> anyhow::Result<()> {
+        self.header.peer.verify().map_err(|e| anyhow::anyhow!("feedback bundle peer {} failed verification: {}", self.header.peer.id, e))?;
+        if self.header.location_id != *location_id {
+            anyhow::bail!("feedback bundle location_id {} does not match location_id {}", self.header.location_id, location_id);
+        }
+        self.verify()
+    }
+
     pub fn get_post_pow_for_feedback_type(&self, post_id: &Id, feedback_type: u8) -> Pow {
         for view in EncodedPostFeedbackViewV1::iter(&self.feedbacks_bytes).flatten() {
             // Check feedback_type first as it short circuits and is therefore faster...
@@ -359,10 +373,12 @@ mod tests {
     }
 
     async fn make_bundle_with_encoded_post_feedbacks(time_millis: TimeMillis, encoded_post_feedbacks: &[EncodedPostFeedbackV1]) -> anyhow::Result<EncodedPostBundleFeedbackV1> {
-        let time_provider = RealTimeProvider;
-        let pow_generator = SingleThreadedPowGenerator::new();
-        let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
-        let peer = server_id.to_peer(&time_provider)?;
+        let server_id = ServerId::new("own_pow", &RealTimeProvider, Pow(0), true, &SingleThreadedPowGenerator::new()).await?;
+        make_bundle_signed_by(&server_id, Id::random(), time_millis, encoded_post_feedbacks)
+    }
+
+    fn make_bundle_signed_by(server_id: &ServerId, location_id: Id, time_millis: TimeMillis, encoded_post_feedbacks: &[EncodedPostFeedbackV1]) -> anyhow::Result<EncodedPostBundleFeedbackV1> {
+        let peer = server_id.to_peer(&RealTimeProvider)?;
 
         let mut feedbacks_bytes_mut = Vec::new();
         for encoded_post_feedback in encoded_post_feedbacks {
@@ -372,7 +388,7 @@ mod tests {
 
         let mut header = EncodedPostBundleFeedbackHeaderV1 {
             time_millis,
-            location_id: Id::random(),
+            location_id,
             feedbacks_bytes_hash: hashing::hash(feedbacks_bytes.as_ref()),
             peer,
             signature: Signature::zero(),
@@ -479,6 +495,29 @@ mod tests {
         let merged_from_poisoned = EncodedPostBundleFeedbackV1::merge(&[poisoned_bundle]).expect("non-empty input");
         assert_eq!(valid_for_type_1.pow, merged_from_poisoned.get_post_pow_for_feedback_type(&post_a, 1));
         assert_eq!(Pow(0), merged_from_poisoned.get_post_pow_for_feedback_type(&post_a, 3));
+        Ok(())
+    }
+
+    // H4: a feedback bundle uploaded into a location's cache must come from a genuine (PoW-backed) server and be for that location.
+    #[tokio::test]
+    async fn verify_for_location_rejects_wrong_location_and_unworked_peer() -> anyhow::Result<()> {
+        let location_id = Id::random();
+        let encoded_post_feedbacks = [make_valid_feedback(Id::random(), 1)?];
+
+        let genuine_server_id = ServerId::new("genuine", &RealTimeProvider, crate::tools::config::SERVER_KEY_POW_MIN, true, &SingleThreadedPowGenerator::new()).await?;
+        let genuine_bundle = make_bundle_signed_by(&genuine_server_id, location_id, TimeMillis(1000), &encoded_post_feedbacks)?;
+        genuine_bundle.verify_for_location(&location_id)?;
+        assert!(genuine_bundle.verify_for_location(&Id::random()).is_err(), "a bundle for another location must be rejected");
+
+        let unworked_server_id = loop {
+            let server_id = ServerId::new("unworked", &RealTimeProvider, Pow(0), true, &SingleThreadedPowGenerator::new()).await?;
+            if server_id.pow < crate::tools::config::SERVER_KEY_POW_MIN {
+                break server_id;
+            }
+        };
+        let unworked_bundle = make_bundle_signed_by(&unworked_server_id, location_id, TimeMillis(1000), &encoded_post_feedbacks)?;
+        unworked_bundle.verify()?;
+        assert!(unworked_bundle.verify_for_location(&location_id).is_err(), "a self-signed bundle from a pow-less identity must be rejected");
         Ok(())
     }
 

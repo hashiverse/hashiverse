@@ -1200,11 +1200,18 @@ impl HashiverseServer {
         let mut any_accepted = false;
         for bundle_bytes in request.encoded_post_bundles {
             let parse_result: anyhow::Result<()> = try {
-                let encoded_post_bundle = EncodedPostBundleV1::from_bytes(bundle_bytes.clone(), true)?;
+                let mut encoded_post_bundle = EncodedPostBundleV1::from_bytes(bundle_bytes.clone(), true)?;
 
-                // Check that this proposed cache content is legitimate
-                encoded_post_bundle.verify(&request.token.bucket_location.base_id)?;
+                // Check that this proposed cache content is a genuine server's bundle for this very bucket - otherwise
+                // free self-signed (or empty) bundles could squat this location's originator slots.
+                encoded_post_bundle.verify_for_bucket(&request.token.bucket_location, time_millis)?;
+                if encoded_post_bundle.header.num_posts == 0 {
+                    Err(anyhow::anyhow!("empty bundle is not worth caching"))?; // NB: not bail!, which would return from the handler rather than this try block
+                }
 
+                // Never trust the publisher's own sealed flag: a sealed bundle is cached with no expiry.
+                // NB: only the flag is taken from the normalised copy - we cache the original signed bytes.
+                encoded_post_bundle.normalise_flags_for_bucket(&request.token.bucket_location);
                 let originator_peer_id = encoded_post_bundle.header.peer.id;
                 let is_sealed = encoded_post_bundle.header.sealed;
                 if self.post_bundle_cache.on_upload(request.token.bucket_location.location_id, originator_peer_id, bundle_bytes, time_millis, is_sealed) {
@@ -1240,7 +1247,7 @@ impl HashiverseServer {
         let result: anyhow::Result<bool> = try {
             let encoded_post_bundle_feedback = EncodedPostBundleFeedbackV1::from_bytes(request.encoded_post_bundle_feedback_bytes.clone())?;
 
-            encoded_post_bundle_feedback.verify()?;
+            encoded_post_bundle_feedback.verify_for_location(&request.token.bucket_location.location_id)?;
 
             let originator_peer_id = encoded_post_bundle_feedback.header.peer.id;
             // Feedback bundles have no sealed flag — treat as live (5-min TTL)
@@ -2152,15 +2159,15 @@ mod tests {
         use hashiverse_lib::transport::mem_transport::MemTransportFactory;
         use std::sync::Arc;
 
-        struct HealFixture {
-            server: Arc<HashiverseServer>,
-            key_locker: Arc<dyn KeyLocker>,
-            bucket_location: BucketLocation,
-            time_millis_now: TimeMillis,
+        pub(super) struct HealFixture {
+            pub(super) server: Arc<HashiverseServer>,
+            pub(super) key_locker: Arc<dyn KeyLocker>,
+            pub(super) bucket_location: BucketLocation,
+            pub(super) time_millis_now: TimeMillis,
         }
 
         impl HealFixture {
-            async fn new() -> anyhow::Result<Self> {
+            pub(super) async fn new() -> anyhow::Result<Self> {
                 let time_provider = Arc::new(RealTimeProvider);
                 let transport_factory = MemTransportFactory::default();
                 let pow_generator = Arc::new(SingleThreadedPowGenerator::new());
@@ -2175,7 +2182,7 @@ mod tests {
                 Ok(Self { server, key_locker, bucket_location, time_millis_now })
             }
 
-            async fn make_server_id(pow_min: Pow) -> anyhow::Result<ServerId> {
+            pub(super) async fn make_server_id(pow_min: Pow) -> anyhow::Result<ServerId> {
                 ServerId::new("heal_donor", &RealTimeProvider, pow_min, true, &SingleThreadedPowGenerator::new()).await
             }
 
@@ -2185,11 +2192,11 @@ mod tests {
                 Ok((encoded_post.post_id, Bytes::copy_from_slice(encoded_post_bytes.bytes())))
             }
 
-            async fn make_own_post(&self) -> anyhow::Result<(Id, Bytes)> {
+            pub(super) async fn make_own_post(&self) -> anyhow::Result<(Id, Bytes)> {
                 Self::make_post_by(&self.key_locker, self.time_millis_now, vec![self.bucket_location.base_id]).await
             }
 
-            fn make_donor_header(&self, donor_server_id: &ServerId, posts: &[(Id, Bytes)], customise: impl FnOnce(&mut EncodedPostBundleHeaderV1)) -> anyhow::Result<EncodedPostBundleHeaderV1> {
+            pub(super) fn make_donor_header(&self, donor_server_id: &ServerId, posts: &[(Id, Bytes)], customise: impl FnOnce(&mut EncodedPostBundleHeaderV1)) -> anyhow::Result<EncodedPostBundleHeaderV1> {
                 let mut donor_header = EncodedPostBundleHeaderV1 {
                     time_millis: self.time_millis_now,
                     location_id: self.bucket_location.location_id,
@@ -2496,6 +2503,160 @@ mod tests {
 
             assert!(fixture.heal(&donor_header, &posts).await.is_err());
             assert!(fixture.stored_bundle().is_err(), "nothing must have been stored");
+            Ok(())
+        }
+    }
+
+    // H4: a cache upload must not let free self-signed, empty, mis-located or self-"sealed" bundles squat a location's cache slots.
+    mod cache_upload {
+        use super::*;
+        use super::heal_post_bundle::HealFixture;
+        use crate::server::post_bundle_caching_shared::CACHE_HIT_THRESHOLD;
+        use hashiverse_lib::protocol::posting::encoded_post_feedback::EncodedPostFeedbackV1;
+        use hashiverse_lib::tools::pow;
+        use hashiverse_lib::tools::server_id::ServerId;
+        use hashiverse_lib::tools::time::MILLIS_IN_MINUTE;
+        use hashiverse_lib::tools::time_provider::time_provider::RealTimeProvider;
+        use hashiverse_lib::tools::types::{Pow, Salt};
+
+        async fn make_unworked_server_id() -> anyhow::Result<ServerId> {
+            loop {
+                let server_id = HealFixture::make_server_id(Pow(0)).await?;
+                if server_id.pow < config::SERVER_KEY_POW_MIN {
+                    return Ok(server_id);
+                }
+            }
+        }
+
+        /// Signs a post bundle holding `posts`, as `server_id` would publish it.
+        fn make_post_bundle_bytes(fixture: &HealFixture, server_id: &ServerId, posts: &[(Id, Bytes)], customise: impl FnOnce(&mut EncodedPostBundleHeaderV1)) -> anyhow::Result<Bytes> {
+            let header = fixture.make_donor_header(server_id, posts, customise)?;
+            let encoded_posts_bytes: Vec<u8> = posts.iter().flat_map(|(_, post_bytes)| post_bytes.iter().copied()).collect();
+            EncodedPostBundleV1 { header, encoded_posts_bytes: Bytes::from(encoded_posts_bytes) }.to_bytes()
+        }
+
+        /// Gets a genuine token by hitting the cache up to its threshold, then uploads `encoded_post_bundle_bytes` with it.
+        async fn upload_post_bundle(fixture: &HealFixture, encoded_post_bundle_bytes: &Bytes) -> anyhow::Result<bool> {
+            let peer_self = fixture.server.peer_self.read().clone();
+            let mut cache_request_token = None;
+            for _ in 0..CACHE_HIT_THRESHOLD {
+                cache_request_token = cache_request_token.or(fixture.server.post_bundle_cache.on_get(&fixture.bucket_location, &[], &peer_self, &fixture.server.server_id, fixture.time_millis_now).cache_request_token);
+            }
+            let cache_request_token = cache_request_token.ok_or_else(|| anyhow::anyhow!("no cache request token issued"))?;
+            let request_bytes = CachePostBundleV1::new_to_bytes(&cache_request_token, &[encoded_post_bundle_bytes.as_ref()])?;
+            let (_, bytes_gatherer) = fixture.server.dispatch_network_payload_x_CachePostBundleV1(CancellationToken::new(), PayloadRequestKind::CachePostBundleV1, request_bytes).await?;
+            Ok(json::bytes_to_struct::<CachePostBundleResponseV1>(&bytes_gatherer.to_bytes())?.accepted)
+        }
+
+        fn cached_post_bundle_count_at(fixture: &HealFixture, time_millis: TimeMillis) -> usize {
+            let peer_self = fixture.server.peer_self.read().clone();
+            fixture.server.post_bundle_cache.on_get(&fixture.bucket_location, &[], &peer_self, &fixture.server.server_id, time_millis).cached_items.len()
+        }
+
+        #[tokio::test]
+        async fn genuine_bundle_is_cached() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            let posts = vec![fixture.make_own_post().await?];
+            assert!(upload_post_bundle(&fixture, &make_post_bundle_bytes(&fixture, &server_id, &posts, |_| {})?).await?);
+            assert_eq!(cached_post_bundle_count_at(&fixture, fixture.time_millis_now), 1);
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn empty_bundle_is_rejected() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            assert!(!upload_post_bundle(&fixture, &make_post_bundle_bytes(&fixture, &server_id, &[], |_| {})?).await?);
+            assert_eq!(cached_post_bundle_count_at(&fixture, fixture.time_millis_now), 0);
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn unworked_publisher_is_rejected() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let unworked_server_id = make_unworked_server_id().await?;
+            let posts = vec![fixture.make_own_post().await?];
+            assert!(!upload_post_bundle(&fixture, &make_post_bundle_bytes(&fixture, &unworked_server_id, &posts, |_| {})?).await?);
+            assert_eq!(cached_post_bundle_count_at(&fixture, fixture.time_millis_now), 0);
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn bundle_for_other_location_is_rejected() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            let posts = vec![fixture.make_own_post().await?];
+            let encoded_post_bundle_bytes = make_post_bundle_bytes(&fixture, &server_id, &posts, |header| header.location_id = Id::random())?;
+            assert!(!upload_post_bundle(&fixture, &encoded_post_bundle_bytes).await?);
+            assert_eq!(cached_post_bundle_count_at(&fixture, fixture.time_millis_now), 0);
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn self_asserted_sealed_is_not_pinned() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            let posts = vec![fixture.make_own_post().await?];
+            // The bucket is current and nowhere near overflowing, so it cannot really be sealed.
+            let encoded_post_bundle_bytes = make_post_bundle_bytes(&fixture, &server_id, &posts, |header| header.sealed = true)?;
+            assert!(upload_post_bundle(&fixture, &encoded_post_bundle_bytes).await?);
+            assert_eq!(cached_post_bundle_count_at(&fixture, fixture.time_millis_now), 1);
+            assert_eq!(cached_post_bundle_count_at(&fixture, fixture.time_millis_now + MILLIS_IN_MINUTE.const_mul(6)), 0, "a self-asserted seal must not pin the bundle in the cache");
+            Ok(())
+        }
+
+        fn make_feedback_bundle_bytes(server_id: &ServerId, location_id: Id, time_millis: TimeMillis) -> anyhow::Result<Bytes> {
+            let post_id = Id::random();
+            let salt = Salt::random();
+            let (measured_pow, _) = pow::pow_measure(&[post_id.as_bytes(), &[1u8]], &salt)?;
+            let mut feedbacks_bytes = Vec::new();
+            EncodedPostFeedbackV1::new(post_id, 1, salt, measured_pow).append_encode_to_bytes(&mut feedbacks_bytes)?;
+            let feedbacks_bytes = Bytes::from(feedbacks_bytes);
+            let mut header = EncodedPostBundleFeedbackHeaderV1 {
+                time_millis,
+                location_id,
+                feedbacks_bytes_hash: hashing::hash(feedbacks_bytes.as_ref()),
+                peer: server_id.to_peer(&RealTimeProvider)?,
+                signature: Signature::zero(),
+            };
+            header.signature_generate(&server_id.keys.signature_key);
+            EncodedPostBundleFeedbackV1 { header, feedbacks_bytes }.to_bytes()
+        }
+
+        async fn upload_post_bundle_feedback(fixture: &HealFixture, encoded_post_bundle_feedback_bytes: &Bytes) -> anyhow::Result<bool> {
+            let peer_self = fixture.server.peer_self.read().clone();
+            let mut cache_request_token = None;
+            for _ in 0..CACHE_HIT_THRESHOLD {
+                cache_request_token = cache_request_token.or(fixture.server.post_bundle_feedback_cache.on_get(&fixture.bucket_location, &[], &peer_self, &fixture.server.server_id, fixture.time_millis_now).cache_request_token);
+            }
+            let cache_request_token = cache_request_token.ok_or_else(|| anyhow::anyhow!("no cache request token issued"))?;
+            let request_bytes = CachePostBundleFeedbackV1::new_to_bytes(&cache_request_token, encoded_post_bundle_feedback_bytes)?;
+            let (_, bytes_gatherer) = fixture.server.dispatch_network_payload_x_CachePostBundleFeedbackV1(CancellationToken::new(), PayloadRequestKind::CachePostBundleFeedbackV1, request_bytes).await?;
+            Ok(json::bytes_to_struct::<CachePostBundleFeedbackResponseV1>(&bytes_gatherer.to_bytes())?.accepted)
+        }
+
+        #[tokio::test]
+        async fn genuine_feedback_is_cached() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            assert!(upload_post_bundle_feedback(&fixture, &make_feedback_bundle_bytes(&server_id, fixture.bucket_location.location_id, fixture.time_millis_now)?).await?);
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn feedback_from_unworked_publisher_is_rejected() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let unworked_server_id = make_unworked_server_id().await?;
+            assert!(!upload_post_bundle_feedback(&fixture, &make_feedback_bundle_bytes(&unworked_server_id, fixture.bucket_location.location_id, fixture.time_millis_now)?).await?);
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn feedback_for_other_location_is_rejected() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            assert!(!upload_post_bundle_feedback(&fixture, &make_feedback_bundle_bytes(&server_id, Id::random(), fixture.time_millis_now)?).await?);
             Ok(())
         }
     }
