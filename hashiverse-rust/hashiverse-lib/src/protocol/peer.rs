@@ -255,6 +255,13 @@ impl Peer {
         }
     }
 
+    /// How much we value this peer right now: rewards being currently active (decayed daily pow) while also
+    /// favouring peers that have been active for a while (decayed monthly pow).  Shared by the server's Kademlia
+    /// and the client's PeerTracker eviction so both sides rank peers identically.
+    pub fn score(&self, time_millis: TimeMillis) -> f64 {
+        self.pow_current_day.pow_decayed_day(time_millis) + self.pow_current_month.pow_decayed_month(time_millis)
+    }
+
     pub fn signature_hash_generate(&self) -> anyhow::Result<Hash> {
         Ok(hashing::hash_multiple(&[
             self.id.as_ref(),

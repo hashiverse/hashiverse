@@ -412,8 +412,7 @@ impl kademlia::Peer<Id> for Peer {
         &self.id
     }
     fn score(&self, time_millis: TimeMillis) -> f64 {
-        // This score makes sure that peers are currently active, but also benefits peers who have been active for a while
-        self.pow_current_day.pow_decayed_day(time_millis) + self.pow_current_month.pow_decayed_month(time_millis)
+        Peer::score(self, time_millis)
     }
 }
 

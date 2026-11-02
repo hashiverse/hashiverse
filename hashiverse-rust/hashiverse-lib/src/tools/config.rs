@@ -68,6 +68,10 @@ pub const ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS: DurationMillis = MILL
 
 pub const ANNOUNCE_V1_NUM_PEERS: usize = 16;
 pub const BOOTSTRAP_V1_NUM_PEERS: usize = 32;
+/// Upper bound on the client's PeerTracker; when full, a newcomer only gets in by out-scoring the weakest peer.
+pub const CLIENT_PEER_TRACKER_MAX_PEERS: usize = 1024;
+/// Only this many peers from any single peers_nearer / bootstrap list are considered, so one response can't trigger thousands of verifies.
+pub const CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE: usize = BOOTSTRAP_V1_NUM_PEERS;
 
 // Across how many server should each post be stored?
 pub const REDUNDANT_SERVERS_PER_POST: usize = 3;
