@@ -45,8 +45,11 @@ use hashiverse_lib::tools::{hashing, url_preview};
 use hashiverse_lib::tools::{compression, config, json, signing, BytesGatherer};
 use hashiverse_lib::tools::tools::{self, LeadingAgreementBits};
 use hashiverse_lib::transport::transport::IncomingRequest;
-use log::{info, trace, warn};
+use futures::FutureExt;
+use log::{error, info, trace, warn};
 use std::collections::HashSet;
+use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::Ordering;
 
 use crate::server::stats::{environment_stats_subtree, kademlia_stats_subtree, request_counts_subtree, system_stats_subtree};
@@ -121,6 +124,24 @@ fn top_up_trending_hashtags_with_fallback(trending_hashtags: &mut Vec<TrendingHa
     }
 }
 
+/// Awaits `future`, converting a panic inside it into an `Err` so that a single bad
+/// request cannot unwind through the dispatch loop and stop the server.
+async fn catch_panic_as_error<T>(future: impl Future<Output = T>) -> anyhow::Result<T> {
+    match AssertUnwindSafe(future).catch_unwind().await {
+        Ok(value) => Ok(value),
+        Err(panic_payload) => {
+            let panic_message = if let Some(panic_message) = panic_payload.downcast_ref::<&str>() {
+                panic_message.to_string()
+            } else if let Some(panic_message) = panic_payload.downcast_ref::<String>() {
+                panic_message.clone()
+            } else {
+                "<non-string panic payload>".to_string()
+            };
+            Err(anyhow::anyhow!("panic: {}", panic_message))
+        }
+    }
+}
+
 impl HashiverseServer {
     pub async fn wrap_and_dispatch_network_envelopes(&self, cancellation_token: CancellationToken, mut rx: mpsc::Receiver<IncomingRequest>) -> Result<(), anyhow::Error> {
         loop {
@@ -131,13 +152,19 @@ impl HashiverseServer {
                     match receipt {
                         Some(incoming) => {
                             // trace!("dispatch_network_envelopes received bytes={:?}", incoming.bytes);
-                            let result = self.wrap_and_dispatch_network_envelope(cancellation_token.clone(), &incoming).await;
+                            // A panic in any handler must not unwind out of this loop: it runs inside the server's
+                            // try_join! and would take the whole server down with it.
+                            let result = catch_panic_as_error(self.wrap_and_dispatch_network_envelope(cancellation_token.clone(), &incoming)).await;
                             match result {
-                                Ok(bytes) => {
+                                Ok(Ok(bytes)) => {
                                     let result = incoming.reply.send(bytes);
                                     if result.is_err() { warn!("failed to send reply"); }
                                 },
-                                Err(e) => {
+                                Err(handler_panic) => {
+                                    error!("handler panicked processing packet from {}: {}", incoming.caller_address, handler_panic);
+                                    drop(incoming.reply);
+                                },
+                                Ok(Err(e)) => {
                                     warn!("failed to process packet from {}: {}", incoming.caller_address, e);
                                     incoming.report_bad_request();
                                     drop(incoming.reply);
@@ -599,7 +626,7 @@ impl HashiverseServer {
 
         // Check that enough pow has been done for this post
         {
-            let pow_minimum = get_minimum_post_pow(decoded_post.header.post_length, decoded_post.header.linked_base_ids.len(), request.bucket_location.duration);
+            let pow_minimum = get_minimum_post_pow(decoded_post.header.post_length, decoded_post.header.linked_base_ids.len(), request.bucket_location.duration)?;
             if pow.pow < pow_minimum {
                 anyhow::bail!("Insufficient proof of work for this post: actual={} < expected={}", pow.pow, pow_minimum);
             }
@@ -1427,6 +1454,33 @@ impl HashiverseServer {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn catch_panic_as_error_passes_through_value() {
+        let result = catch_panic_as_error(async { 42 }).await;
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn catch_panic_as_error_converts_str_panic() {
+        let result: anyhow::Result<()> = catch_panic_as_error(async { panic!("boom") }).await;
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("boom"), "error_message={}", error_message);
+    }
+
+    #[tokio::test]
+    async fn catch_panic_as_error_converts_formatted_panic() {
+        let duration = 60000;
+        let result: anyhow::Result<()> = catch_panic_as_error(async move { panic!("bad duration {}", duration) }).await;
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("bad duration 60000"), "error_message={}", error_message);
+    }
+
+    #[tokio::test]
+    async fn catch_panic_as_error_converts_assert_panic() {
+        let result: anyhow::Result<()> = catch_panic_as_error(async { assert!(1 > 2) }).await;
+        assert!(result.is_err());
+    }
+
     fn make_trending_hashtag(hashtag: &str, count: u64) -> TrendingHashtagV1 {
         TrendingHashtagV1 { hashtag: hashtag.to_string(), count }
     }
@@ -1846,6 +1900,44 @@ mod tests {
             // Too far away to ever have been responsible
             assert!(!is_plausible_heal_donor(&id_with_leading_agreement_bits(&location_id, 10 - slack - 1), &location_id, &nearest_peer_ids, 3));
             assert!(!is_plausible_heal_donor(&id_with_leading_agreement_bits(&location_id, 0), &location_id, &nearest_peer_ids, 3));
+        }
+    }
+
+    mod submit_post_claim {
+        use super::*;
+        use crate::environment::environment::EnvironmentFactory;
+        use crate::environment::mem_environment_store::MemEnvironmentFactory;
+        use crate::server::args::Args;
+        use hashiverse_lib::client::key_locker::key_locker::{KeyLocker, KeyLockerManager};
+        use hashiverse_lib::client::key_locker::mem_key_locker::MemKeyLockerManager;
+        use hashiverse_lib::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
+        use hashiverse_lib::tools::runtime_services::RuntimeServices;
+        use hashiverse_lib::tools::time::MILLIS_IN_MINUTE;
+        use hashiverse_lib::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
+        use hashiverse_lib::transport::mem_transport::MemTransportFactory;
+        use std::sync::Arc;
+
+        // Regression: a SubmitPostClaimV1 into a 1-minute bucket used to hit an assert! in get_minimum_post_pow,
+        // unwinding through the dispatch loop and stopping the whole server.
+        // With zero PoW it must now get past the minimum-PoW computation and be rejected as under-powered.
+        #[tokio::test]
+        async fn one_minute_bucket_is_rejected_for_insufficient_pow_not_panic() -> anyhow::Result<()> {
+            let runtime_services = Arc::new(RuntimeServices { time_provider: Arc::new(RealTimeProvider), transport_factory: MemTransportFactory::default(), pow_generator: Arc::new(SingleThreadedPowGenerator::new()) });
+            let server = HashiverseServer::new(runtime_services, Arc::new(MemEnvironmentFactory::new("")), Args::default_for_testing()).await?;
+
+            let key_locker_manager = MemKeyLockerManager::new().await?;
+            let key_locker: Arc<dyn KeyLocker> = key_locker_manager.create("one minute keyphrase".to_string()).await?;
+            let time_millis_now = RealTimeProvider.current_time_millis();
+            let bucket_location = BucketLocation::new(BucketType::User, key_locker.client_id().id, MILLIS_IN_MINUTE, time_millis_now)?;
+
+            let mut encoded_post = EncodedPostV1::new(key_locker.client_id(), time_millis_now, vec![bucket_location.base_id], "one minute post");
+            let encoded_post_bytes = encoded_post.encode_to_bytes_direct(&key_locker).await?;
+            let request_bytes = SubmitPostClaimV1::new_to_bytes(&bucket_location, None, &[], encoded_post_bytes.bytes_without_body())?;
+
+            let result = catch_panic_as_error(server.dispatch_network_payload_x_SubmitPostClaimV1(CancellationToken::new(), Some(PeerPow::zero()), PayloadRequestKind::SubmitPostClaimV1, request_bytes)).await?;
+            let error_message = result.err().expect("zero PoW must be rejected").to_string();
+            assert!(error_message.contains("Insufficient proof of work"), "error_message={}", error_message);
+            Ok(())
         }
     }
 
