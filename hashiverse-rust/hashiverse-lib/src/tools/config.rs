@@ -47,6 +47,11 @@ pub const POW_MINIMUM_PER_URL_FETCH: Pow = Pow(POW_MINIMUM_PER_RPC_SERVER_KNOWN.
 pub const POW_MINIMUM_PER_PEER_STATS: Pow = Pow(POW_MINIMUM_PER_RPC_SERVER_KNOWN.0 + 6);
 
 pub const POW_MAX_CLOCK_DRIFT_MILLIS: DurationMillis = MILLIS_IN_MINUTE.const_mul(5).const_mul(CLOCK_LENIENCE_FACTOR);
+/// How far into our future a gossiped `Peer` record's timestamps may be.  An honest peer's
+/// `pow_current_*` timestamps come from RPC PoW it received, which is within one drift of *its* clock,
+/// and its clock is within one drift of ours — hence two hops.  Anything further ahead is self-asserted
+/// and would let the peer dodge PoW decay (an unbounded Kademlia score).
+pub const PEER_MAX_FUTURE_TIMESTAMP_MILLIS: DurationMillis = POW_MAX_CLOCK_DRIFT_MILLIS.const_mul(2);
 
 pub const USE_PRODUCTION_LETS_ENCRYPT: bool = true;
 pub const MILLIS_TO_WAIT_BETWEEN_CERT_RENEWAL_CHECKS: DurationMillis = MILLIS_IN_HOUR.const_mul(1);

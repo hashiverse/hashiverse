@@ -19,7 +19,7 @@
 //! small even at DHT scale.
 
 use crate::tools::server_id::ServerId;
-use crate::tools::time::{MILLIS_IN_DAY, MILLIS_IN_MONTH, TimeMillis, TimeMillisBytes};
+use crate::tools::time::{DurationMillis, MILLIS_IN_DAY, MILLIS_IN_MONTH, TimeMillis, TimeMillisBytes};
 use crate::tools::time_provider::time_provider::TimeProvider;
 use crate::tools::types::{Hash, Id, PQCommitmentBytes, Pow, Salt, Signature, SignatureKey, VerificationKey, VerificationKeyBytes};
 use crate::tools::{config, hashing, signing, tools};
@@ -95,14 +95,18 @@ impl PeerPow {
     }
 
     pub fn pow_decayed_day(&self, current_time_millis: TimeMillis) -> f64 {
-        let pow_halflife_millis = MILLIS_IN_DAY;
-        let elapsed_millis = current_time_millis - self.timestamp;
-        (self.pow.0 as f64) / 2.0f64.powf(elapsed_millis.0 as f64 / pow_halflife_millis.0 as f64)
+        self.pow_decayed(current_time_millis, MILLIS_IN_DAY)
     }
 
     pub fn pow_decayed_month(&self, current_time_millis: TimeMillis) -> f64 {
-        let pow_halflife_millis = MILLIS_IN_MONTH;
-        let elapsed_millis = current_time_millis - self.timestamp;
+        self.pow_decayed(current_time_millis, MILLIS_IN_MONTH)
+    }
+
+    /// `pow` halved once per `pow_halflife_millis` since `timestamp`.  A future `timestamp` is treated as "now"
+    /// so the result never exceeds `pow` — otherwise a self-chosen far-future timestamp would give an
+    /// unbounded (or, with pow=0, NaN) score.
+    fn pow_decayed(&self, current_time_millis: TimeMillis, pow_halflife_millis: DurationMillis) -> f64 {
+        let elapsed_millis = (current_time_millis - self.timestamp).max(DurationMillis(0));
         (self.pow.0 as f64) / 2.0f64.powf(elapsed_millis.0 as f64 / pow_halflife_millis.0 as f64)
     }
 
@@ -279,6 +283,25 @@ impl Peer {
         Ok(())
     }
 
+    /// Rejects records whose timestamps are further into our future than honest clock drift allows
+    /// (see [`config::PEER_MAX_FUTURE_TIMESTAMP_MILLIS`]).  Old timestamps are fine — PoW decay handles them.
+    /// Separate from [`Self::verify`] because it needs the current time and only matters where peers are scored.
+    pub fn verify_timestamps(&self, current_time_millis: TimeMillis) -> anyhow::Result<()> {
+        let latest_allowed_time_millis = current_time_millis + config::PEER_MAX_FUTURE_TIMESTAMP_MILLIS;
+        let timestamps = [
+            ("timestamp", self.timestamp),
+            ("pow_initial.timestamp", self.pow_initial.timestamp),
+            ("pow_current_day.timestamp", self.pow_current_day.timestamp),
+            ("pow_current_month.timestamp", self.pow_current_month.timestamp),
+        ];
+        for (field_name, timestamp) in timestamps {
+            if timestamp > latest_allowed_time_millis {
+                anyhow::bail!("peer {} is too far in the future: {}={} > now={} + {}", field_name, field_name, timestamp, current_time_millis, config::PEER_MAX_FUTURE_TIMESTAMP_MILLIS);
+            }
+        }
+        Ok(())
+    }
+
     fn verify_signature(&self) -> anyhow::Result<()> {
         let signature_hash = self.signature_hash_generate()?;
         signing::verify(&VerificationKey::from_bytes(&self.verification_key_bytes)?, &self.signature, signature_hash.as_ref())?;
@@ -316,8 +339,9 @@ impl Peer {
 mod tests {
     use crate::protocol::peer::{Peer, PeerPow};
     use crate::tools::server_id::ServerId;
-    use crate::tools::time::TimeMillis;
-    use crate::tools::time_provider::time_provider::RealTimeProvider;
+    use crate::tools::config;
+    use crate::tools::time::{DurationMillis, TimeMillis, MILLIS_IN_DAY, MILLIS_IN_MONTH, MILLIS_IN_YEAR};
+    use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
     use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
     use crate::tools::tools;
     use crate::tools::types::{Pow, VerificationKeyBytes};
@@ -385,6 +409,65 @@ mod tests {
             peer.verify_signature().unwrap_err();
         }
 
+        Ok(())
+    }
+
+    fn peer_pow_at(timestamp: TimeMillis, pow: Pow) -> PeerPow {
+        PeerPow { timestamp, pow, ..PeerPow::zero() }
+    }
+
+    // Regression for C4: a self-chosen far-future timestamp used to make decay divide by ~0 → inf score.
+    #[test]
+    fn pow_decayed_is_bounded_for_future_timestamp() {
+        let now = RealTimeProvider.current_time_millis();
+        let far_future_peer_pow = peer_pow_at(now + MILLIS_IN_YEAR.const_mul(75), Pow(20));
+        assert_eq!(far_future_peer_pow.pow_decayed_day(now), 20.0);
+        assert_eq!(far_future_peer_pow.pow_decayed_month(now), 20.0);
+    }
+
+    // With pow=0 the unclamped formula was 0/0 = NaN, which breaks every score comparison.
+    #[test]
+    fn pow_decayed_zero_pow_future_timestamp_is_not_nan() {
+        let now = RealTimeProvider.current_time_millis();
+        let far_future_peer_pow = peer_pow_at(now + MILLIS_IN_YEAR.const_mul(75), Pow(0));
+        assert_eq!(far_future_peer_pow.pow_decayed_day(now), 0.0);
+        assert_eq!(far_future_peer_pow.pow_decayed_month(now), 0.0);
+    }
+
+    #[test]
+    fn pow_decayed_still_halves_per_halflife() {
+        let now = RealTimeProvider.current_time_millis();
+        assert_eq!(peer_pow_at(now, Pow(20)).pow_decayed_day(now), 20.0);
+        assert_eq!(peer_pow_at(now - MILLIS_IN_DAY, Pow(20)).pow_decayed_day(now), 10.0);
+        assert_eq!(peer_pow_at(now - MILLIS_IN_DAY.const_mul(2), Pow(20)).pow_decayed_day(now), 5.0);
+        assert_eq!(peer_pow_at(now - MILLIS_IN_MONTH, Pow(20)).pow_decayed_month(now), 10.0);
+    }
+
+    #[tokio::test]
+    async fn verify_timestamps_accepts_within_drift_and_rejects_beyond() -> anyhow::Result<()> {
+        let (_, honest_peer) = get_random_ingredients().await?;
+        let now = RealTimeProvider.current_time_millis();
+        let latest_allowed_time_millis = now + config::PEER_MAX_FUTURE_TIMESTAMP_MILLIS;
+        let too_far_time_millis = latest_allowed_time_millis + DurationMillis(1);
+
+        let setters: [(&str, fn(&mut Peer, TimeMillis)); 4] = [
+            ("timestamp", |peer, timestamp| peer.timestamp = timestamp),
+            ("pow_initial", |peer, timestamp| peer.pow_initial.timestamp = timestamp),
+            ("pow_current_day", |peer, timestamp| peer.pow_current_day.timestamp = timestamp),
+            ("pow_current_month", |peer, timestamp| peer.pow_current_month.timestamp = timestamp),
+        ];
+        for (field_name, set_timestamp) in setters {
+            let mut peer = honest_peer.clone();
+
+            set_timestamp(&mut peer, now - MILLIS_IN_YEAR);
+            assert!(peer.verify_timestamps(now).is_ok(), "{} in the past must be accepted", field_name);
+
+            set_timestamp(&mut peer, latest_allowed_time_millis);
+            assert!(peer.verify_timestamps(now).is_ok(), "{} at the drift limit must be accepted", field_name);
+
+            set_timestamp(&mut peer, too_far_time_millis);
+            assert!(peer.verify_timestamps(now).is_err(), "{} beyond the drift limit must be rejected", field_name);
+        }
         Ok(())
     }
 }
