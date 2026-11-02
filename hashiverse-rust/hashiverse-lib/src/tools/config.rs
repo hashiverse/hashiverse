@@ -20,7 +20,7 @@ pub const TESTING: bool = cfg!(any(test, debug_assertions));
 pub const POW_REDUCTION_FACTOR: u8 = if TESTING { 16 } else { 1 };
 pub const CLOCK_LENIENCE_FACTOR: i64 = if TESTING { 8 } else { 1 };
 
-use crate::tools::time::{DurationMillis, MILLIS_IN_DAY, MILLIS_IN_HOUR, MILLIS_IN_MINUTE};
+use crate::tools::time::{DurationMillis, MILLIS_IN_DAY, MILLIS_IN_HOUR, MILLIS_IN_MINUTE, MILLIS_IN_SECOND};
 use crate::tools::tools::LeadingAgreementBits;
 use crate::tools::types::Pow;
 
@@ -44,6 +44,10 @@ pub const POW_MINIMUM_PER_RPC_SERVER_UNKNOWN: Pow = Pow(POW_MINIMUM_PER_RPC_SERV
 pub const POW_MINIMUM_PER_POST: Pow = Pow(POW_MINIMUM_PER_RPC_SERVER_KNOWN.0 + 2);
 pub const POW_MINIMUM_PER_FEEDBACK: Pow = Pow(POW_MINIMUM_PER_RPC_SERVER_KNOWN.0 + 4);
 pub const POW_MINIMUM_PER_URL_FETCH: Pow = Pow(POW_MINIMUM_PER_RPC_SERVER_KNOWN.0 + 3);
+// URL preview fetches run inline in the (serial) dispatch loop, so every stage is bounded.
+pub const URL_FETCH_DNS_TIMEOUT_MILLIS: DurationMillis = MILLIS_IN_SECOND;
+pub const URL_FETCH_CONNECT_TIMEOUT_MILLIS: DurationMillis = MILLIS_IN_SECOND;
+pub const URL_FETCH_TOTAL_TIMEOUT_MILLIS: DurationMillis = MILLIS_IN_SECOND.const_mul(3); // Covers connect + headers + body stream
 pub const POW_MINIMUM_PER_PEER_STATS: Pow = Pow(POW_MINIMUM_PER_RPC_SERVER_KNOWN.0 + 6);
 
 pub const POW_MAX_CLOCK_DRIFT_MILLIS: DurationMillis = MILLIS_IN_MINUTE.const_mul(5).const_mul(CLOCK_LENIENCE_FACTOR);

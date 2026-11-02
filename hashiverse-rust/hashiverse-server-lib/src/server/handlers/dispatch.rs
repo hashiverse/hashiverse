@@ -124,6 +124,19 @@ fn top_up_trending_hashtags_with_fallback(trending_hashtags: &mut Vec<TrendingHa
     }
 }
 
+/// Awaits a DNS lookup for a URL preview host, giving up after `dns_timeout`.  The dispatch loop is serial, so an
+/// unbounded lookup here would stall every other request.  `lookup` is injected so the timeout can be tested without a network.
+async fn resolve_url_preview_host<I>(host: &str, dns_timeout: std::time::Duration, lookup: impl Future<Output = std::io::Result<I>>) -> anyhow::Result<Vec<std::net::SocketAddr>>
+where
+    I: Iterator<Item = std::net::SocketAddr>,
+{
+    match tokio::time::timeout(dns_timeout, lookup).await {
+        Err(_) => anyhow::bail!("FetchUrlPreviewV1: DNS resolution timed out for {}", host),
+        Ok(Err(e)) => anyhow::bail!("FetchUrlPreviewV1 SSRF: DNS resolution failed for {}: {}", host, e),
+        Ok(Ok(socket_addrs)) => Ok(socket_addrs.collect()),
+    }
+}
+
 /// Awaits `future`, converting a panic inside it into an `Err` so that a single bad
 /// request cannot unwind through the dispatch loop and stop the server.
 async fn catch_panic_as_error<T>(future: impl Future<Output = T>) -> anyhow::Result<T> {
@@ -345,7 +358,7 @@ impl HashiverseServer {
             PayloadRequestKind::HealPostBundleFeedbackV1 => { self.dispatch_network_payload_x_HealPostBundleFeedbackV1(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await? }
             PayloadRequestKind::CachePostBundleV1 => self.dispatch_network_payload_x_CachePostBundleV1(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await?,
             PayloadRequestKind::CachePostBundleFeedbackV1 => { self.dispatch_network_payload_x_CachePostBundleFeedbackV1(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await? }
-            PayloadRequestKind::FetchUrlPreviewV1 => self.dispatch_network_payload_x_FetchUrlPreviewV1(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await?,
+            PayloadRequestKind::FetchUrlPreviewV1 => self.dispatch_network_payload_x_FetchUrlPreviewV1(cancellation_token, pow, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await?,
             PayloadRequestKind::TrendingHashtagsFetchV1 => self.dispatch_network_payload_x_TrendingHashtagsFetchV1(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await?,
             PayloadRequestKind::PeerStatsRequestV1 => self.dispatch_network_payload_x_PeerStatsRequestV1(cancellation_token, pow, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await?,
             PayloadRequestKind::AnnounceV2 => self.dispatch_network_payload_x_AnnounceV2(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await?,
@@ -1257,8 +1270,14 @@ impl HashiverseServer {
     }
 
     #[allow(non_snake_case)]
-    async fn dispatch_network_payload_x_FetchUrlPreviewV1(&self, _cancellation_token: CancellationToken, payload_request_kind: PayloadRequestKind, mut bytes: Bytes) -> anyhow::Result<(PayloadResponseKind, BytesGatherer)> {
+    async fn dispatch_network_payload_x_FetchUrlPreviewV1(&self, _cancellation_token: CancellationToken, pow: Option<PeerPow>, payload_request_kind: PayloadRequestKind, mut bytes: Bytes) -> anyhow::Result<(PayloadResponseKind, BytesGatherer)> {
         anyhow_assert_eq!(&PayloadRequestKind::FetchUrlPreviewV1, &payload_request_kind);
+
+        // Outbound fetches are expensive for us and for the third-party site, so demand the extra pow before doing any work.
+        let pow = pow.ok_or_else(|| anyhow::anyhow!("pow required for FetchUrlPreviewV1"))?;
+        if pow.pow < config::POW_MINIMUM_PER_URL_FETCH {
+            anyhow::bail!("Insufficient pow for FetchUrlPreviewV1: {} < {}", pow.pow, config::POW_MINIMUM_PER_URL_FETCH);
+        }
 
         let request = FetchUrlPreviewV1::from_bytes(&mut bytes)?;
         trace!("received FetchUrlPreviewV1 for url={}", request.url);
@@ -1288,10 +1307,7 @@ impl HashiverseServer {
         // Resolve once and validate every returned address.  Collecting into a Vec lets us
         // re-use the same addresses to pin the reqwest client, closing the DNS-rebinding window
         // (nip.io, metadata.google.internal, TTL=0 rebind, etc.).
-        let resolved_socket_addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((host, 443u16))
-            .await
-            .map_err(|e| anyhow::anyhow!("FetchUrlPreviewV1 SSRF: DNS resolution failed for {}: {}", host, e))?
-            .collect();
+        let resolved_socket_addrs: Vec<std::net::SocketAddr> = resolve_url_preview_host(host, config::URL_FETCH_DNS_TIMEOUT_MILLIS.into(), tokio::net::lookup_host((host, 443u16))).await?;
         if resolved_socket_addrs.is_empty() {
             anyhow::bail!("FetchUrlPreviewV1 SSRF: DNS returned no addresses for {}", host);
         }
@@ -1309,8 +1325,8 @@ impl HashiverseServer {
         //   - times out quickly in unreasonable scenarios
         //   - limits download size
         let http_client = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(1))
-            .timeout(std::time::Duration::from_secs(3))
+            .connect_timeout(config::URL_FETCH_CONNECT_TIMEOUT_MILLIS.into())
+            .timeout(config::URL_FETCH_TOTAL_TIMEOUT_MILLIS.into())
             .user_agent("hashiverse-preview/1.0")
             .resolve_to_addrs(host, &resolved_socket_addrs)
             .redirect(reqwest::redirect::Policy::none())
@@ -1640,6 +1656,85 @@ mod tests {
         let mut trending_hashtags: Vec<TrendingHashtagV1> = vec![];
         top_up_trending_hashtags_with_fallback(&mut trending_hashtags, 10, &["#hashiverse", "#news"]);
         assert_eq!(trending_hashtags.len(), 2, "should stop at the end of the fallback list, not pad further");
+    }
+
+    mod fetch_url_preview {
+        use super::*;
+        use crate::environment::mem_environment_store::MemEnvironmentFactory;
+        use crate::environment::environment::EnvironmentFactory;
+        use crate::server::args::Args;
+        use crate::server::hashiverse_server::HashiverseServer;
+        use hashiverse_lib::protocol::peer::PeerPow;
+        use hashiverse_lib::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
+        use hashiverse_lib::tools::runtime_services::RuntimeServices;
+        use hashiverse_lib::tools::time_provider::time_provider::RealTimeProvider;
+        use hashiverse_lib::tools::types::Pow;
+        use hashiverse_lib::transport::mem_transport::MemTransportFactory;
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        async fn make_server() -> anyhow::Result<Arc<HashiverseServer>> {
+            let time_provider = Arc::new(RealTimeProvider);
+            let transport_factory = MemTransportFactory::default();
+            let pow_generator = Arc::new(SingleThreadedPowGenerator::new());
+            let runtime_services = Arc::new(RuntimeServices { time_provider, transport_factory, pow_generator });
+            let environment_factory = Arc::new(MemEnvironmentFactory::new(""));
+            let args = Args::default_for_testing();
+            HashiverseServer::new(runtime_services, environment_factory, args).await
+        }
+
+        fn synthetic_pow(pow: Pow) -> PeerPow {
+            let mut peer_pow = PeerPow::zero();
+            peer_pow.pow = pow;
+            peer_pow
+        }
+
+        /// A non-https URL: if the pow check passes, the handler rejects it on the SSRF check without touching the network.
+        fn request_bytes() -> Bytes {
+            FetchUrlPreviewV1::new_to_bytes("http://example.com/").expect("FetchUrlPreviewV1 must serialise")
+        }
+
+        async fn fetch_url_preview_error(pow: Option<PeerPow>) -> String {
+            let server = make_server().await.expect("server must start");
+            let result = server.dispatch_network_payload_x_FetchUrlPreviewV1(CancellationToken::new(), pow, PayloadRequestKind::FetchUrlPreviewV1, request_bytes()).await;
+            result.err().expect("handler must reject this request").to_string()
+        }
+
+        #[tokio::test]
+        async fn rejects_missing_pow() {
+            let error = fetch_url_preview_error(None).await;
+            assert!(error.contains("pow required for FetchUrlPreviewV1"), "unexpected error: {}", error);
+        }
+
+        #[tokio::test]
+        async fn rejects_insufficient_pow() {
+            let error = fetch_url_preview_error(Some(synthetic_pow(Pow(config::POW_MINIMUM_PER_URL_FETCH.0 - 1)))).await;
+            assert!(error.contains("Insufficient pow for FetchUrlPreviewV1"), "unexpected error: {}", error);
+        }
+
+        #[tokio::test]
+        async fn accepts_threshold_pow() {
+            let error = fetch_url_preview_error(Some(synthetic_pow(config::POW_MINIMUM_PER_URL_FETCH))).await;
+            assert!(error.contains("only https:// URLs are allowed"), "pow check should pass and fall through to the SSRF check, got: {}", error);
+        }
+
+        #[tokio::test]
+        async fn dns_lookup_times_out() {
+            let never_resolving_lookup = std::future::pending::<std::io::Result<std::vec::IntoIter<std::net::SocketAddr>>>();
+            let error = resolve_url_preview_host("example.com", Duration::from_millis(50), never_resolving_lookup).await.err().expect("lookup must time out");
+            assert!(error.to_string().contains("DNS resolution timed out for example.com"), "unexpected error: {}", error);
+        }
+
+        #[tokio::test]
+        async fn dns_lookup_passes_through_results_and_errors() {
+            let socket_addr: std::net::SocketAddr = "93.184.216.34:443".parse().unwrap();
+            let resolved = resolve_url_preview_host("example.com", Duration::from_secs(1), async move { Ok(vec![socket_addr].into_iter()) }).await.expect("lookup must succeed");
+            assert_eq!(resolved, vec![socket_addr]);
+
+            let failed_lookup = async { Err::<std::vec::IntoIter<std::net::SocketAddr>, _>(std::io::Error::other("nxdomain")) };
+            let error = resolve_url_preview_host("example.com", Duration::from_secs(1), failed_lookup).await.err().expect("lookup must fail");
+            assert!(error.to_string().contains("DNS resolution failed for example.com"), "unexpected error: {}", error);
+        }
     }
 
     mod peer_stats {
