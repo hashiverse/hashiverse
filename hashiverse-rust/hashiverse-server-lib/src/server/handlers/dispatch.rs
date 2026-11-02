@@ -31,7 +31,7 @@ use hashiverse_lib::protocol::payload::payload::{
     HealPostBundleFeedbackResponseV1, HealPostBundleFeedbackV1, PayloadRequestKind, PayloadResponseKind, PingResponseV1, PeerStatsRequestV1, PeerStatsResponseV1, SubmitPostClaimResponseV1, SubmitPostClaimTokenV1, SubmitPostClaimV1,
     SubmitPostCommitResponseV1, SubmitPostCommitTokenV1, SubmitPostCommitV1, SubmitPostFeedbackResponseV1, SubmitPostFeedbackV1, TrendingHashtagV1, TrendingHashtagsFetchResponseV1, TrendingHashtagsFetchV1,
 };
-use hashiverse_lib::protocol::peer::PeerPow;
+use hashiverse_lib::protocol::peer::{Peer, PeerPow};
 use hashiverse_lib::protocol::posting::amplification::get_minimum_post_pow;
 use hashiverse_lib::protocol::posting::encoded_post::EncodedPostV1;
 use hashiverse_lib::protocol::posting::encoded_post_bundle::{EncodedPostBundleHeaderV1, EncodedPostBundleV1};
@@ -1023,6 +1023,21 @@ impl HashiverseServer {
         }
         request.token.verify()?;
 
+        // From here on the token is genuinely ours, so whatever happens we release the claim it was issued under.
+        // Keyed on the token's (signed) location, not anything else the client sent, so a forged or foreign token
+        // can never release a claim held by someone else. Without this, any failed commit would block healing for
+        // this location until the heal_in_progress TTL expired.
+        let token_location_id = request.token.bucket_location.location_id;
+        let commit_result = self.commit_heal_post_bundle(&request, &peer_self, time_millis);
+        self.heal_in_progress.invalidate(&token_location_id);
+        let added_any = commit_result?;
+
+        let response = HealPostBundleCommitResponseV1 { accepted: added_any };
+        Ok((PayloadResponseKind::HealPostBundleCommitResponseV1, BytesGatherer::from_bytes(json::struct_to_bytes(&response)?)))
+    }
+
+    /// The body of a HealPostBundleCommitV1 once its token has been verified as ours. Returns whether any post was added.
+    fn commit_heal_post_bundle(&self, request: &HealPostBundleCommitV1, peer_self: &Peer, time_millis: TimeMillis) -> anyhow::Result<bool> {
         // Verify the donor_header matches what the token was issued for
         if request.donor_header.signature != request.token.donor_header_signature {
             anyhow::bail!("HealPostBundleCommitV1: donor_header signature does not match token");
@@ -1137,10 +1152,7 @@ impl HashiverseServer {
             info!("Healed {} post(s) for location_id={}", post_bundle.header.encoded_post_healed.len(), location_id);
         }
 
-        self.heal_in_progress.invalidate(&location_id);
-
-        let response = HealPostBundleCommitResponseV1 { accepted: added_any };
-        Ok((PayloadResponseKind::HealPostBundleCommitResponseV1, BytesGatherer::from_bytes(json::struct_to_bytes(&response)?)))
+        Ok(added_any)
     }
 
     #[allow(non_snake_case)]
@@ -2186,12 +2198,22 @@ mod tests {
             async fn heal(&self, donor_header: &EncodedPostBundleHeaderV1, posts: &[(Id, Bytes)]) -> anyhow::Result<bool> {
                 let claim_response = self.claim(donor_header).await?;
                 let token = claim_response.token.ok_or_else(|| anyhow::anyhow!("no claim token"))?;
+                let encoded_posts_bytes = Self::encoded_posts_bytes_for_token(&token, posts)?;
+                self.commit(&token, donor_header, &encoded_posts_bytes).await
+            }
+
+            /// The concatenated post bytes a commit must carry: one entry per `token.needed_post_ids`, in order.
+            fn encoded_posts_bytes_for_token(token: &HealPostBundleClaimTokenV1, posts: &[(Id, Bytes)]) -> anyhow::Result<Vec<u8>> {
                 let mut encoded_posts_bytes = Vec::new();
                 for needed_post_id in &token.needed_post_ids {
                     let (_, post_bytes) = posts.iter().find(|(post_id, _)| post_id == needed_post_id).ok_or_else(|| anyhow::anyhow!("missing post"))?;
                     encoded_posts_bytes.extend_from_slice(post_bytes);
                 }
-                let request_bytes = HealPostBundleCommitV1::new_to_bytes(&token, donor_header, &encoded_posts_bytes)?;
+                Ok(encoded_posts_bytes)
+            }
+
+            async fn commit(&self, token: &HealPostBundleClaimTokenV1, donor_header: &EncodedPostBundleHeaderV1, encoded_posts_bytes: &[u8]) -> anyhow::Result<bool> {
+                let request_bytes = HealPostBundleCommitV1::new_to_bytes(token, donor_header, encoded_posts_bytes)?;
                 let (_, bytes_gatherer) = self.server.dispatch_network_payload_x_HealPostBundleCommitV1(CancellationToken::new(), PayloadRequestKind::HealPostBundleCommitV1, request_bytes).await?;
                 Ok(json::bytes_to_struct::<HealPostBundleCommitResponseV1>(&bytes_gatherer.to_bytes())?.accepted)
             }
@@ -2269,6 +2291,47 @@ mod tests {
 
             assert_eq!(heal_feedbacks(&fixture, &[forged_feedback, valid_feedback.clone()]).await?, 1);
             assert_eq!(stored_feedbacks(&fixture)?, vec![valid_feedback]);
+            Ok(())
+        }
+
+        // A commit that fails after its token has been verified as ours must release the claim straight away,
+        // rather than blocking every other client from healing this location until heal_in_progress's TTL expires.
+        #[tokio::test]
+        async fn failed_commit_releases_heal_claim() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let donor_server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            let posts = vec![fixture.make_own_post().await?];
+            let donor_header = fixture.make_donor_header(&donor_server_id, &posts, |_| {})?;
+
+            let token = fixture.claim(&donor_header).await?.token.expect("first claim must get a token");
+            assert!(fixture.claim(&donor_header).await?.token.is_none(), "claim must be held while a heal is in progress");
+
+            let mut encoded_posts_bytes = HealFixture::encoded_posts_bytes_for_token(&token, &posts)?;
+            encoded_posts_bytes.push(0u8);
+            let commit_error = fixture.commit(&token, &donor_header, &encoded_posts_bytes).await.expect_err("commit with excess bytes must fail");
+            assert!(commit_error.to_string().contains("excess bytes"), "commit_error={}", commit_error);
+
+            assert!(fixture.claim(&donor_header).await?.token.is_some(), "a failed commit must release the claim");
+            Ok(())
+        }
+
+        // A commit carrying a token we didn't issue must not be able to release a claim held by someone else.
+        #[tokio::test]
+        async fn commit_with_foreign_token_does_not_release_heal_claim() -> anyhow::Result<()> {
+            let fixture = HealFixture::new().await?;
+            let donor_server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            let posts = vec![fixture.make_own_post().await?];
+            let donor_header = fixture.make_donor_header(&donor_server_id, &posts, |_| {})?;
+
+            let genuine_token = fixture.claim(&donor_header).await?.token.expect("first claim must get a token");
+
+            let foreign_server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            let foreign_token = HealPostBundleClaimTokenV1::new(foreign_server_id.to_peer(&RealTimeProvider)?, fixture.bucket_location.clone(), genuine_token.needed_post_ids.clone(), donor_header.signature, &foreign_server_id.keys.signature_key);
+            let encoded_posts_bytes = HealFixture::encoded_posts_bytes_for_token(&foreign_token, &posts)?;
+            let commit_error = fixture.commit(&foreign_token, &donor_header, &encoded_posts_bytes).await.expect_err("commit with a foreign token must fail");
+            assert!(commit_error.to_string().contains("not issued by this server"), "commit_error={}", commit_error);
+
+            assert!(fixture.claim(&donor_header).await?.token.is_none(), "a foreign token must not release the claim");
             Ok(())
         }
 
