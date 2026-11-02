@@ -454,6 +454,34 @@ mod tests {
         Ok(())
     }
 
+    // merge() output is a client-side view: its header (taken from the newest bundle) no longer covers its
+    // feedbacks_bytes, so it must never be forwarded to caches - only intact originals that pass verify() may be.
+    #[tokio::test]
+    async fn merged_bundle_is_a_client_view_not_a_signed_bundle() -> anyhow::Result<()> {
+        let post_a = Id::random();
+        let valid_for_type_1 = make_valid_feedback(post_a, 1)?;
+        let valid_for_type_2 = make_valid_feedback(post_a, 2)?;
+
+        let bundle_first = make_bundle_with_encoded_post_feedbacks(TimeMillis(1000), &[valid_for_type_1.clone()]).await?;
+        let bundle_second = make_bundle_with_encoded_post_feedbacks(TimeMillis(2000), &[valid_for_type_2.clone()]).await?;
+        bundle_first.verify()?;
+        bundle_second.verify()?;
+
+        let merged = EncodedPostBundleFeedbackV1::merge(&[bundle_first, bundle_second]).expect("non-empty input");
+        assert_eq!(valid_for_type_1.pow, merged.get_post_pow_for_feedback_type(&post_a, 1));
+        assert_eq!(valid_for_type_2.pow, merged.get_post_pow_for_feedback_type(&post_a, 2));
+        assert!(merged.verify().is_err(), "the merged union is not covered by any originator's signature");
+
+        // A signed bundle carrying a forged entry is not uploadable, yet merge still salvages its honest entry for the client view.
+        let poisoned_bundle = make_bundle_with_encoded_post_feedbacks(TimeMillis(3000), &[make_forged_feedback(post_a, 3), valid_for_type_1.clone()]).await?;
+        poisoned_bundle.header.verify()?;
+        assert!(poisoned_bundle.verify().is_err(), "a bundle with a forged entry must fail full verification");
+        let merged_from_poisoned = EncodedPostBundleFeedbackV1::merge(&[poisoned_bundle]).expect("non-empty input");
+        assert_eq!(valid_for_type_1.pow, merged_from_poisoned.get_post_pow_for_feedback_type(&post_a, 1));
+        assert_eq!(Pow(0), merged_from_poisoned.get_post_pow_for_feedback_type(&post_a, 3));
+        Ok(())
+    }
+
     fn merged_entries_all_verify(merged: &EncodedPostBundleFeedbackV1) -> anyhow::Result<()> {
         for entry_bytes in merged.feedbacks_bytes.chunks_exact(ENTRY_SIZE) {
             EncodedPostFeedbackV1::decode_from_bytes(entry_bytes)?.pow_verify()?;

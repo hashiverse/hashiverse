@@ -109,6 +109,8 @@ impl PostBundleFeedbackManager for LivePostBundleFeedbackManager {
         let mut peers_visited = Vec::new();
         let mut already_retrieved_peer_ids: Vec<Id> = Vec::new();
         let mut encoded_post_bundle_feedbacks = Vec::new();
+        // The intact originator-signed bytes of every bundle that passes full verify(): the only thing we may forward to caches.
+        let mut encoded_post_bundle_feedback_bytes_for_upload: Vec<(Id, Bytes)> = Vec::new();
         let mut cache_request_tokens: Vec<CacheRequestTokenV1> = Vec::new();
         let mut positive_responder_leading_agreement_bits: Vec<LeadingAgreementBits> = Vec::new();
         {
@@ -143,8 +145,11 @@ impl PostBundleFeedbackManager for LivePostBundleFeedbackManager {
 
                     for cached_bytes in response.post_bundle_feedbacks_cached {
                         let process_result: anyhow::Result<()> = try {
-                            let post_bundle_feedback = EncodedPostBundleFeedbackV1::from_bytes(cached_bytes)?;
+                            let post_bundle_feedback = EncodedPostBundleFeedbackV1::from_bytes(cached_bytes.clone())?;
                             post_bundle_feedback.header.verify()?;
+                            if post_bundle_feedback.verify().is_ok() {
+                                encoded_post_bundle_feedback_bytes_for_upload.push((post_bundle_feedback.header.peer.id, cached_bytes));
+                            }
                             trace!("Retrieved cached PostBundleFeedback from post_bundle_location_id={} with length {}", post_bundle_location_id, post_bundle_feedback.feedbacks_bytes.len());
 
                             already_retrieved_peer_ids.push(post_bundle_feedback.header.peer.id);
@@ -157,8 +162,11 @@ impl PostBundleFeedbackManager for LivePostBundleFeedbackManager {
                     }
 
                     if let Some(post_bundle_feedback_raw) = response.encoded_post_bundle_feedback {
-                        let post_bundle_feedback = EncodedPostBundleFeedbackV1::from_bytes(post_bundle_feedback_raw)?;
+                        let post_bundle_feedback = EncodedPostBundleFeedbackV1::from_bytes(post_bundle_feedback_raw.clone())?;
                         post_bundle_feedback.header.verify()?;
+                        if post_bundle_feedback.verify().is_ok() {
+                            encoded_post_bundle_feedback_bytes_for_upload.push((post_bundle_feedback.header.peer.id, post_bundle_feedback_raw));
+                        }
                         trace!("Retrieved PostBundleFeedback from post_bundle_location_id={} with length {}", post_bundle_location_id, post_bundle_feedback.feedbacks_bytes.len());
 
                         already_retrieved_peer_ids.push(post_bundle_feedback.header.peer.id);
@@ -195,6 +203,7 @@ impl PostBundleFeedbackManager for LivePostBundleFeedbackManager {
         }
 
         // Merge all collected bundles, taking the best-pow entry per (post_id, feedback_type).
+        // NB: the result is an unsigned client view (its header no longer covers its feedbacks_bytes) - fine for our own cache, never forward it.
         let best_encoded_post_bundle_feedback = EncodedPostBundleFeedbackV1::merge(&encoded_post_bundle_feedbacks)
             .ok_or_else(|| anyhow::anyhow!("No post bundle feedbacks discovered for {}", post_bundle_location_id))?;
 
@@ -217,7 +226,7 @@ impl PostBundleFeedbackManager for LivePostBundleFeedbackManager {
             self.runtime_services.clone(),
             self.sponsor_id,
             cache_request_tokens,
-            encoded_post_bundle_feedback_bytes,
+            encoded_post_bundle_feedback_bytes_for_upload,
         );
 
         Ok(best_encoded_post_bundle_feedback)
