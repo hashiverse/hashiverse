@@ -142,6 +142,28 @@ async fn catch_panic_as_error<T>(future: impl Future<Output = T>) -> anyhow::Res
     }
 }
 
+/// Replies to (or abandons) `incoming` according to how dispatching it went.
+/// The outer `Err` is a handler panic (see [`catch_panic_as_error`]); it is scored as a bad request just like
+/// an ordinary `Err`, so a caller who has found a panic can't keep triggering it without being DDoS-scored.
+fn complete_incoming_request(incoming: IncomingRequest, dispatch_outcome: anyhow::Result<anyhow::Result<BytesGatherer>>) {
+    match dispatch_outcome {
+        Ok(Ok(bytes)) => {
+            let result = incoming.reply.send(bytes);
+            if result.is_err() { warn!("failed to send reply"); }
+        },
+        Err(handler_panic) => {
+            error!("handler panicked processing packet from {}: {}", incoming.caller_address, handler_panic);
+            incoming.report_bad_request();
+            drop(incoming.reply);
+        },
+        Ok(Err(e)) => {
+            warn!("failed to process packet from {}: {}", incoming.caller_address, e);
+            incoming.report_bad_request();
+            drop(incoming.reply);
+        },
+    }
+}
+
 impl HashiverseServer {
     pub async fn wrap_and_dispatch_network_envelopes(&self, cancellation_token: CancellationToken, mut rx: mpsc::Receiver<IncomingRequest>) -> Result<(), anyhow::Error> {
         loop {
@@ -154,22 +176,8 @@ impl HashiverseServer {
                             // trace!("dispatch_network_envelopes received bytes={:?}", incoming.bytes);
                             // A panic in any handler must not unwind out of this loop: it runs inside the server's
                             // try_join! and would take the whole server down with it.
-                            let result = catch_panic_as_error(self.wrap_and_dispatch_network_envelope(cancellation_token.clone(), &incoming)).await;
-                            match result {
-                                Ok(Ok(bytes)) => {
-                                    let result = incoming.reply.send(bytes);
-                                    if result.is_err() { warn!("failed to send reply"); }
-                                },
-                                Err(handler_panic) => {
-                                    error!("handler panicked processing packet from {}: {}", incoming.caller_address, handler_panic);
-                                    drop(incoming.reply);
-                                },
-                                Ok(Err(e)) => {
-                                    warn!("failed to process packet from {}: {}", incoming.caller_address, e);
-                                    incoming.report_bad_request();
-                                    drop(incoming.reply);
-                                },
-                            }
+                            let dispatch_outcome = catch_panic_as_error(self.wrap_and_dispatch_network_envelope(cancellation_token.clone(), &incoming)).await;
+                            complete_incoming_request(incoming, dispatch_outcome);
                         },
                         None => {
                             warn!("channel closed");
@@ -1459,6 +1467,56 @@ impl HashiverseServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod complete_incoming_request_outcomes {
+        use super::*;
+        use hashiverse_lib::transport::ddos::ddos::{DdosConnectionGuard, DdosProtection};
+        use hashiverse_lib::transport::ddos::mem_ddos::MemDdosProtection;
+        use hashiverse_lib::tools::time_provider::manual_time_provider::ManualTimeProvider;
+        use std::sync::Arc;
+        use tokio::sync::oneshot;
+
+        const CALLER_IP: &str = "10.1.2.3";
+
+        /// Threshold 1, no decay, penalty 1: a single bad-request report blocks the IP.
+        fn make_incoming_request() -> (Arc<MemDdosProtection>, IncomingRequest, oneshot::Receiver<BytesGatherer>) {
+            let ddos = Arc::new(MemDdosProtection::new(1.0, 0.0, 1.0, 8, Arc::new(ManualTimeProvider::default())));
+            let ddos_connection_guard = DdosConnectionGuard::try_new(ddos.clone(), CALLER_IP).expect("fresh ip must get a connection slot");
+            let (reply_tx, reply_rx) = oneshot::channel();
+            let incoming = IncomingRequest::new(CALLER_IP.to_string(), Bytes::new(), reply_tx, Arc::new(ddos_connection_guard));
+            (ddos, incoming, reply_rx)
+        }
+
+        /// Probe the ban state without touching the score (`allow_request` itself adds a point per call).
+        fn is_blocked(ddos: &MemDdosProtection) -> bool {
+            !ddos.try_acquire_connection(CALLER_IP)
+        }
+
+        #[tokio::test]
+        async fn panic_outcome_reports_bad_request() {
+            let (ddos, incoming, reply_rx) = make_incoming_request();
+            assert!(!is_blocked(&ddos));
+            complete_incoming_request(incoming, Err(anyhow::anyhow!("panic: boom")));
+            assert!(is_blocked(&ddos), "a handler panic must count against the caller");
+            assert!(reply_rx.await.is_err(), "no reply must be sent for a panic");
+        }
+
+        #[tokio::test]
+        async fn error_outcome_reports_bad_request() {
+            let (ddos, incoming, reply_rx) = make_incoming_request();
+            complete_incoming_request(incoming, Ok(Err(anyhow::anyhow!("bad packet"))));
+            assert!(is_blocked(&ddos));
+            assert!(reply_rx.await.is_err());
+        }
+
+        #[tokio::test]
+        async fn success_outcome_does_not_report_and_replies() {
+            let (ddos, incoming, reply_rx) = make_incoming_request();
+            complete_incoming_request(incoming, Ok(Ok(BytesGatherer::from_bytes(Bytes::from_static(b"ok")))));
+            assert!(!is_blocked(&ddos));
+            assert_eq!(reply_rx.await.expect("reply must be sent").to_bytes(), Bytes::from_static(b"ok"));
+        }
+    }
 
     #[tokio::test]
     async fn catch_panic_as_error_passes_through_value() {
