@@ -199,7 +199,7 @@ mod tests {
 
         let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), pow_min, true, runtime_services.pow_generator.as_ref()).await?;
         trace!("server_id.pow={}", server_id.pow);
-        let payload_request_kind = PayloadRequestKind::AnnounceV1;
+        let payload_request_kind = PayloadRequestKind::PingV1;
         let mut payload_request = [0u8; 1024];
         tools::random_fill_bytes(&mut payload_request);
         let request_flags = RpcRequestPacketTxFlags::COMPRESSED | RpcRequestPacketTxFlags::SERVER_KNOWN;
@@ -236,13 +236,13 @@ mod tests {
             &server_id.salt,
             &rpc_request_packet_rx.pow_content_hash,
             response_flags,
-            PayloadResponseKind::AnnounceResponseV1,
+            PayloadResponseKind::PingResponseV1,
             BytesGatherer::from_bytes(Bytes::copy_from_slice(&payload_response)),
         )?;
 
         let rpc_response_packet_rx = RpcResponsePacketRx::decode(&server_id.id, &rpc_request_packet_rx.pow_content_hash, pow_min, gatherer.to_bytes())?;
 
-        assert_eq!(rpc_response_packet_rx.response_request_kind, PayloadResponseKind::AnnounceResponseV1);
+        assert_eq!(rpc_response_packet_rx.response_request_kind, PayloadResponseKind::PingResponseV1);
         assert_eq!(rpc_response_packet_rx.bytes.as_ref(), payload_response);
 
         Ok(())
@@ -257,7 +257,7 @@ mod tests {
         let pow_min_for_rpc = Pow(12);
 
         let server_id = ServerId::new("own_pow", &time_provider, pow_min_for_server_id, true, pow_generator.as_ref()).await?;
-        let payload_request_kind = PayloadRequestKind::AnnounceV1;
+        let payload_request_kind = PayloadRequestKind::PingV1;
         let mut payload_request = [0u8; 1024];
         tools::random_fill_bytes(&mut payload_request);
         let flags = RpcRequestPacketTxFlags::COMPRESSED;
@@ -282,13 +282,13 @@ mod tests {
             &server_id.salt,
             &rpc_request_packet_rx.pow_content_hash,
             response_flags,
-            PayloadResponseKind::AnnounceResponseV1,
+            PayloadResponseKind::PingResponseV1,
             BytesGatherer::from_bytes(Bytes::copy_from_slice(&payload_response)),
         )?;
 
         let rpc_response_packet_rx = RpcResponsePacketRx::decode(&Id::zero(), &rpc_request_packet_rx.pow_content_hash, pow_min_for_server_id, gatherer.to_bytes())?;
 
-        assert_eq!(rpc_response_packet_rx.response_request_kind, PayloadResponseKind::AnnounceResponseV1);
+        assert_eq!(rpc_response_packet_rx.response_request_kind, PayloadResponseKind::PingResponseV1);
         assert_eq!(rpc_response_packet_rx.bytes.as_ref(), payload_response);
 
         Ok(())

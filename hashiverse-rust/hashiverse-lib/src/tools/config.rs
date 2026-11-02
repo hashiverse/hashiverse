@@ -66,7 +66,7 @@ pub const ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS: u8 = 20;
 pub const ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS_GRANTED: u8 = 3 * ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS / 2;
 pub const ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS: DurationMillis = MILLIS_IN_MINUTE.const_mul(1);
 
-pub const ANNOUNCE_V1_NUM_PEERS: usize = 16;
+pub const ANNOUNCE_NUM_PEERS: usize = 16;
 pub const BOOTSTRAP_V1_NUM_PEERS: usize = 32;
 /// Upper bound on the client's PeerTracker; when full, a newcomer only gets in by out-scoring the weakest peer.
 pub const CLIENT_PEER_TRACKER_MAX_PEERS: usize = 1024;

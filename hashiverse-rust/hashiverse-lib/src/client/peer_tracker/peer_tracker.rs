@@ -12,7 +12,7 @@
 //!   `BootstrapV1` against seed domains from [`crate::tools::config::BOOTSTRAP_DOMAINS`]
 //!   to obtain a starting set of peers.
 //! - **Freshness** — stale peers (missed announces, failed RPCs) are demoted or dropped;
-//!   fresh ones from gossip (`AnnounceV1`) or from RPC responses are folded in.
+//!   fresh ones from gossip (`AnnounceV2`) or from RPC responses are folded in.
 //! - **Flush** — peer mutations set `peers_need_flush`; the outer client batches those
 //!   into periodic writes to storage so every RPC response doesn't trigger a disk write.
 

@@ -26,7 +26,7 @@ use crate::tools::tools::is_ssrf_protected_ip;
 use bytes::{Bytes, BytesMut};
 use hashiverse_lib::anyhow_assert_eq;
 use hashiverse_lib::protocol::payload::payload::{
-    AnnounceResponseV1, AnnounceResponseV2, AnnounceV1, AnnounceV2, BootstrapResponseV1, CachePostBundleFeedbackResponseV1, CachePostBundleFeedbackV1, CachePostBundleResponseV1, CachePostBundleV1, ErrorResponseV1, FetchUrlPreviewResponseV1, FetchUrlPreviewV1,
+    AnnounceResponseV2, AnnounceV2, BootstrapResponseV1, CachePostBundleFeedbackResponseV1, CachePostBundleFeedbackV1, CachePostBundleResponseV1, CachePostBundleV1, ErrorResponseV1, FetchUrlPreviewResponseV1, FetchUrlPreviewV1,
     GetPostBundleFeedbackResponseV1, GetPostBundleFeedbackV1, GetPostBundleResponseV1, GetPostBundleV1, HealPostBundleClaimResponseV1, HealPostBundleClaimTokenV1, HealPostBundleClaimV1, HealPostBundleCommitResponseV1, HealPostBundleCommitV1,
     HealPostBundleFeedbackResponseV1, HealPostBundleFeedbackV1, PayloadRequestKind, PayloadResponseKind, PingResponseV1, PeerStatsRequestV1, PeerStatsResponseV1, SubmitPostClaimResponseV1, SubmitPostClaimTokenV1, SubmitPostClaimV1,
     SubmitPostCommitResponseV1, SubmitPostCommitTokenV1, SubmitPostCommitV1, SubmitPostFeedbackResponseV1, SubmitPostFeedbackV1, TrendingHashtagV1, TrendingHashtagsFetchResponseV1, TrendingHashtagsFetchV1,
@@ -347,7 +347,9 @@ impl HashiverseServer {
             }
             PayloadRequestKind::PingV1 => self.dispatch_network_payload_x_PingV1(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await?,
             PayloadRequestKind::BootstrapV1 => self.dispatch_network_payload_x_BootstrapV1(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await?,
-            PayloadRequestKind::AnnounceV1 => self.dispatch_network_payload_x_AnnounceV1(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await?,
+            PayloadRequestKind::RetiredAnnounceV1 => {
+                anyhow::bail!("AnnounceV1 is retired; use AnnounceV2");
+            }
             PayloadRequestKind::GetPostBundleV1 => self.dispatch_network_payload_x_GetPostBundleV1(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await?,
             PayloadRequestKind::GetPostBundleFeedbackV1 => { self.dispatch_network_payload_x_GetPostBundleFeedbackV1(cancellation_token, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await? }
             PayloadRequestKind::SubmitPostClaimV1 => { self.dispatch_network_payload_x_SubmitPostClaimV1(cancellation_token, pow, rpc_request_packet_rx.payload_request_kind, rpc_request_packet_rx.bytes).await? }
@@ -384,33 +386,6 @@ impl HashiverseServer {
     }
 
     #[allow(non_snake_case)]
-    async fn dispatch_network_payload_x_AnnounceV1(&self, _cancellation_token: CancellationToken, payload_request_kind: PayloadRequestKind, bytes: Bytes) -> anyhow::Result<(PayloadResponseKind, BytesGatherer)> {
-        anyhow_assert_eq!(&PayloadRequestKind::AnnounceV1, &payload_request_kind);
-
-        let request = json::bytes_to_struct::<AnnounceV1>(&bytes)?;
-
-        let peer = request.peer_self;
-        let peer_id = peer.id;
-
-        // V1 is deprecated in favour of V2 (cert-gated). Log every inbound V1 so production
-        // log volume drops as senders upgrade; this lets us pick a V1 cut-off date from log
-        // grep rather than guessing. No rate-limiting needed: per-RPC PoW (see
-        // [[pow-is-rate-limit]]) already gates inbound frequency per source.
-        warn!("received deprecated AnnounceV1 from peer {} at {}; V1 will be removed in a future release", peer_id, peer.address);
-
-        // Check that this Peer checks out and add it to our kademlia
-        self.add_potential_peer_to_kademlia(peer, self.runtime_services.time_provider.as_ref().current_time_millis()).await;
-
-        let (peers_nearest, _) = self.kademlia.read().get_peers_for_key(&peer_id, config::ANNOUNCE_V1_NUM_PEERS);
-
-        let json = json::struct_to_bytes(&AnnounceResponseV1 {
-            peer_self: self.peer_self.read().clone(),
-            peers_nearest,
-        })?;
-        Ok((PayloadResponseKind::AnnounceResponseV1, BytesGatherer::from_bytes(json)))
-    }
-
-    #[allow(non_snake_case)]
     async fn dispatch_network_payload_x_AnnounceV2(&self, _cancellation_token: CancellationToken, payload_request_kind: PayloadRequestKind, bytes: Bytes) -> anyhow::Result<(PayloadResponseKind, BytesGatherer)> {
         anyhow_assert_eq!(&PayloadRequestKind::AnnounceV2, &payload_request_kind);
 
@@ -432,7 +407,7 @@ impl HashiverseServer {
         }
         self.add_potential_peer_to_kademlia(peer, now).await;
 
-        let (peers_nearest, _) = self.kademlia.read().get_peers_for_key(&peer_id, config::ANNOUNCE_V1_NUM_PEERS);
+        let (peers_nearest, _) = self.kademlia.read().get_peers_for_key(&peer_id, config::ANNOUNCE_NUM_PEERS);
 
         let json = json::struct_to_bytes(&AnnounceResponseV2 {
             peer_self: self.peer_self.read().clone(),
@@ -2020,6 +1995,50 @@ mod tests {
             // The peer is not findable by id.
             let (peers, _) = server.kademlia.read().get_peers_for_key(&announcing_peer_id, 8);
             assert!(!peers.iter().any(|p| p.id == announcing_peer_id), "rejected peer must not be reachable through get_peers_for_key");
+        }
+
+        // AnnounceV1 had no transport ownership proof, so it was a way into Kademlia that bypassed V2's gate.
+        // Its wire slot is kept reserved but the dispatcher must reject it outright.
+        #[tokio::test]
+        async fn retired_announce_v1_is_rejected() -> anyhow::Result<()> {
+            use hashiverse_lib::protocol::rpc::rpc_request::{RpcRequestPacketTx, RpcRequestPacketTxFlags};
+
+            let server = make_test_server().await;
+            let time_provider = server.runtime_services.time_provider.clone();
+            let pow_generator = SingleThreadedPowGenerator::new();
+            let announcing_peer = make_announcing_peer(time_provider.as_ref(), &pow_generator, "7777").await;
+            let announcing_peer_id = announcing_peer.id;
+            let baseline_len = server.kademlia.read().len();
+
+            // The old V1 body was just the peer record — send exactly that under the retired kind.
+            #[derive(serde::Serialize)]
+            struct LegacyAnnounceV1 {
+                peer_self: Peer,
+            }
+            let legacy_payload = json::struct_to_bytes(&LegacyAnnounceV1 { peer_self: announcing_peer })?;
+
+            let rpc_request_packet_tx = RpcRequestPacketTx::encode(
+                time_provider.as_ref(),
+                config::POW_MINIMUM_PER_RPC_SERVER_KNOWN,
+                RpcRequestPacketTxFlags::SERVER_KNOWN,
+                PayloadRequestKind::RetiredAnnounceV1,
+                &server.server_id.id,
+                &server.server_id.keys.verification_key_bytes,
+                &server.server_id.keys.pq_commitment_bytes,
+                legacy_payload,
+                &pow_generator,
+            )
+            .await?;
+            let rpc_request_packet_rx = RpcRequestPacketRx::decode(&time_provider.current_time_millis(), &server.server_id.keys.verification_key_bytes, &server.server_id.keys.pq_commitment_bytes, rpc_request_packet_tx.bytes)?;
+            assert_eq!(rpc_request_packet_rx.payload_request_kind, PayloadRequestKind::RetiredAnnounceV1);
+
+            let error = server.dispatch_network_envelope(CancellationToken::new(), None, rpc_request_packet_rx).await.err().expect("retired AnnounceV1 must be rejected");
+            assert!(error.to_string().contains("retired"), "error={}", error);
+
+            assert_eq!(server.kademlia.read().len(), baseline_len, "no Kademlia mutation from a retired announce");
+            let (peers, _) = server.kademlia.read().get_peers_for_key(&announcing_peer_id, 8);
+            assert!(!peers.iter().any(|p| p.id == announcing_peer_id));
+            Ok(())
         }
     }
 
