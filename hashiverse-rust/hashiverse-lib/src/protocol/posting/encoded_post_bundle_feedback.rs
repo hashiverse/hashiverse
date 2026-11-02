@@ -140,6 +140,12 @@ impl EncodedPostBundleFeedbackV1 {
     /// 3. The header's hash is the same as the body's
     /// 4. Each feedback entry's proof-of-work is correct.
     pub fn verify(&self) -> anyhow::Result<()> {
+        self.verify_envelope()?;
+        self.verify_entries_pow()
+    }
+
+    /// Checks (1)-(3) of [`Self::verify`]: the bundle is intact and signed as its header claims, without checking each entry's PoW.
+    fn verify_envelope(&self) -> anyhow::Result<()> {
         // (1) Header signature
         self.header.verify()?;
 
@@ -155,7 +161,11 @@ impl EncodedPostBundleFeedbackV1 {
         // (3) Hash
         let feedbacks_bytes_hash = hashing::hash(self.feedbacks_bytes.as_ref());
         anyhow_assert_eq!(feedbacks_bytes_hash, self.header.feedbacks_bytes_hash, "feedbacks_bytes_hash mismatch");
+        Ok(())
+    }
 
+    /// Check (4) of [`Self::verify`].
+    fn verify_entries_pow(&self) -> anyhow::Result<()> {
         // (4) PoW check for every entry
         let num_entries = self.feedbacks_bytes.len() / ENTRY_SIZE;
         for i in 0..num_entries {
@@ -176,11 +186,19 @@ impl EncodedPostBundleFeedbackV1 {
     ///    [`EncodedPostBundleFeedbackHeaderV1::verify`] alone only checks the header against the key the header itself supplies.
     /// 2. The bundle is for this location_id.
     pub fn verify_for_location(&self, location_id: &Id) -> anyhow::Result<()> {
+        self.verify_origin_for_location(location_id)?;
+        self.verify_entries_pow()
+    }
+
+    /// [`Self::verify_for_location`] minus the per-entry PoW check: proves a genuine server published this bundle for `location_id`,
+    /// but tolerates individual entries with bad PoW, which [`Self::merge`] drops one at a time.  For a server's own (direct) copy, so that
+    /// one bad entry it holds cannot erase all of its other feedback.  Never forward a bundle that has only passed this check.
+    pub fn verify_origin_for_location(&self, location_id: &Id) -> anyhow::Result<()> {
         self.header.peer.verify().map_err(|e| anyhow::anyhow!("feedback bundle peer {} failed verification: {}", self.header.peer.id, e))?;
         if self.header.location_id != *location_id {
             anyhow::bail!("feedback bundle location_id {} does not match location_id {}", self.header.location_id, location_id);
         }
-        self.verify()
+        self.verify_envelope()
     }
 
     pub fn get_post_pow_for_feedback_type(&self, post_id: &Id, feedback_type: u8) -> Pow {
@@ -253,8 +271,54 @@ impl EncodedPostBundleFeedbackV1 {
 }
 
 #[cfg(test)]
+pub(crate) mod test_fixtures {
+    use super::*;
+    use crate::tools::pow;
+    use crate::tools::server_id::ServerId;
+    use crate::tools::time_provider::time_provider::RealTimeProvider;
+
+    /// A feedback entry whose pow is exactly what its random salt achieves, so it passes `pow_verify`.
+    pub(crate) fn make_valid_feedback(post_id: Id, feedback_type: u8) -> anyhow::Result<EncodedPostFeedbackV1> {
+        let salt = Salt::random();
+        let (measured_pow, _) = pow::pow_measure(&[post_id.as_bytes(), &[feedback_type]], &salt)?;
+        let encoded_post_feedback = EncodedPostFeedbackV1::new(post_id, feedback_type, salt, measured_pow);
+        encoded_post_feedback.pow_verify()?;
+        Ok(encoded_post_feedback)
+    }
+
+    /// A feedback entry claiming `Pow(255)` with a random salt — what an attacker would plant.
+    pub(crate) fn make_forged_feedback(post_id: Id, feedback_type: u8) -> EncodedPostFeedbackV1 {
+        let encoded_post_feedback = EncodedPostFeedbackV1::new(post_id, feedback_type, Salt::random(), Pow(255));
+        assert!(encoded_post_feedback.pow_verify().is_err());
+        encoded_post_feedback
+    }
+
+    /// A bundle of `encoded_post_feedbacks` for `location_id`, signed by `server_id` as it would publish it.
+    pub(crate) fn make_bundle_signed_by(server_id: &ServerId, location_id: Id, time_millis: TimeMillis, encoded_post_feedbacks: &[EncodedPostFeedbackV1]) -> anyhow::Result<EncodedPostBundleFeedbackV1> {
+        let peer = server_id.to_peer(&RealTimeProvider)?;
+
+        let mut feedbacks_bytes_mut = Vec::new();
+        for encoded_post_feedback in encoded_post_feedbacks {
+            encoded_post_feedback.append_encode_to_bytes(&mut feedbacks_bytes_mut)?;
+        }
+        let feedbacks_bytes = Bytes::from(feedbacks_bytes_mut);
+
+        let mut header = EncodedPostBundleFeedbackHeaderV1 {
+            time_millis,
+            location_id,
+            feedbacks_bytes_hash: hashing::hash(feedbacks_bytes.as_ref()),
+            peer,
+            signature: Signature::zero(),
+        };
+        header.signature_generate(&server_id.keys.signature_key);
+        Ok(EncodedPostBundleFeedbackV1 { header, feedbacks_bytes })
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    use super::test_fixtures::{make_bundle_signed_by, make_forged_feedback, make_valid_feedback};
     use crate::tools::server_id::ServerId;
     use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
     use crate::tools::pow;
@@ -356,46 +420,12 @@ mod tests {
         make_bundle_with_encoded_post_feedbacks(time_millis, &encoded_post_feedbacks).await
     }
 
-    /// A feedback entry whose pow is exactly what its random salt achieves, so it passes `pow_verify`.
-    fn make_valid_feedback(post_id: Id, feedback_type: u8) -> anyhow::Result<EncodedPostFeedbackV1> {
-        let salt = Salt::random();
-        let (measured_pow, _) = pow::pow_measure(&[post_id.as_bytes(), &[feedback_type]], &salt)?;
-        let encoded_post_feedback = EncodedPostFeedbackV1::new(post_id, feedback_type, salt, measured_pow);
-        encoded_post_feedback.pow_verify()?;
-        Ok(encoded_post_feedback)
-    }
-
-    /// A feedback entry claiming `Pow(255)` with a random salt — what an attacker would plant.
-    fn make_forged_feedback(post_id: Id, feedback_type: u8) -> EncodedPostFeedbackV1 {
-        let encoded_post_feedback = EncodedPostFeedbackV1::new(post_id, feedback_type, Salt::random(), Pow(255));
-        assert!(encoded_post_feedback.pow_verify().is_err());
-        encoded_post_feedback
-    }
 
     async fn make_bundle_with_encoded_post_feedbacks(time_millis: TimeMillis, encoded_post_feedbacks: &[EncodedPostFeedbackV1]) -> anyhow::Result<EncodedPostBundleFeedbackV1> {
         let server_id = ServerId::new("own_pow", &RealTimeProvider, Pow(0), true, &SingleThreadedPowGenerator::new()).await?;
         make_bundle_signed_by(&server_id, Id::random(), time_millis, encoded_post_feedbacks)
     }
 
-    fn make_bundle_signed_by(server_id: &ServerId, location_id: Id, time_millis: TimeMillis, encoded_post_feedbacks: &[EncodedPostFeedbackV1]) -> anyhow::Result<EncodedPostBundleFeedbackV1> {
-        let peer = server_id.to_peer(&RealTimeProvider)?;
-
-        let mut feedbacks_bytes_mut = Vec::new();
-        for encoded_post_feedback in encoded_post_feedbacks {
-            encoded_post_feedback.append_encode_to_bytes(&mut feedbacks_bytes_mut)?;
-        }
-        let feedbacks_bytes = Bytes::from(feedbacks_bytes_mut);
-
-        let mut header = EncodedPostBundleFeedbackHeaderV1 {
-            time_millis,
-            location_id,
-            feedbacks_bytes_hash: hashing::hash(feedbacks_bytes.as_ref()),
-            peer,
-            signature: Signature::zero(),
-        };
-        header.signature_generate(&server_id.keys.signature_key);
-        Ok(EncodedPostBundleFeedbackV1 { header, feedbacks_bytes })
-    }
 
     #[tokio::test]
     async fn get_post_pows_reports_pow_per_feedback_type() -> anyhow::Result<()> {
@@ -518,6 +548,21 @@ mod tests {
         let unworked_bundle = make_bundle_signed_by(&unworked_server_id, location_id, TimeMillis(1000), &encoded_post_feedbacks)?;
         unworked_bundle.verify()?;
         assert!(unworked_bundle.verify_for_location(&location_id).is_err(), "a self-signed bundle from a pow-less identity must be rejected");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn verify_origin_for_location_tolerates_bad_entries_but_not_bad_origin() -> anyhow::Result<()> {
+        let location_id = Id::random();
+        let genuine_server_id = ServerId::new("genuine", &RealTimeProvider, crate::tools::config::SERVER_KEY_POW_MIN, true, &SingleThreadedPowGenerator::new()).await?;
+        let poisoned_bundle = make_bundle_signed_by(&genuine_server_id, location_id, TimeMillis(1000), &[make_valid_feedback(Id::random(), 1)?, make_forged_feedback(Id::random(), 2)])?;
+        poisoned_bundle.verify_origin_for_location(&location_id)?;
+        assert!(poisoned_bundle.verify_for_location(&location_id).is_err(), "full verification still rejects the forged entry");
+        assert!(poisoned_bundle.verify_origin_for_location(&Id::random()).is_err(), "a bundle for another location must be rejected");
+
+        let mut tampered_bundle = poisoned_bundle.clone();
+        tampered_bundle.feedbacks_bytes = tampered_bundle.feedbacks_bytes.slice(0..ENTRY_SIZE);
+        assert!(tampered_bundle.verify_origin_for_location(&location_id).is_err(), "bytes not covered by the signed hash must be rejected");
         Ok(())
     }
 
