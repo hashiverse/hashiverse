@@ -3,11 +3,17 @@
 //! The outbound-server and inbound-client halves of a response, symmetric to
 //! [`crate::protocol::rpc::rpc_request`]:
 //!
-//! - [`RpcResponsePacketTx`] — server side. `encode` signs the request's
-//!   `pow_content_hash` with the server's private key and embeds the signature in the
+//! - [`RpcResponsePacketTx`] — server side. `encode` picks a fresh random
+//!   `pow_content_hash_salt` and signs `hash(pow_content_hash_salt || pow_content_hash)`
+//!   with the server's private key, embedding both the signature and the salt in the
 //!   header. The signature binds the response to *this* specific request and *this*
 //!   specific server identity, so clients can reject replays across servers or across
 //!   requests. Payload is optionally compressed.
+//!
+//!   The salt matters: `pow_content_hash` is chosen by the caller, and every other
+//!   server-key signature in the protocol (peers, bundle headers, tokens) is a signature
+//!   over a 32-byte blake3 digest. Signing the caller's hash directly would turn every
+//!   server into a signing oracle for arbitrary structures under its identity key.
 //! - [`RpcResponsePacketRx`] — client side. Parses the server-identity fields
 //!   (verification key, PQ commitment, sponsor id, PoW timestamp, PoW hash, salt) from
 //!   the header, re-derives the server id PoW to check it is sufficient, and verifies
@@ -18,9 +24,13 @@ use crate::protocol::payload::payload::PayloadResponseKind;
 use crate::tools::server_id::ServerId;
 use crate::tools::time::{TimeMillis, TimeMillisBytes, TIME_MILLIS_BYTES};
 use crate::tools::types::{Hash, Id, PQCommitmentBytes, Pow, Salt, Signature, SignatureKey, VerificationKeyBytes, HASH_BYTES, ID_BYTES, PQ_COMMITMENT_BYTES, SALT_BYTES, SIGNATURE_BYTES, VERIFICATION_KEY_BYTES};
-use crate::tools::{compression, config, signing, BytesGatherer};
+use crate::tools::{compression, config, hashing, signing, BytesGatherer};
 use bitflags::bitflags;
 use bytes::{Buf, Bytes};
+
+/// Version 2 added `pow_content_hash_salt` after the signature (the signature covers
+/// `hash(pow_content_hash_salt || pow_content_hash)` instead of the raw `pow_content_hash`).
+pub const RPC_RESPONSE_PACKET_VERSION: u8 = 2;
 
 bitflags! {
     pub struct RpcResponsePacketTxFlags: u8 {
@@ -32,8 +42,10 @@ bitflags! {
 ///
 /// `RpcResponsePacketTx` is a type-level tag — its sole associated function, `encode`,
 /// assembles the wire response given the server's identity fields, the `pow_content_hash`
-/// from the corresponding request, and a payload. The server signs the request's
-/// `pow_content_hash` with its [`SignatureKey`] and emits the signature on the response so
+/// from the corresponding request, and a payload. The server signs
+/// `hash(pow_content_hash_salt || pow_content_hash)` with its [`SignatureKey`], using a fresh
+/// random salt it chooses itself (never the raw caller-chosen hash — see the module docs),
+/// and emits the signature and salt on the response so
 /// the caller can prove the response was produced by the intended destination peer for
 /// *this* specific request — a defence against both response substitution and replayed
 /// responses.
@@ -69,11 +81,13 @@ impl RpcResponsePacketTx {
             anyhow::bail!("response payload size exceeds maximum allowed size: {} > {}", payload_compressed_len, config::PROTOCOL_MAX_BLOB_SIZE_RESPONSE);
         }
 
-        let pow_content_hash_signature = signing::sign(server_id_signature_key, pow_content_hash.as_ref());
+        let pow_content_hash_salt = Salt::random();
+        let pow_content_hash_salted = hashing::hash_two(pow_content_hash_salt.as_ref(), pow_content_hash.as_ref());
+        let pow_content_hash_signature = signing::sign(server_id_signature_key, pow_content_hash_salted.as_ref());
 
     // All small header fields go into accumulator
     let mut result = BytesGatherer::default();
-    result.put_u8(1); // Version = 1 (for now)
+    result.put_u8(RPC_RESPONSE_PACKET_VERSION);
     result.put_u8(flags.bits());
     result.put_u16_le(payload_response_kind as u16);
     result.put_slice(server_id_verification_key_bytes.as_ref());
@@ -83,6 +97,7 @@ impl RpcResponsePacketTx {
     result.put_slice(server_id_hash.as_ref());
     result.put_slice(server_id_salt.as_ref());
     result.put_slice(pow_content_hash_signature.as_ref());
+    result.put_slice(pow_content_hash_salt.as_ref());
     result.put_u32_le(payload_compressed_len as u32);
     result.put_bytes_gatherer(payload_compressed);
 
@@ -94,7 +109,7 @@ impl RpcResponsePacketTx {
 /// signature verification.
 ///
 /// By the time an `RpcResponsePacketRx` exists, the decoder has already proved that the
-/// remote server really signed over the request's `pow_content_hash` and that the signing
+/// remote server really signed over the request's (salted) `pow_content_hash` and that the signing
 /// identity matches the destination the caller intended. Callers see only the
 /// [`PayloadResponseKind`] (so they can pick the right payload deserializer) and the still-
 /// compressed body bytes.
@@ -108,13 +123,13 @@ pub struct RpcResponsePacketRx {
 impl RpcResponsePacketRx {
     pub fn decode(destination_id: &Id, pow_content_hash: &Hash, pow_min: Pow, mut response_bytes: Bytes) -> anyhow::Result<Self> {
         // Do we have enough bytes for the header?
-        if response_bytes.len() < size_of::<u8>() + size_of::<u8>() + size_of::<u16>() + VERIFICATION_KEY_BYTES + PQ_COMMITMENT_BYTES + ID_BYTES + TIME_MILLIS_BYTES + HASH_BYTES + SALT_BYTES + SIGNATURE_BYTES + size_of::<u32>() {
+        if response_bytes.len() < size_of::<u8>() + size_of::<u8>() + size_of::<u16>() + VERIFICATION_KEY_BYTES + PQ_COMMITMENT_BYTES + ID_BYTES + TIME_MILLIS_BYTES + HASH_BYTES + SALT_BYTES + SIGNATURE_BYTES + SALT_BYTES + size_of::<u32>() {
             anyhow::bail!("RpcResponsePacket is too short for header");
         }
 
         let version = response_bytes.get_u8();
-        if 1 != version {
-            anyhow::bail!("Unsupported RpcRequestPacket version: {}", version);
+        if RPC_RESPONSE_PACKET_VERSION != version {
+            anyhow::bail!("Unsupported RpcResponsePacket version: {}", version);
         }
 
         let flags = RpcResponsePacketTxFlags::from_bits(response_bytes.get_u8()).ok_or_else(|| anyhow::anyhow!("Invalid RpcResponsePacket flags"))?;
@@ -134,6 +149,8 @@ impl RpcResponsePacketRx {
 
         let pow_content_hash_signature: Signature = Signature(response_bytes.slice(..SIGNATURE_BYTES).as_ref().try_into()?);
         response_bytes.advance(SIGNATURE_BYTES);
+        let pow_content_hash_salt = Salt(response_bytes.slice(..SALT_BYTES).as_ref().try_into()?);
+        response_bytes.advance(SALT_BYTES);
 
         let response_payload_len = response_bytes.get_u32_le() as usize;
 
@@ -175,9 +192,10 @@ impl RpcResponsePacketRx {
             }
         }
 
-        // Check that the server has signed our initial content hash
+        // Check that the server has signed our (salted) initial content hash
         let verification_key = server_id_verification_key.to_verification_key()?;
-        signing::verify(&verification_key, &pow_content_hash_signature, pow_content_hash.as_ref())?;
+        let pow_content_hash_salted = hashing::hash_two(pow_content_hash_salt.as_ref(), pow_content_hash.as_ref());
+        signing::verify(&verification_key, &pow_content_hash_signature, pow_content_hash_salted.as_ref())?;
 
         // Do we need to decompress?
         let response_payload_decompressed = match flags.contains(RpcResponsePacketTxFlags::COMPRESSED) {
