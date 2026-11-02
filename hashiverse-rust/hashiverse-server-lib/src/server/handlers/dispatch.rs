@@ -1211,7 +1211,7 @@ impl HashiverseServer {
 
                 // Never trust the publisher's own sealed flag: a sealed bundle is cached with no expiry.
                 // NB: only the flag is taken from the normalised copy - we cache the original signed bytes.
-                encoded_post_bundle.normalise_flags_for_bucket(&request.token.bucket_location);
+                encoded_post_bundle.normalise_flags_for_bucket(&request.token.bucket_location, time_millis);
                 let originator_peer_id = encoded_post_bundle.header.peer.id;
                 let is_sealed = encoded_post_bundle.header.sealed;
                 if self.post_bundle_cache.on_upload(request.token.bucket_location.location_id, originator_peer_id, bundle_bytes, time_millis, is_sealed) {

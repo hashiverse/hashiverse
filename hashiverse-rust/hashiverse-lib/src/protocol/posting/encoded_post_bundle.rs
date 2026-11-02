@@ -240,10 +240,12 @@ impl EncodedPostBundleV1 {
     ///
     /// This deliberately normalises rather than rejects: the posts in such a bundle are still genuine, and older servers
     /// can legitimately produce inconsistent flags (e.g. by healing posts in without recomputing them).
+    /// The header timestamp is clamped to `time_millis_now`: `verify_for_bucket` tolerates it being up to a clock drift in our future,
+    /// which must not let a publisher seal its bundle (and so pin it in caches with no expiry) before the bucket has really sealed.
     /// NB: the header signature no longer covers the flags after this, so only use the result locally - never forward it.
-    pub fn normalise_flags_for_bucket(&mut self, bucket_location: &BucketLocation) {
+    pub fn normalise_flags_for_bucket(&mut self, bucket_location: &BucketLocation, time_millis_now: TimeMillis) {
         self.header.overflowed |= self.header.num_posts > config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS;
-        self.header.sealed = bucket_location.is_sealed_at(self.header.time_millis, self.header.overflowed);
+        self.header.sealed = bucket_location.is_sealed_at(self.header.time_millis.min(time_millis_now), self.header.overflowed);
     }
 
     fn verify_and_decode_post_headers(&self, base_id: &Id) -> anyhow::Result<Vec<EncodedPostV1>> {
@@ -385,7 +387,7 @@ mod tests {
     use crate::protocol::posting::encoded_post::EncodedPostV1;
     use crate::tools::buckets::BucketType;
     use crate::tools::server_id::ServerId;
-    use crate::tools::time::{MILLIS_IN_DAY, MILLIS_IN_SECOND};
+    use crate::tools::time::{MILLIS_IN_DAY, MILLIS_IN_MINUTE, MILLIS_IN_SECOND};
     use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
     use crate::tools::tools;
     use crate::tools::types::Pow;
@@ -636,14 +638,14 @@ mod tests {
         let posts = fixture.make_own_posts(1).await?;
         let mut prematurely_sealed_encoded_post_bundle = fixture.make_bundle(&posts)?;
         prematurely_sealed_encoded_post_bundle.header.sealed = true;
-        prematurely_sealed_encoded_post_bundle.normalise_flags_for_bucket(&fixture.bucket_location);
+        prematurely_sealed_encoded_post_bundle.normalise_flags_for_bucket(&fixture.bucket_location, fixture.time_millis_now);
         assert!(!prematurely_sealed_encoded_post_bundle.header.sealed);
         assert!(!prematurely_sealed_encoded_post_bundle.header.overflowed);
 
         // An overflowed bundle is legitimately sealed early
         let mut overflowed_encoded_post_bundle = fixture.make_bundle(&posts)?;
         overflowed_encoded_post_bundle.header.overflowed = true;
-        overflowed_encoded_post_bundle.normalise_flags_for_bucket(&fixture.bucket_location);
+        overflowed_encoded_post_bundle.normalise_flags_for_bucket(&fixture.bucket_location, fixture.time_millis_now);
         assert!(overflowed_encoded_post_bundle.header.overflowed);
         assert!(overflowed_encoded_post_bundle.header.sealed);
 
@@ -651,7 +653,7 @@ mod tests {
         let many_posts = fixture.make_own_posts(config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS as usize + 1).await?;
         let mut understated_encoded_post_bundle = fixture.make_bundle(&many_posts)?;
         understated_encoded_post_bundle.verify_for_bucket(&fixture.bucket_location, fixture.time_millis_now)?;
-        understated_encoded_post_bundle.normalise_flags_for_bucket(&fixture.bucket_location);
+        understated_encoded_post_bundle.normalise_flags_for_bucket(&fixture.bucket_location, fixture.time_millis_now);
         assert!(understated_encoded_post_bundle.header.overflowed);
         assert!(understated_encoded_post_bundle.header.sealed);
 
@@ -659,8 +661,22 @@ mod tests {
         let past_bucket_location = BucketLocation::new(BucketType::User, fixture.bucket_location.base_id, MILLIS_IN_DAY, fixture.time_millis_now - MILLIS_IN_DAY.const_mul(2))?;
         let mut unsealed_past_encoded_post_bundle = fixture.make_bundle(&[])?;
         unsealed_past_encoded_post_bundle.header.location_id = past_bucket_location.location_id;
-        unsealed_past_encoded_post_bundle.normalise_flags_for_bucket(&past_bucket_location);
+        unsealed_past_encoded_post_bundle.normalise_flags_for_bucket(&past_bucket_location, fixture.time_millis_now);
         assert!(unsealed_past_encoded_post_bundle.header.sealed);
+
+        // A header dated into our future (within the drift verify_for_bucket allows) cannot seal the bundle before the bucket really seals
+        let bucket_location = &fixture.bucket_location;
+        let seal_time_millis = bucket_location.bucket_time_millis + bucket_location.duration + config::ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS;
+        let time_millis_before_seal = seal_time_millis - MILLIS_IN_MINUTE.const_mul(5);
+        let mut future_dated_encoded_post_bundle = fixture.make_bundle(&posts)?;
+        future_dated_encoded_post_bundle.header.time_millis = time_millis_before_seal + MILLIS_IN_MINUTE.const_mul(9);
+        future_dated_encoded_post_bundle.header.sealed = true;
+        let mut normalised_before_seal = future_dated_encoded_post_bundle.clone();
+        normalised_before_seal.normalise_flags_for_bucket(bucket_location, time_millis_before_seal);
+        assert!(!normalised_before_seal.header.sealed, "a future-dated header must not seal the bundle early");
+        let mut normalised_after_seal = future_dated_encoded_post_bundle.clone();
+        normalised_after_seal.normalise_flags_for_bucket(bucket_location, seal_time_millis + MILLIS_IN_MINUTE);
+        assert!(normalised_after_seal.header.sealed, "once the bucket has really sealed, the bundle is sealed");
         Ok(())
     }
 

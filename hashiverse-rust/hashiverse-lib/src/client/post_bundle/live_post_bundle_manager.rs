@@ -330,7 +330,7 @@ impl AcceptedPostBundles {
         best_encoded_post_bundle.header.overflowed = authoritative
             .chain(direct)
             .any(|encoded_post_bundle| encoded_post_bundle.header.overflowed || encoded_post_bundle.header.num_posts > config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS);
-        best_encoded_post_bundle.normalise_flags_for_bucket(&self.bucket_location);
+        best_encoded_post_bundle.normalise_flags_for_bucket(&self.bucket_location, self.time_millis);
         Some(best_encoded_post_bundle)
     }
 
