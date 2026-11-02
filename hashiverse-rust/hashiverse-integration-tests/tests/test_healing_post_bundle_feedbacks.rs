@@ -28,7 +28,7 @@ use tokio_util::sync::CancellationToken;
 
 const CLOCK_SCALE_FACTOR: f64 = 15.0 * 60.0;
 const FEEDBACK_TYPE_LIKE: u8 = 1;
-const INJECTED_POW: Pow = Pow(200);
+const FEEDBACK_TYPE_FORGED: u8 = 2;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_healing_post_bundle_feedbacks() -> anyhow::Result<()> {
@@ -92,6 +92,7 @@ async fn test_healing_post_bundle_feedbacks() -> anyhow::Result<()> {
     {
         let time_provider = time_provider.clone();
         let hashiverse_servers = Arc::clone(&hashiverse_servers);
+        let pow_generator = pow_generator.clone();
 
         fiddler_join_set.spawn(async move {
             scopeguard::defer! {
@@ -157,18 +158,22 @@ async fn test_healing_post_bundle_feedbacks() -> anyhow::Result<()> {
                 let inject_from = bundle_holders.len() / 2;
                 anyhow_assert!(inject_from > 0, "Not enough bundle holders to split for injection (got {})", bundle_holders.len());
 
-                let injected_feedback = EncodedPostFeedbackV1 {
-                    post_id,
-                    feedback_type: FEEDBACK_TYPE_LIKE,
-                    salt: Salt::random(),
-                    pow: INJECTED_POW,
-                };
+                // Genuine feedback: its pow is really achieved by its salt, so honest servers accept it via healing.
+                let (injected_salt, injected_pow, _) = EncodedPostFeedbackV1::pow_generate(&post_id, FEEDBACK_TYPE_LIKE, pow_generator.as_ref()).await?;
+                let injected_feedback = EncodedPostFeedbackV1::new(post_id, FEEDBACK_TYPE_LIKE, injected_salt, injected_pow);
+                injected_feedback.pow_verify()?;
+
+                // Forged feedback: claims pow=255 with a random salt. It must never spread to the near holders —
+                // neither clients (merge) nor servers (HealPostBundleFeedbackV1) may accept it.
+                let forged_feedback = EncodedPostFeedbackV1::new(post_id, FEEDBACK_TYPE_FORGED, Salt::random(), Pow(255));
+                anyhow_assert!(forged_feedback.pow_verify().is_err(), "forged feedback unexpectedly has valid pow");
 
                 warn!("--- Injecting feedback to {} far bundle holders (skipping {} nearest) ---",
                     bundle_holders.len() - inject_from, inject_from);
                 for server in &bundle_holders[inject_from..] {
                     let time_millis = time_provider.current_time_millis();
                     server.environment.put_post_feedback_if_more_powerful(time_millis, &bucket_location.location_id, &injected_feedback)?;
+                    server.environment.put_post_feedback_if_more_powerful(time_millis, &bucket_location.location_id, &forged_feedback)?;
                     warn!("  Injected on server {}", server.server_id.id);
                 }
 
@@ -190,12 +195,27 @@ async fn test_healing_post_bundle_feedbacks() -> anyhow::Result<()> {
                         v.is_ok_and(|v| {
                             v.post_id_bytes() == post_id.as_ref()
                                 && v.feedback_type() == FEEDBACK_TYPE_LIKE
-                                && v.pow() >= INJECTED_POW
+                                && v.pow() >= injected_pow
                         })
                     });
                     anyhow_assert!(
                         has_feedback,
                         "Server {} (rank {}) missing healed feedback for post {}",
+                        server.server_id.id, i, post_id
+                    );
+                }
+
+                warn!("--- Checking the forged feedback did not spread to the near holders ---");
+                for (i, server) in bundle_holders[..inject_from].iter().enumerate() {
+                    let time_millis = time_provider.current_time_millis();
+                    let feedback_bytes = server.environment
+                        .get_post_bundle_encoded_post_feedbacks_bytes(time_millis, &bucket_location.location_id)?;
+                    let has_forged_feedback = EncodedPostFeedbackViewV1::iter(&feedback_bytes).any(|v| {
+                        v.is_ok_and(|v| v.post_id_bytes() == post_id.as_ref() && v.feedback_type() == FEEDBACK_TYPE_FORGED)
+                    });
+                    anyhow_assert!(
+                        !has_forged_feedback,
+                        "Server {} (rank {}) accepted forged feedback for post {}",
                         server.server_id.id, i, post_id
                     );
                 }

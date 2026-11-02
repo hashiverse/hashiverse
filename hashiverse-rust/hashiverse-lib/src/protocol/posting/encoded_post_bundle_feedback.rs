@@ -183,6 +183,13 @@ impl EncodedPostBundleFeedbackV1 {
     /// `(post_id, feedback_type)` pair across all bundles.  The header is
     /// taken from the most-recently-timestamped bundle.  Returns `None` if
     /// `bundles` is empty.
+    ///
+    /// Entries whose claimed pow does not match what their salt achieves are
+    /// dropped individually.  The bundle header signature only proves which
+    /// server produced the bundle, not that its entries are honest, so a
+    /// dishonest (or poisoned) server must not be able to plant pow=255 flags.
+    /// Dropping per-entry rather than rejecting the whole bundle means one bad
+    /// entry cannot erase all other feedback for the bucket.
     pub fn merge(bundles: &[Self]) -> Option<Self> {
         let header = bundles.iter().max_by_key(|b| b.header.time_millis)?.header.clone();
 
@@ -191,16 +198,22 @@ impl EncodedPostBundleFeedbackV1 {
             for view in EncodedPostFeedbackViewV1::iter(&bundle.feedbacks_bytes) {
                 let Ok(view) = view else { continue };
                 let Ok(post_id) = Id::from_slice(view.post_id_bytes()) else { continue };
-                let key = (post_id, view.feedback_type());
-                let entry = global_max.entry(key).or_insert_with(|| EncodedPostFeedbackV1 {
-                    post_id,
-                    feedback_type: view.feedback_type(),
-                    salt: Salt::from_slice(view.salt_bytes()).unwrap_or_else(|_| Salt::zero()),
-                    pow: view.pow(),
-                });
-                if view.pow() > entry.pow {
-                    entry.salt = Salt::from_slice(view.salt_bytes()).unwrap_or_else(|_| Salt::zero());
-                    entry.pow = view.pow();
+                let Ok(salt) = Salt::from_slice(view.salt_bytes()) else { continue };
+                let encoded_post_feedback = EncodedPostFeedbackV1::new(post_id, view.feedback_type(), salt, view.pow());
+                if encoded_post_feedback.pow_verify().is_err() {
+                    continue;
+                }
+
+                let key = (post_id, encoded_post_feedback.feedback_type);
+                match global_max.entry(key) {
+                    std::collections::hash_map::Entry::Vacant(vacant) => {
+                        vacant.insert(encoded_post_feedback);
+                    }
+                    std::collections::hash_map::Entry::Occupied(mut occupied) => {
+                        if encoded_post_feedback.pow > occupied.get().pow {
+                            occupied.insert(encoded_post_feedback);
+                        }
+                    }
                 }
             }
         }
@@ -320,18 +333,40 @@ mod tests {
         Ok(())
     }
 
-    /// Builds a feedback bundle from explicit `(post_id, feedback_type, pow)` entries.
-    /// (`get_post_pows` / `get_post_pow_for_feedback_type` / `merge` read the entries directly and
-    /// do not verify PoW, so arbitrary pow values are fine here.)
+    /// Builds a feedback bundle from explicit `(post_id, feedback_type, pow)` entries with random salts.
+    /// The entries are NOT valid PoW: fine for `get_post_pows` / `get_post_pow_for_feedback_type`,
+    /// which read entries directly, but `merge` drops them — use `make_bundle_with_encoded_post_feedbacks`
+    /// with `make_valid_feedback` entries for merge tests.
     async fn make_bundle_with_feedbacks(time_millis: TimeMillis, feedbacks: &[(Id, u8, Pow)]) -> anyhow::Result<EncodedPostBundleFeedbackV1> {
+        let encoded_post_feedbacks: Vec<EncodedPostFeedbackV1> = feedbacks.iter().map(|(post_id, feedback_type, pow)| EncodedPostFeedbackV1::new(*post_id, *feedback_type, Salt::random(), *pow)).collect();
+        make_bundle_with_encoded_post_feedbacks(time_millis, &encoded_post_feedbacks).await
+    }
+
+    /// A feedback entry whose pow is exactly what its random salt achieves, so it passes `pow_verify`.
+    fn make_valid_feedback(post_id: Id, feedback_type: u8) -> anyhow::Result<EncodedPostFeedbackV1> {
+        let salt = Salt::random();
+        let (measured_pow, _) = pow::pow_measure(&[post_id.as_bytes(), &[feedback_type]], &salt)?;
+        let encoded_post_feedback = EncodedPostFeedbackV1::new(post_id, feedback_type, salt, measured_pow);
+        encoded_post_feedback.pow_verify()?;
+        Ok(encoded_post_feedback)
+    }
+
+    /// A feedback entry claiming `Pow(255)` with a random salt — what an attacker would plant.
+    fn make_forged_feedback(post_id: Id, feedback_type: u8) -> EncodedPostFeedbackV1 {
+        let encoded_post_feedback = EncodedPostFeedbackV1::new(post_id, feedback_type, Salt::random(), Pow(255));
+        assert!(encoded_post_feedback.pow_verify().is_err());
+        encoded_post_feedback
+    }
+
+    async fn make_bundle_with_encoded_post_feedbacks(time_millis: TimeMillis, encoded_post_feedbacks: &[EncodedPostFeedbackV1]) -> anyhow::Result<EncodedPostBundleFeedbackV1> {
         let time_provider = RealTimeProvider;
         let pow_generator = SingleThreadedPowGenerator::new();
         let server_id = ServerId::new("own_pow", &time_provider, Pow(0), true, &pow_generator).await?;
         let peer = server_id.to_peer(&time_provider)?;
 
         let mut feedbacks_bytes_mut = Vec::new();
-        for (post_id, feedback_type, pow) in feedbacks {
-            EncodedPostFeedbackV1::new(*post_id, *feedback_type, Salt::random(), *pow).append_encode_to_bytes(&mut feedbacks_bytes_mut)?;
+        for encoded_post_feedback in encoded_post_feedbacks {
+            encoded_post_feedback.append_encode_to_bytes(&mut feedbacks_bytes_mut)?;
         }
         let feedbacks_bytes = Bytes::from(feedbacks_bytes_mut);
 
@@ -378,13 +413,51 @@ mod tests {
     #[tokio::test]
     async fn merge_keeps_highest_pow_per_post_and_type() -> anyhow::Result<()> {
         let post_a = Id::random();
-        let bundle_low = make_bundle_with_feedbacks(TimeMillis(1000), &[(post_a, 1, Pow(10)), (post_a, 2, Pow(5))]).await?;
-        let bundle_high = make_bundle_with_feedbacks(TimeMillis(2000), &[(post_a, 1, Pow(25))]).await?;
 
-        let merged = EncodedPostBundleFeedbackV1::merge(&[bundle_low, bundle_high]).expect("non-empty input");
+        // Several valid candidates for (post_a, 1), spread over two bundles; random salts give a spread of measured pows.
+        let candidates_for_type_1: Vec<EncodedPostFeedbackV1> = (0..16).map(|_| make_valid_feedback(post_a, 1)).collect::<anyhow::Result<_>>()?;
+        let only_for_type_2 = make_valid_feedback(post_a, 2)?;
+        let expected_type_1_pow = candidates_for_type_1.iter().map(|encoded_post_feedback| encoded_post_feedback.pow).max().unwrap();
 
-        assert_eq!(Pow(25), merged.get_post_pow_for_feedback_type(&post_a, 1), "the higher pow for (post_a, type 1) must win");
-        assert_eq!(Pow(5), merged.get_post_pow_for_feedback_type(&post_a, 2), "the only pow for (post_a, type 2) must be preserved");
+        let (first_half, second_half) = candidates_for_type_1.split_at(8);
+        let mut first_bundle_feedbacks = first_half.to_vec();
+        first_bundle_feedbacks.push(only_for_type_2.clone());
+        let bundle_first = make_bundle_with_encoded_post_feedbacks(TimeMillis(1000), &first_bundle_feedbacks).await?;
+        let bundle_second = make_bundle_with_encoded_post_feedbacks(TimeMillis(2000), second_half).await?;
+
+        let merged = EncodedPostBundleFeedbackV1::merge(&[bundle_first, bundle_second]).expect("non-empty input");
+
+        assert_eq!(expected_type_1_pow, merged.get_post_pow_for_feedback_type(&post_a, 1), "the highest pow for (post_a, type 1) must win");
+        assert_eq!(only_for_type_2.pow, merged.get_post_pow_for_feedback_type(&post_a, 2), "the only pow for (post_a, type 2) must be preserved");
+        merged_entries_all_verify(&merged)?;
+        Ok(())
+    }
+
+    // Regression for C3: a forged pow=255 entry (from a dishonest server, or planted via an unchecked heal)
+    // must not win the merge, must not appear for keys that only have forged entries, and must not
+    // take the honest entries of the same bundle down with it.
+    #[tokio::test]
+    async fn merge_drops_entries_with_invalid_pow() -> anyhow::Result<()> {
+        let post_a = Id::random();
+        let post_b = Id::random();
+        let valid_for_post_a = make_valid_feedback(post_a, 1)?;
+
+        let poisoned_bundle = make_bundle_with_encoded_post_feedbacks(TimeMillis(1000), &[make_forged_feedback(post_a, 1), valid_for_post_a.clone(), make_forged_feedback(post_b, 2)]).await?;
+        let honest_bundle = make_bundle_with_encoded_post_feedbacks(TimeMillis(2000), &[]).await?;
+
+        let merged = EncodedPostBundleFeedbackV1::merge(&[poisoned_bundle, honest_bundle]).expect("non-empty input");
+
+        assert_eq!(valid_for_post_a.pow, merged.get_post_pow_for_feedback_type(&post_a, 1), "the valid entry must survive alongside a forged one");
+        assert_eq!(Pow(0), merged.get_post_pow_for_feedback_type(&post_b, 2), "a key with only a forged entry must be absent");
+        assert_eq!(merged.feedbacks_bytes.len(), ENTRY_SIZE, "only the one valid entry should remain");
+        merged_entries_all_verify(&merged)?;
+        Ok(())
+    }
+
+    fn merged_entries_all_verify(merged: &EncodedPostBundleFeedbackV1) -> anyhow::Result<()> {
+        for entry_bytes in merged.feedbacks_bytes.chunks_exact(ENTRY_SIZE) {
+            EncodedPostFeedbackV1::decode_from_bytes(entry_bytes)?.pow_verify()?;
+        }
         Ok(())
     }
 

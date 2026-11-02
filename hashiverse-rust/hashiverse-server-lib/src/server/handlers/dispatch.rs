@@ -1153,6 +1153,12 @@ impl HashiverseServer {
             if !post_bundle.header.encoded_post_ids.contains(&feedback.post_id) {
                 continue;
             }
+            // Same check as SubmitPostFeedbackV1: the claimed pow must be what the salt actually achieves,
+            // otherwise anyone could plant pow=255 on any (post, feedback_type) with one cheap RPC.
+            if let Err(e) = feedback.pow_verify() {
+                warn!("Rejecting healed feedback with invalid pow for post_id={} at location_id={}: {}", feedback.post_id, request.location_id, e);
+                continue;
+            }
             self.environment.put_post_feedback_if_more_powerful(time_millis, &request.location_id, feedback)?;
             accepted_count += 1;
         }
@@ -1950,6 +1956,9 @@ mod tests {
         use hashiverse_lib::client::key_locker::key_locker::{KeyLocker, KeyLockerManager};
         use hashiverse_lib::client::key_locker::mem_key_locker::MemKeyLockerManager;
         use hashiverse_lib::protocol::peer::Peer;
+        use hashiverse_lib::protocol::posting::encoded_post_feedback::{self, EncodedPostFeedbackV1};
+        use hashiverse_lib::tools::pow;
+        use hashiverse_lib::tools::types::Salt;
         use hashiverse_lib::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
         use hashiverse_lib::tools::runtime_services::RuntimeServices;
         use hashiverse_lib::tools::server_id::ServerId;
@@ -2057,6 +2066,57 @@ mod tests {
                 }
                 Ok(())
             }
+        }
+
+        async fn heal_feedbacks(fixture: &HealFixture, encoded_post_feedbacks: &[EncodedPostFeedbackV1]) -> anyhow::Result<u32> {
+            let request_bytes = HealPostBundleFeedbackV1::new_to_bytes(&fixture.bucket_location.location_id, encoded_post_feedbacks)?;
+            let (_, bytes_gatherer) = fixture.server.dispatch_network_payload_x_HealPostBundleFeedbackV1(CancellationToken::new(), PayloadRequestKind::HealPostBundleFeedbackV1, request_bytes).await?;
+            Ok(json::bytes_to_struct::<HealPostBundleFeedbackResponseV1>(&bytes_gatherer.to_bytes())?.accepted_count)
+        }
+
+        fn stored_feedbacks(fixture: &HealFixture) -> anyhow::Result<Vec<EncodedPostFeedbackV1>> {
+            let feedbacks_bytes = fixture.server.environment.get_post_bundle_encoded_post_feedbacks_bytes(fixture.time_millis_now, &fixture.bucket_location.location_id)?;
+            feedbacks_bytes.chunks_exact(encoded_post_feedback::ENTRY_SIZE).map(EncodedPostFeedbackV1::decode_from_bytes).collect()
+        }
+
+        fn make_valid_feedback(post_id: Id, feedback_type: u8) -> anyhow::Result<EncodedPostFeedbackV1> {
+            let salt = Salt::random();
+            let (measured_pow, _) = pow::pow_measure(&[post_id.as_bytes(), &[feedback_type]], &salt)?;
+            Ok(EncodedPostFeedbackV1::new(post_id, feedback_type, salt, measured_pow))
+        }
+
+        /// Heals one post into the server so it holds a bundle, and returns that post's id.
+        async fn fixture_with_stored_post() -> anyhow::Result<(HealFixture, Id)> {
+            let fixture = HealFixture::new().await?;
+            let donor_server_id = HealFixture::make_server_id(config::SERVER_KEY_POW_MIN).await?;
+            let posts = vec![fixture.make_own_post().await?];
+            let donor_header = fixture.make_donor_header(&donor_server_id, &posts, |_| {})?;
+            assert!(fixture.heal(&donor_header, &posts).await?);
+            let post_id = posts[0].0;
+            Ok((fixture, post_id))
+        }
+
+        // Regression for C3: a healed feedback claiming pow=255 with a salt that doesn't achieve it must not be stored.
+        #[tokio::test]
+        async fn heal_feedback_rejects_forged_pow() -> anyhow::Result<()> {
+            let (fixture, post_id) = fixture_with_stored_post().await?;
+            let forged_feedback = EncodedPostFeedbackV1::new(post_id, 3, Salt::random(), Pow(255));
+            assert!(forged_feedback.pow_verify().is_err());
+
+            assert_eq!(heal_feedbacks(&fixture, &[forged_feedback]).await?, 0);
+            assert!(stored_feedbacks(&fixture)?.is_empty(), "forged feedback must not be stored");
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn heal_feedback_accepts_valid_pow_and_skips_forged_in_same_request() -> anyhow::Result<()> {
+            let (fixture, post_id) = fixture_with_stored_post().await?;
+            let valid_feedback = make_valid_feedback(post_id, 1)?;
+            let forged_feedback = EncodedPostFeedbackV1::new(post_id, 2, Salt::random(), Pow(255));
+
+            assert_eq!(heal_feedbacks(&fixture, &[forged_feedback, valid_feedback.clone()]).await?, 1);
+            assert_eq!(stored_feedbacks(&fixture)?, vec![valid_feedback]);
+            Ok(())
         }
 
         #[tokio::test]
