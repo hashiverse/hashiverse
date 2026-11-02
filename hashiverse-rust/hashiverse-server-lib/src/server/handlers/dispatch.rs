@@ -1021,7 +1021,7 @@ impl HashiverseServer {
                 anyhow::bail!("HealPostBundleCommitV1: post bytes are for {} not {}", decoded_post.post_id, post_id);
             }
             decoded_post
-                .check_admissible_to_bucket(&request.token.bucket_location, request.donor_header.time_millis)
+                .check_admissible_to_bucket(&request.token.bucket_location, admission_reference_time_millis)
                 .map_err(|e| anyhow::anyhow!("HealPostBundleCommitV1: {}", e))?;
         }
 
