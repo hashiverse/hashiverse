@@ -20,7 +20,8 @@ pub const TESTING: bool = cfg!(any(test, debug_assertions));
 pub const POW_REDUCTION_FACTOR: u8 = if TESTING { 16 } else { 1 };
 pub const CLOCK_LENIENCE_FACTOR: i64 = if TESTING { 8 } else { 1 };
 
-use crate::tools::time::{DurationMillis, MILLIS_IN_DAY, MILLIS_IN_HOUR, MILLIS_IN_MINUTE};
+use crate::tools::time::{DurationMillis, MILLIS_IN_DAY, MILLIS_IN_HOUR, MILLIS_IN_MINUTE, MILLIS_IN_SECOND};
+use crate::tools::tools::LeadingAgreementBits;
 use crate::tools::types::Pow;
 
 pub const PROTOCOL_MAX_BLOB_SIZE_REQUEST: usize = 4 * 1024 * 1024;
@@ -43,9 +44,18 @@ pub const POW_MINIMUM_PER_RPC_SERVER_UNKNOWN: Pow = Pow(POW_MINIMUM_PER_RPC_SERV
 pub const POW_MINIMUM_PER_POST: Pow = Pow(POW_MINIMUM_PER_RPC_SERVER_KNOWN.0 + 2);
 pub const POW_MINIMUM_PER_FEEDBACK: Pow = Pow(POW_MINIMUM_PER_RPC_SERVER_KNOWN.0 + 4);
 pub const POW_MINIMUM_PER_URL_FETCH: Pow = Pow(POW_MINIMUM_PER_RPC_SERVER_KNOWN.0 + 3);
+// URL preview fetches run inline in the (serial) dispatch loop, so every stage is bounded.
+pub const URL_FETCH_DNS_TIMEOUT_MILLIS: DurationMillis = MILLIS_IN_SECOND;
+pub const URL_FETCH_CONNECT_TIMEOUT_MILLIS: DurationMillis = MILLIS_IN_SECOND;
+pub const URL_FETCH_TOTAL_TIMEOUT_MILLIS: DurationMillis = MILLIS_IN_SECOND.const_mul(3); // Covers connect + headers + body stream
 pub const POW_MINIMUM_PER_PEER_STATS: Pow = Pow(POW_MINIMUM_PER_RPC_SERVER_KNOWN.0 + 6);
 
 pub const POW_MAX_CLOCK_DRIFT_MILLIS: DurationMillis = MILLIS_IN_MINUTE.const_mul(5).const_mul(CLOCK_LENIENCE_FACTOR);
+/// How far into our future a gossiped `Peer` record's timestamps may be.  An honest peer's
+/// `pow_current_*` timestamps come from RPC PoW it received, which is within one drift of *its* clock,
+/// and its clock is within one drift of ours — hence two hops.  Anything further ahead is self-asserted
+/// and would let the peer dodge PoW decay (an unbounded Kademlia score).
+pub const PEER_MAX_FUTURE_TIMESTAMP_MILLIS: DurationMillis = POW_MAX_CLOCK_DRIFT_MILLIS.const_mul(2);
 
 pub const USE_PRODUCTION_LETS_ENCRYPT: bool = true;
 pub const MILLIS_TO_WAIT_BETWEEN_CERT_RENEWAL_CHECKS: DurationMillis = MILLIS_IN_HOUR.const_mul(1);
@@ -56,11 +66,23 @@ pub const ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS: u8 = 20;
 pub const ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS_GRANTED: u8 = 3 * ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS / 2;
 pub const ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS: DurationMillis = MILLIS_IN_MINUTE.const_mul(1);
 
-pub const ANNOUNCE_V1_NUM_PEERS: usize = 16;
+pub const ANNOUNCE_NUM_PEERS: usize = 16;
 pub const BOOTSTRAP_V1_NUM_PEERS: usize = 32;
+/// Upper bound on the client's PeerTracker; when full, a newcomer only gets in by out-scoring the weakest peer.
+pub const CLIENT_PEER_TRACKER_MAX_PEERS: usize = 1024;
+/// Only this many peers from any single peers_nearer / bootstrap list are considered, so one response can't trigger thousands of verifies.
+pub const CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE: usize = BOOTSTRAP_V1_NUM_PEERS;
 
 // Across how many server should each post be stored?
 pub const REDUNDANT_SERVERS_PER_POST: usize = 3;
+
+// A server only accepts healed posts from a donor bundle whose publishing server is (or was) plausibly responsible for the location:
+// its leading agreement bits with the location_id must be no more than this many bits worse than the REDUNDANT_SERVERS_PER_POST-th nearest
+// server in the receiver's own view.  The donor does not need to be alive (the original servers holding a post eventually die, and
+// cached snapshots they signed are what healing recovers from), so the slack absorbs churn and network growth since the donor signed.
+// NB: this number must only ever GROW in future versions.  Shrinking it would make upgraded servers refuse donors that older servers
+// accepted, breaking the chain of heals that keeps long-lived posts alive after their original servers have gone.
+pub const HEAL_DONOR_LEADING_AGREEMENT_BITS_SLACK: LeadingAgreementBits = 2;
 pub const CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD: DurationMillis =  MILLIS_IN_MINUTE.const_mul(10).const_mul(CLOCK_LENIENCE_FACTOR);
 pub const CLIENT_POST_BUNDLE_CACHE_DURATION: DurationMillis = MILLIS_IN_MINUTE.const_mul(5);
 pub const CLIENT_POST_BUNDLE_FEEDBACK_CACHE_DURATION: DurationMillis = MILLIS_IN_MINUTE.const_mul(15);

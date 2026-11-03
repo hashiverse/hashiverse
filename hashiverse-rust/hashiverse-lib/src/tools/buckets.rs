@@ -33,7 +33,7 @@
 //!   [`BucketLocation::validate`], and a versioned tilde-delimited serialisation for use in
 //!   HTML attributes and URLs.
 
-use crate::tools::hashing;
+use crate::tools::{config, hashing};
 use crate::tools::time::{DurationMillis, MILLIS_IN_DAY, MILLIS_IN_HOUR, MILLIS_IN_MINUTE, MILLIS_IN_MONTH, MILLIS_IN_WEEK, MILLIS_IN_YEAR, TimeMillis};
 use crate::tools::types::Id;
 use derive_more::Display;
@@ -84,6 +84,11 @@ impl BucketLocation {
         let duration_be = self.duration.encode_be();
         let bucket_time_be = self.bucket_time_millis.encode_be();
         hashing::hash_multiple(&[&bucket_type_byte, self.base_id.as_ref(), duration_be.as_ref(), bucket_time_be.as_ref()])
+    }
+
+    /// A bucket is sealed (no more posts will be accepted) once it has overflowed, or once enough time has elapsed past its end.
+    pub fn is_sealed_at(&self, time_millis: TimeMillis, overflowed: bool) -> bool {
+        overflowed || time_millis > self.bucket_time_millis + self.duration + config::ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
@@ -148,7 +153,8 @@ pub fn bucket_durations_for_type(bucket_type: BucketType) -> &'static [DurationM
 #[cfg(test)]
 pub mod tests {
     use crate::tools::buckets::{bucket_durations_for_type, BucketLocation, BucketType, BUCKET_DURATIONS};
-    use crate::tools::time::{TimeMillis, MILLIS_IN_DAY, MILLIS_IN_MONTH, MILLIS_IN_YEAR};
+    use crate::tools::config;
+    use crate::tools::time::{TimeMillis, MILLIS_IN_DAY, MILLIS_IN_MILLISECOND, MILLIS_IN_MONTH, MILLIS_IN_YEAR};
     use crate::tools::types::{Id, ID_BYTES};
 
     #[tokio::test]
@@ -211,6 +217,24 @@ pub mod tests {
         assert_eq!(sequel_durations[0], MILLIS_IN_YEAR);
         assert_eq!(user_durations[0], MILLIS_IN_MONTH);
         assert_eq!(sequel_durations.len(), user_durations.len() + 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn is_sealed_at_test() -> anyhow::Result<()> {
+        let bucket_location = BucketLocation::new(BucketType::Hashtag, Id::random(), MILLIS_IN_DAY, TimeMillis(10 * MILLIS_IN_DAY.0))?;
+        let bucket_end_millis = bucket_location.bucket_time_millis + bucket_location.duration;
+
+        // Not sealed during the bucket, nor during the grace period after it ends
+        assert!(!bucket_location.is_sealed_at(bucket_location.bucket_time_millis, false));
+        assert!(!bucket_location.is_sealed_at(bucket_end_millis, false));
+        assert!(!bucket_location.is_sealed_at(bucket_end_millis + config::ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS, false));
+
+        // Sealed once the grace period has passed
+        assert!(bucket_location.is_sealed_at(bucket_end_millis + config::ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS + MILLIS_IN_MILLISECOND, false));
+
+        // Overflow seals immediately
+        assert!(bucket_location.is_sealed_at(bucket_location.bucket_time_millis, true));
         Ok(())
     }
 }

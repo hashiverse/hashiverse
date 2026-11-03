@@ -19,7 +19,9 @@
 //! in the reader's bandwidth budget.
 
 use crate::client::key_locker::key_locker::KeyLocker;
+use crate::tools::buckets::{BucketLocation, BucketType};
 use crate::tools::client_id::ClientId;
+use crate::tools::config;
 use crate::tools::time::TimeMillis;
 use crate::tools::types::{Hash, Id, PQCommitmentBytes, Signature, VerificationKey, VerificationKeyBytes, HASH_BYTES, ID_BYTES, SIGNATURE_BYTES};
 use crate::tools::{compression, encryption, hashing, json, signing};
@@ -274,6 +276,35 @@ impl EncodedPostV1 {
         // Woohoo!
         Ok(Self { post_id, signature, header, post })
     }
+
+    /// Checks that this (already signature-verified) post could legitimately have been admitted into `bucket_location`.
+    /// These mirror the rules a server applies when it accepts a post submission, so anyone holding a bundle can re-check them:
+    /// - the post timestamp falls inside the bucket,
+    /// - the bucket's base_id is one of the post's linked_base_ids,
+    /// - only the author may post into their own User bucket,
+    /// - the post is not newer than `reference_time_millis` (the time at which the holder claims to have had it), allowing for clock drift.
+    ///
+    /// The ReplyToPost / Sequel referenced-header checks are not included as they require the referenced post's header, which is not carried alongside the post.
+    pub fn check_admissible_to_bucket(&self, bucket_location: &BucketLocation, reference_time_millis: TimeMillis) -> anyhow::Result<()> {
+        let post_bucket_time_millis = BucketLocation::round_down_to_bucket_start(self.header.time_millis, bucket_location.duration);
+        if post_bucket_time_millis != bucket_location.bucket_time_millis {
+            anyhow::bail!("post {} timestamp {} does not fall in bucket starting {}", self.post_id, self.header.time_millis, bucket_location.bucket_time_millis);
+        }
+
+        if !self.header.linked_base_ids.contains(&bucket_location.base_id) {
+            anyhow::bail!("post {} is not linked to base_id {}", self.post_id, bucket_location.base_id);
+        }
+
+        if bucket_location.bucket_type == BucketType::User && self.header.client_id()?.id != bucket_location.base_id {
+            anyhow::bail!("post {} in User bucket {} was not authored by that user", self.post_id, bucket_location.base_id);
+        }
+
+        if self.header.time_millis > reference_time_millis + config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD {
+            anyhow::bail!("post {} timestamp {} is too far after reference time {}", self.post_id, self.header.time_millis, reference_time_millis);
+        }
+
+        Ok(())
+    }
 }
 
 pub struct EncodedPostBytesV1 {
@@ -295,6 +326,7 @@ mod tests {
     use super::*;
     use crate::client::key_locker::key_locker::{KeyLocker, KeyLockerManager};
     use crate::client::key_locker::mem_key_locker::MemKeyLockerManager;
+    use crate::tools::time::{MILLIS_IN_MONTH, MILLIS_IN_SECOND, MILLIS_IN_YEAR};
     use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
 
     #[tokio::test]
@@ -524,6 +556,89 @@ mod tests {
     fn test_bytes_without_body_too_short() {
         let bytes = Bytes::from_static(&[0u8; 10]);
         assert!(EncodedPostV1::bytes_without_body(bytes).is_err());
+    }
+
+    // ── check_admissible_to_bucket ──
+
+    /// Encodes and re-decodes (header only) a post by a fresh client, so that the returned post carries a real post_id.
+    async fn make_decoded_post(timestamp: TimeMillis, linked_base_ids_extra: Vec<Id>) -> anyhow::Result<(ClientId, EncodedPostV1)> {
+        let key_locker_manager = MemKeyLockerManager::new().await?;
+        let key_locker: Arc<dyn KeyLocker> = key_locker_manager.create("admissibility keyphrase".to_string()).await?;
+        let client_id = key_locker.client_id().clone();
+        let mut linked_base_ids = vec![client_id.id];
+        linked_base_ids.extend(linked_base_ids_extra);
+        let mut encoded_post = EncodedPostV1::new(&client_id, timestamp, linked_base_ids, "admissibility test post");
+        let encoded_post_bytes = encoded_post.encode_to_bytes_direct(&key_locker).await?;
+        let decoded_post = EncodedPostV1::decode_from_bytes(Bytes::copy_from_slice(encoded_post_bytes.bytes()), &client_id.id, true, false)?;
+        Ok((client_id, decoded_post))
+    }
+
+    #[tokio::test]
+    async fn test_check_admissible_to_bucket_accepts_matching_post() -> anyhow::Result<()> {
+        let timestamp = RealTimeProvider.current_time_millis();
+        let hashtag_id = Id::random();
+        let (client_id, decoded_post) = make_decoded_post(timestamp, vec![hashtag_id]).await?;
+
+        let user_bucket_location = BucketLocation::new(BucketType::User, client_id.id, MILLIS_IN_MONTH, timestamp)?;
+        decoded_post.check_admissible_to_bucket(&user_bucket_location, timestamp)?;
+
+        let hashtag_bucket_location = BucketLocation::new(BucketType::Hashtag, hashtag_id, MILLIS_IN_MONTH, timestamp)?;
+        decoded_post.check_admissible_to_bucket(&hashtag_bucket_location, timestamp)?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_check_admissible_to_bucket_rejects_post_from_other_bucket() -> anyhow::Result<()> {
+        let timestamp = RealTimeProvider.current_time_millis();
+        let (client_id, decoded_post) = make_decoded_post(timestamp, vec![]).await?;
+
+        // Same user, but the bucket one month earlier: a replay of a genuine old post into a newer bucket must fail, and vice versa.
+        let earlier_bucket_location = BucketLocation::new(BucketType::User, client_id.id, MILLIS_IN_MONTH, timestamp - MILLIS_IN_MONTH)?;
+        assert!(decoded_post.check_admissible_to_bucket(&earlier_bucket_location, timestamp).is_err());
+        let later_bucket_location = BucketLocation::new(BucketType::User, client_id.id, MILLIS_IN_MONTH, timestamp + MILLIS_IN_MONTH)?;
+        assert!(decoded_post.check_admissible_to_bucket(&later_bucket_location, timestamp + MILLIS_IN_MONTH).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_check_admissible_to_bucket_rejects_unlinked_base_id() -> anyhow::Result<()> {
+        let timestamp = RealTimeProvider.current_time_millis();
+        let (_client_id, decoded_post) = make_decoded_post(timestamp, vec![]).await?;
+
+        let hashtag_bucket_location = BucketLocation::new(BucketType::Hashtag, Id::random(), MILLIS_IN_MONTH, timestamp)?;
+        assert!(decoded_post.check_admissible_to_bucket(&hashtag_bucket_location, timestamp).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_check_admissible_to_bucket_rejects_foreign_author_in_user_bucket() -> anyhow::Result<()> {
+        let timestamp = RealTimeProvider.current_time_millis();
+        let victim_id = Id::random();
+        // The attacker links the victim's id, so the post decrypts under the victim's base_id - but they are not the author.
+        let (_client_id, decoded_post) = make_decoded_post(timestamp, vec![victim_id]).await?;
+
+        let victim_user_bucket_location = BucketLocation::new(BucketType::User, victim_id, MILLIS_IN_MONTH, timestamp)?;
+        assert!(decoded_post.check_admissible_to_bucket(&victim_user_bucket_location, timestamp).is_err());
+
+        // The same linkage is fine for a Mention bucket
+        let victim_mention_bucket_location = BucketLocation::new(BucketType::Mention, victim_id, MILLIS_IN_MONTH, timestamp)?;
+        decoded_post.check_admissible_to_bucket(&victim_mention_bucket_location, timestamp)?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_check_admissible_to_bucket_rejects_post_newer_than_reference() -> anyhow::Result<()> {
+        let timestamp = RealTimeProvider.current_time_millis();
+        let (client_id, decoded_post) = make_decoded_post(timestamp, vec![]).await?;
+        let user_bucket_location = BucketLocation::new(BucketType::User, client_id.id, MILLIS_IN_YEAR, timestamp)?;
+
+        // Within the allowed drift is fine
+        decoded_post.check_admissible_to_bucket(&user_bucket_location, timestamp - config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD)?;
+
+        // Beyond it is not
+        let too_early_reference_time_millis = timestamp - config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD - MILLIS_IN_SECOND;
+        assert!(decoded_post.check_admissible_to_bucket(&user_bucket_location, too_early_reference_time_millis).is_err());
+        Ok(())
     }
 
     #[cfg(not(target_arch = "wasm32"))]

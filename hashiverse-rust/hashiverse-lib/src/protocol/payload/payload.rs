@@ -39,7 +39,7 @@ use crate::protocol::posting::encoded_post_feedback::EncodedPostFeedbackV1;
 /// This `u16` value sits in the RPC request header so the server-side dispatcher can route
 /// each incoming [`crate::protocol::rpc::RpcRequestPacketRx`] to the correct handler
 /// without having to partially decode the payload first. The variants cover the three
-/// main subsystems: peer exchange (`PingV1`, `BootstrapV1`, `AnnounceV1`), posting and
+/// main subsystems: peer exchange (`PingV1`, `BootstrapV1`, `AnnounceV2`), posting and
 /// retrieval (`GetPostBundleV1`, `SubmitPostClaimV1`, `SubmitPostCommitV1`, feedback, heal,
 /// cache), and secondary services (`FetchUrlPreviewV1`, `TrendingHashtagsFetchV1`).
 ///
@@ -51,7 +51,7 @@ pub enum PayloadRequestKind {
     ErrorV1, // Used solely for testing error handling
     PingV1,
     BootstrapV1,
-    AnnounceV1,
+    RetiredAnnounceV1, // Wire value 3 reserved: was AnnounceV1, replaced by AnnounceV2. Never sent or accepted.
     GetPostBundleV1,
     GetPostBundleFeedbackV1,
     SubmitPostClaimV1,
@@ -93,7 +93,7 @@ pub enum PayloadResponseKind {
     ErrorResponseV1, // Can be returned by any RPC call if an error happens on the server
     PingResponseV1,
     BootstrapResponseV1,
-    AnnounceResponseV1,
+    RetiredAnnounceResponseV1, // Wire value 3 reserved: was AnnounceResponseV1, replaced by AnnounceResponseV2. Never sent or accepted.
     GetPostBundleResponseV1,
     GetPostBundleFeedbackResponseV1,
     SubmitPostClaimResponseV1,
@@ -144,18 +144,7 @@ pub struct BootstrapResponseV1 {
     pub peers_random: Vec<Peer>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct AnnounceV1 {
-    pub peer_self: Peer,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct AnnounceResponseV1 {
-    pub peer_self: Peer,
-    pub peers_nearest: Vec<Peer>,
-}
-
-/// V2 of the peer announce. Adds an opaque `proof_payload` produced and verified by the
+/// The peer announce. Carries an opaque `proof_payload` produced and verified by the
 /// announcer's transport-specific
 /// [`crate::transport::transport_ownership_proof::TransportOwnershipProof`] — for the HTTPS
 /// transport that's the announcer's current ACME-issued TLS chain, for mem / TCP it's the
@@ -173,9 +162,9 @@ pub struct AnnounceV2 {
     pub proof_payload: Vec<u8>,
 }
 
-/// V2 announce response. Same shape as [`AnnounceResponseV1`] — proof bytes never flow
-/// back in the response, since receivers only validate proofs at admission time and
-/// thereafter store and gossip plain [`Peer`] records.
+/// Announce response: the receiver's own [`Peer`] plus the peers it knows nearest to the
+/// announcer. Proof bytes never flow back in the response, since receivers only validate
+/// proofs at admission time and thereafter store and gossip plain [`Peer`] records.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct AnnounceResponseV2 {
     pub peer_self: Peer,
@@ -1466,7 +1455,10 @@ mod tests {
         // `FromRepr` / `Display` come from strum_macros; the u16 values are on the wire.
         use crate::protocol::payload::payload::{PayloadRequestKind, PayloadResponseKind};
         assert_eq!(PayloadRequestKind::from_u16(0).unwrap(), PayloadRequestKind::ErrorV1);
+        assert_eq!(PayloadRequestKind::from_u16(3).unwrap(), PayloadRequestKind::RetiredAnnounceV1, "retired slot must stay reserved so later kinds keep their wire values");
+        assert_eq!(PayloadResponseKind::from_u16(3).unwrap(), PayloadResponseKind::RetiredAnnounceResponseV1);
         assert_eq!(PayloadRequestKind::from_u16(4).unwrap(), PayloadRequestKind::GetPostBundleV1);
+        assert_eq!(PayloadResponseKind::from_u16(4).unwrap(), PayloadResponseKind::GetPostBundleResponseV1);
         assert_eq!(PayloadRequestKind::from_u16(17).unwrap(), PayloadRequestKind::AnnounceV2);
         assert_eq!(PayloadResponseKind::from_u16(0).unwrap(), PayloadResponseKind::ErrorResponseV1);
         assert_eq!(PayloadResponseKind::from_u16(17).unwrap(), PayloadResponseKind::AnnounceResponseV2);

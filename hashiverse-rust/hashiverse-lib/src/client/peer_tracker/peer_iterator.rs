@@ -18,7 +18,7 @@
 
 use crate::client::peer_tracker::peer_tracker::PeerTracker;
 use crate::protocol::peer::Peer;
-use crate::tools::tools;
+use crate::tools::{config, tools};
 use crate::tools::tools::LeadingAgreementBits;
 use crate::tools::types::Id;
 use log::warn;
@@ -106,7 +106,10 @@ impl<'a> PeerIterator<'a> {
     }
 
     pub fn add_peers(&mut self, peers: Vec<Peer>) {
-        for peer in peers {
+        if peers.len() > config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE {
+            warn!("ignoring {} of {} suggested peers (cap is {})", peers.len() - config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE, peers.len(), config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE);
+        }
+        for peer in peers.into_iter().take(config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE) {
             if let Err(e) = self.tracker.add_peer(peer) {
                 warn!("not adding invalid peer: {}", e);
             }

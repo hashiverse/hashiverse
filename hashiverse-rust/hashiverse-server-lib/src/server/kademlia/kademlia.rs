@@ -1,7 +1,7 @@
 //! # Server-side Kademlia routing table
 //!
 //! A generic [`Kademlia<ID, PEER>`] DHT that the server uses to answer
-//! `BootstrapV1` / `AnnounceV1` queries and to pick candidate peers for
+//! `BootstrapV1` / `AnnounceV2` queries and to pick candidate peers for
 //! post-bundle / feedback lookups.
 //!
 //! - **Up to 256 buckets** — one per bit of the id's XOR distance from this
