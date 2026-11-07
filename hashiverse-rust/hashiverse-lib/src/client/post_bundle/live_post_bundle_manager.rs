@@ -7,15 +7,21 @@
 //! 1. **Cache** — check `BUCKET_POST_BUNDLE` in
 //!    [`crate::client::client_storage::client_storage::ClientStorage`]. Serve hot entries
 //!    immediately; serve stale entries only if the bundle is already sealed.
-//! 2. **Network** — otherwise walk peers closest to the bucket's location id via a
-//!    [`crate::client::peer_tracker::peer_iterator::PeerIterator`] and issue
+//! 2. **Network** — otherwise a background walk visits peers closest to the bucket's location id via a
+//!    [`crate::client::peer_tracker::peer_iterator::PeerIterator`], issuing
 //!    `GetPostBundleV1` RPCs, gated by the
 //!    [`crate::client::caching::cache_radius_tracker`] to avoid re-hammering
-//!    already-cached peers. Concurrent lookups for the same `(location, time)` are
-//!    de-duplicated via a per-key `Mutex` so only one RPC actually goes out.
-//! 3. **Heal** — if multiple peers return divergent bundles, spawn
-//!    [`crate::client::post_bundle::post_bundle_healing`] in the background to reconcile
-//!    them.
+//!    already-cached peers. Concurrent lookups for the same location share one walk.
+//!    [`PostBundleManager::get_post_bundle`] answers as soon as the walk accepts its first
+//!    authoritative bundle (a *provisional* answer); [`PostBundleManager::get_post_bundle_settled`]
+//!    waits for the walk's best-of-[`config::REDUNDANT_SERVERS_PER_POST`] answer.
+//! 3. **Settle** — once the walk has its quorum it caches the best bundle locally, then spawns
+//!    [`crate::client::post_bundle::post_bundle_healing`] to reconcile divergent servers and
+//!    uploads the original signed bundles to the servers that asked to cache them.
+//!
+//! A provisional bundle is never stored or forwarded.  Its posts and `overflowed` flag reflect only the
+//! bundles seen so far, so a timeline pass built on it may miss posts (or child buckets) that only later
+//! responders hold; anything fetched after the bundle settles sees the full picture.
 
 use crate::anyhow_assert_eq;
 use crate::client::caching::cache_radius_tracker::CacheRadiusTracker;
@@ -32,39 +38,44 @@ use crate::tools::buckets::BucketLocation;
 use crate::tools::config::CLIENT_POST_BUNDLE_CACHE_DURATION;
 use crate::tools::runtime_services::RuntimeServices;
 use crate::tools::time::TimeMillis;
-use crate::tools::tools::LeadingAgreementBits;
+use crate::tools::tools::{spawn_background_task, LeadingAgreementBits};
 use crate::tools::types::Id;
 use crate::tools::{config, json};
 use bytes::Bytes;
 use log::{info, trace, warn};
-use scopeguard::defer;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::watch;
 
 /// The production [`PostBundleManager`] implementation — the one that actually talks to the
 /// network.
 ///
 /// `LivePostBundleManager` is the glue between the pure-logic timeline code and the live
-/// network. Each `get_post_bundle` call:
+/// network. Each lookup:
 ///
 /// 1. Checks [`ClientStorage`] under `BUCKET_POST_BUNDLE` for a sufficiently fresh cached
 ///    copy (freshness is governed by `CLIENT_POST_BUNDLE_CACHE_DURATION`).
-/// 2. Falls back to a `GetPostBundleV1` RPC against the closest peers in the
-///    [`PeerTracker`], attributing PoW to the locally-held `sponsor_id`.
-/// 3. Initiates post-bundle healing when the bundle has gaps — see
-///    [`crate::client::post_bundle::post_bundle_healing`].
+/// 2. Otherwise joins (or starts) a background walk of `GetPostBundleV1` RPCs against the closest
+///    peers in the [`PeerTracker`], attributing PoW to the locally-held `sponsor_id`.
+/// 3. Returns the walk's first authoritative bundle (`get_post_bundle`) or its settled best
+///    bundle (`get_post_bundle_settled`).  The walk itself carries on to cache, heal and upload —
+///    see [`crate::client::post_bundle::post_bundle_healing`].
 ///
-/// Concurrent requests for the same bundle are de-duplicated via `post_bundle_inflight` so
+/// Concurrent requests for the same bundle share one walk via [`InflightPostBundleFetches`], so
 /// a burst of timeline scrolls cannot fan out into redundant RPCs. The
 /// [`crate::client::caching::cache_radius_tracker::CacheRadiusTracker`] helps the caching
 /// role of a server decide how widely to mirror bundles.
 pub struct LivePostBundleManager {
+    inner: Arc<LivePostBundleManagerInner>,
+}
+
+/// Everything a walk needs, shared so that the walk can outlive the call that started it.
+struct LivePostBundleManagerInner {
     runtime_services: Arc<RuntimeServices>,
     client_storage: Arc<dyn ClientStorage>,
     peer_tracker: SharedPeerTracker,
     sponsor_id: Id,
-    post_bundle_inflight: Mutex<HashMap<Id, Arc<Mutex<()>>>>,
+    inflight_post_bundle_fetches: InflightPostBundleFetches,
     post_bundle_cache_radius_tracker: CacheRadiusTracker,
 }
 
@@ -76,12 +87,14 @@ impl LivePostBundleManager {
         peer_tracker: SharedPeerTracker,
     ) -> Self {
         Self {
-            runtime_services,
-            client_storage,
-            peer_tracker,
-            sponsor_id,
-            post_bundle_inflight: Mutex::new(HashMap::new()),
-            post_bundle_cache_radius_tracker: CacheRadiusTracker::new(CLIENT_POST_BUNDLE_CACHE_DURATION.const_mul(5)), // We let these cache radius caches last longer than our own local cache of the bundles...
+            inner: Arc::new(LivePostBundleManagerInner {
+                runtime_services,
+                client_storage,
+                peer_tracker,
+                sponsor_id,
+                inflight_post_bundle_fetches: InflightPostBundleFetches::default(),
+                post_bundle_cache_radius_tracker: CacheRadiusTracker::new(CLIENT_POST_BUNDLE_CACHE_DURATION.const_mul(5)), // We let these cache radius caches last longer than our own local cache of the bundles...
+            }),
         }
     }
 }
@@ -92,60 +105,99 @@ impl PostBundleManager
     for LivePostBundleManager
 {
     async fn get_post_bundle(&self, bucket_location: &BucketLocation, time_millis: TimeMillis) -> anyhow::Result<EncodedPostBundleV1> {
-        let get_from_cache = async |location_id: Id, time_millis: TimeMillis, reason: &str| -> Option<EncodedPostBundleV1> {
-            let result: anyhow::Result<Option<EncodedPostBundleV1>> = try {
-                let raw = self.client_storage.get(BUCKET_POST_BUNDLE, &location_id.to_hex_str(), time_millis).await?;
-                if let Some(raw) = raw {
-                    // NB: deliberately not re-verified.  We only ever cache bundles we verified on receipt, but their overflowed/sealed flags
-                    // were then merged/normalised locally (see AcceptedPostBundles::select_best) so the header signature may not cover them.
-                    let bundle = EncodedPostBundleV1::from_bytes(Bytes::from(raw), true)?;
-                    if bundle.header.sealed {
-                        trace!("Using cached sealed PostBundle for {} at {}", location_id, reason);
+        self.inner.fetch(bucket_location, time_millis, false).await
+    }
+
+    async fn get_post_bundle_settled(&self, bucket_location: &BucketLocation, time_millis: TimeMillis) -> anyhow::Result<EncodedPostBundleV1> {
+        self.inner.fetch(bucket_location, time_millis, true).await
+    }
+}
+
+impl LivePostBundleManagerInner {
+    async fn get_from_cache(&self, location_id: Id, time_millis: TimeMillis, reason: &str) -> Option<EncodedPostBundleV1> {
+        let result: anyhow::Result<Option<EncodedPostBundleV1>> = try {
+            let raw = self.client_storage.get(BUCKET_POST_BUNDLE, &location_id.to_hex_str(), time_millis).await?;
+            if let Some(raw) = raw {
+                // NB: deliberately not re-verified.  We only ever cache bundles we verified on receipt, but their overflowed/sealed flags
+                // were then merged/normalised locally (see AcceptedPostBundles::select_best) so the header signature may not cover them.
+                let bundle = EncodedPostBundleV1::from_bytes(Bytes::from(raw), true)?;
+                if bundle.header.sealed {
+                    trace!("Using cached sealed PostBundle for {} at {}", location_id, reason);
+                    Some(bundle)
+                }
+                else {
+                    let duration = time_millis - bundle.header.time_millis;
+                    if duration < CLIENT_POST_BUNDLE_CACHE_DURATION {
+                        trace!("Using cached PostBundle for {} (age {}) at {}", location_id, duration, reason);
                         Some(bundle)
                     }
                     else {
-                        let duration = time_millis - bundle.header.time_millis;
-                        if duration < CLIENT_POST_BUNDLE_CACHE_DURATION {
-                            trace!("Using cached PostBundle for {} (age {}) at {}", location_id, duration, reason);
-                            Some(bundle)
-                        }
-                        else {
-                            trace!("Cached PostBundle for {} expired (age {}) at {}", location_id, duration, reason);
-                            None
-                        }
+                        trace!("Cached PostBundle for {} expired (age {}) at {}", location_id, duration, reason);
+                        None
                     }
                 }
-                else {
-                    None
-                }
-            };
-
-            result.unwrap_or_else(|e| {
-                warn!("discarding problematic cached PostBundle: {}", e);
+            }
+            else {
                 None
-            })
+            }
         };
+
+        result.unwrap_or_else(|e| {
+            warn!("discarding problematic cached PostBundle: {}", e);
+            None
+        })
+    }
+
+    /// Serves from the cache, else joins (or starts) the walk for this location and waits for a provisional or settled answer.
+    async fn fetch(self: &Arc<Self>, bucket_location: &BucketLocation, time_millis: TimeMillis, wait_for_settled: bool) -> anyhow::Result<EncodedPostBundleV1> {
+        let location_id = bucket_location.location_id;
 
         // Check the cache
-        if let Some(cached) = get_from_cache(bucket_location.location_id, time_millis, "preflight").await {
+        if let Some(cached) = self.get_from_cache(location_id, time_millis, "preflight").await {
             return Ok(cached);
         }
 
-        // Inflight deduplication: get or create a per-key mutex
-        let key_lock = {
-            let mut inflight = self.post_bundle_inflight.lock().await;
-            inflight.entry(bucket_location.location_id).or_insert_with(|| Arc::new(Mutex::new(()))).clone()
-        };
-        let _inflight_guard = key_lock.lock().await;
-        defer!(if let Ok(mut m) = self.post_bundle_inflight.try_lock() {
-            m.remove(&bucket_location.location_id);
-        });
-
-        // Re-check the cache - a concurrent caller may have just finished fetching and stored the result.
-        if let Some(cached) = get_from_cache(bucket_location.location_id, time_millis, "postflight").await {
-            return Ok(cached);
+        let (mut fetch_state_receiver, fetch_state_sender) = self.inflight_post_bundle_fetches.join_or_start(location_id);
+        if let Some(fetch_state_sender) = fetch_state_sender {
+            // Re-check the cache - a walk may have settled and stored its result between our preflight check and joining
+            if let Some(cached) = self.get_from_cache(location_id, time_millis, "postflight").await {
+                fetch_state_sender.send_replace(PostBundleFetchState::Settled(Ok(cached)));
+                self.inflight_post_bundle_fetches.finish(location_id);
+            }
+            else {
+                spawn_background_task(self.clone().walk_and_settle(bucket_location.clone(), time_millis, fetch_state_sender));
+            }
         }
 
+        await_fetch_answer(location_id, &mut fetch_state_receiver, wait_for_settled).await
+    }
+
+    /// Runs the walk to its quorum, publishing the first authoritative bundle as soon as it is accepted, then settles:
+    /// caches the best bundle, releases waiters, and kicks off healing and cache uploads.
+    async fn walk_and_settle(self: Arc<Self>, bucket_location: BucketLocation, time_millis: TimeMillis, fetch_state_sender: watch::Sender<PostBundleFetchState>) {
+        let location_id = bucket_location.location_id;
+
+        match self.walk(&bucket_location, time_millis, &fetch_state_sender).await {
+            Ok((best_encoded_post_bundle, accepted_post_bundles, cache_request_tokens)) => {
+                fetch_state_sender.send_replace(PostBundleFetchState::Settled(Ok(best_encoded_post_bundle)));
+                self.inflight_post_bundle_fetches.finish(location_id);
+
+                // Kick off healing
+                post_bundle_healing::heal_post_bundles(self.runtime_services.clone(), self.sponsor_id, bucket_location.clone(), &accepted_post_bundles.donor_bundles(), accepted_post_bundles.direct_bundles());
+
+                // Kick off remote cache populating - with the original signed bytes of authoritative bundles only
+                post_bundle_cache_uploader::upload_post_bundle_caches(self.runtime_services.clone(), self.sponsor_id, cache_request_tokens, accepted_post_bundles.bundle_bytes_for_upload());
+            }
+            Err(error) => {
+                warn!("PostBundle walk for {} failed: {:#}", location_id, error);
+                fetch_state_sender.send_replace(PostBundleFetchState::Settled(Err(Arc::new(error))));
+                self.inflight_post_bundle_fetches.finish(location_id);
+            }
+        }
+    }
+
+    /// The walk proper.  Returns the best bundle (already written to `ClientStorage`) plus what healing and uploading need.
+    async fn walk(&self, bucket_location: &BucketLocation, time_millis: TimeMillis, fetch_state_sender: &watch::Sender<PostBundleFetchState>) -> anyhow::Result<(EncodedPostBundleV1, AcceptedPostBundles, Vec<CacheRequestTokenV1>)> {
         let cache_radius = self.post_bundle_cache_radius_tracker.get(bucket_location.location_id, time_millis);
 
         // We need to refresh...
@@ -153,6 +205,7 @@ impl PostBundleManager
         let mut accepted_post_bundles = AcceptedPostBundles::new(bucket_location.clone(), time_millis);
         let mut cache_request_tokens: Vec<CacheRequestTokenV1> = Vec::new();
         let mut positive_responder_leading_agreement_bits: Vec<LeadingAgreementBits> = Vec::new();
+        let mut provisional_published = false;
         {
             let mut peer_iter = PeerTracker::iterate_to_location(&self.peer_tracker, bucket_location.location_id, 2 * config::REDUNDANT_SERVERS_PER_POST, cache_radius).await?;
             while let Some((peer, leading_agreement_bits)) = peer_iter.next_peer() {
@@ -198,6 +251,15 @@ impl PostBundleManager
                         positive_responder_leading_agreement_bits.push(leading_agreement_bits);
                     }
 
+                    // The first genuinely signed posts are good enough to show - waiters on get_post_bundle can go now
+                    if !provisional_published && accepted_post_bundles.has_authoritative() {
+                        if let Some(provisional_encoded_post_bundle) = accepted_post_bundles.select_best() {
+                            trace!("Publishing provisional PostBundle for {} with {} posts", bucket_location.location_id, provisional_encoded_post_bundle.header.num_posts);
+                            fetch_state_sender.send_replace(PostBundleFetchState::Provisional(provisional_encoded_post_bundle));
+                            provisional_published = true;
+                        }
+                    }
+
                     if accepted_post_bundles.quorum_count() >= config::REDUNDANT_SERVERS_PER_POST {
                         break;
                     }
@@ -229,13 +291,85 @@ impl PostBundleManager
         let encoded_post_bundle_bytes = best_encoded_post_bundle.to_bytes()?;
         self.client_storage.put(BUCKET_POST_BUNDLE, &bucket_location.location_id.to_hex_str(), encoded_post_bundle_bytes.to_vec(), time_millis).await?;
 
-        // Kick off healing
-        post_bundle_healing::heal_post_bundles(self.runtime_services.clone(), self.sponsor_id, bucket_location.clone(), &accepted_post_bundles.donor_bundles(), accepted_post_bundles.direct_bundles());
+        Ok((best_encoded_post_bundle, accepted_post_bundles, cache_request_tokens))
+    }
+}
 
-        // Kick off remote cache populating - with the original signed bytes of authoritative bundles only
-        post_bundle_cache_uploader::upload_post_bundle_caches(self.runtime_services.clone(), self.sponsor_id, cache_request_tokens, accepted_post_bundles.bundle_bytes_for_upload());
+/// Waits until the walk has an answer for this caller - a provisional bundle is enough unless `wait_for_settled` - and returns it.
+async fn await_fetch_answer(location_id: Id, fetch_state_receiver: &mut watch::Receiver<PostBundleFetchState>, wait_for_settled: bool) -> anyhow::Result<EncodedPostBundleV1> {
+    let fetch_state = fetch_state_receiver
+        .wait_for(|fetch_state| match fetch_state {
+            PostBundleFetchState::Walking => false,
+            PostBundleFetchState::Provisional(_) => !wait_for_settled,
+            PostBundleFetchState::Settled(_) => true,
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("PostBundle walk for {} ended without settling", location_id))?
+        .clone();
 
-        Ok(best_encoded_post_bundle)
+    match fetch_state {
+        PostBundleFetchState::Provisional(encoded_post_bundle) => Ok(encoded_post_bundle),
+        PostBundleFetchState::Settled(Ok(encoded_post_bundle)) => Ok(encoded_post_bundle),
+        PostBundleFetchState::Settled(Err(error)) => Err(anyhow::Error::new(PostBundleFetchError { location_id, error })),
+        PostBundleFetchState::Walking => anyhow::bail!("PostBundle walk for {} is still walking", location_id),
+    }
+}
+
+/// Where a location's walk has got to, as seen by everyone waiting on it.
+#[derive(Clone)]
+enum PostBundleFetchState {
+    Walking,
+    /// The best of the bundles accepted so far, published once the first authoritative bundle arrives.  Never stored or forwarded.
+    Provisional(EncodedPostBundleV1),
+    /// The best-of-quorum bundle, already written to `ClientStorage` - or why the walk failed.
+    Settled(Result<EncodedPostBundleV1, Arc<anyhow::Error>>),
+}
+
+/// A walk's error, handed to every caller that waited on it (`anyhow::Error` is not `Clone`, so they share it).
+/// Its `source()` is the original error: `{:#}` still prints the whole chain and `chain()`/`downcast_ref` still reach it.
+#[derive(Debug)]
+struct PostBundleFetchError {
+    location_id: Id,
+    error: Arc<anyhow::Error>,
+}
+
+impl std::fmt::Display for PostBundleFetchError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "fetching PostBundle {} failed", self.location_id)
+    }
+}
+
+impl std::error::Error for PostBundleFetchError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        let error: &(dyn std::error::Error + Send + Sync + 'static) = self.error.as_ref().as_ref();
+        Some(error)
+    }
+}
+
+/// One shared walk per location: the first caller starts it, later callers watch its progress.
+#[derive(Default)]
+struct InflightPostBundleFetches {
+    fetches: parking_lot::Mutex<HashMap<Id, watch::Receiver<PostBundleFetchState>>>,
+}
+
+impl InflightPostBundleFetches {
+    /// Returns a receiver for this location's walk, plus the sender if the caller must start the walk itself.
+    fn join_or_start(&self, location_id: Id) -> (watch::Receiver<PostBundleFetchState>, Option<watch::Sender<PostBundleFetchState>>) {
+        let mut fetches = self.fetches.lock();
+        if let Some(fetch_state_receiver) = fetches.get(&location_id) {
+            // A walk whose task died without settling (its sender is gone) must not block every later caller
+            if fetch_state_receiver.has_changed().is_ok() {
+                return (fetch_state_receiver.clone(), None);
+            }
+        }
+        let (fetch_state_sender, fetch_state_receiver) = watch::channel(PostBundleFetchState::Walking);
+        fetches.insert(location_id, fetch_state_receiver.clone());
+        (fetch_state_receiver, Some(fetch_state_sender))
+    }
+
+    /// The walk has settled (and stored its result): later callers start afresh from the cache.
+    fn finish(&self, location_id: Id) {
+        self.fetches.lock().remove(&location_id);
     }
 }
 
@@ -264,6 +398,11 @@ impl AcceptedPostBundles {
     /// Originators whose bundles we have accepted - passed to servers so they don't send us those again.
     fn accepted_originator_ids(&self) -> &[Id] {
         &self.accepted_originator_ids
+    }
+
+    /// Whether we hold at least one authoritative bundle (verified, with posts) - enough to show provisionally.
+    fn has_authoritative(&self) -> bool {
+        !self.authoritative_bundles.is_empty()
     }
 
     /// How many distinct servers' views we have accepted, authoritative or direct-empty.
@@ -489,6 +628,141 @@ mod tests {
         assert!(accepted_post_bundles.offer_cached(encoded_post_bundle.to_bytes()?)?);
 
         assert!(!accepted_post_bundles.select_best().expect("a bundle").header.sealed);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn has_authoritative_only_once_a_bundle_with_posts_is_accepted() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(1).await?;
+        let mut accepted_post_bundles = new_accepted_post_bundles(&fixture);
+        assert!(!accepted_post_bundles.has_authoritative());
+
+        // A direct empty counts towards the quorum but has nothing to show
+        let empty_server_id = BucketBundleFixture::new_server_id().await?;
+        assert!(accepted_post_bundles.offer_direct(fixture.make_bundle_from(&empty_server_id, &[])?.to_bytes()?, &empty_server_id.to_peer(&RealTimeProvider)?)?);
+        assert!(!accepted_post_bundles.has_authoritative());
+
+        // A cached empty is ignored altogether
+        let cached_empty_server_id = BucketBundleFixture::new_server_id().await?;
+        assert!(!accepted_post_bundles.offer_cached(fixture.make_bundle_from(&cached_empty_server_id, &[])?.to_bytes()?)?);
+        assert!(!accepted_post_bundles.has_authoritative());
+
+        let server_id = BucketBundleFixture::new_server_id().await?;
+        assert!(accepted_post_bundles.offer_cached(fixture.make_bundle_from(&server_id, &posts)?.to_bytes()?)?);
+        assert!(accepted_post_bundles.has_authoritative());
+        Ok(())
+    }
+
+    // ── InflightPostBundleFetches / await_fetch_answer ──
+
+    async fn some_encoded_post_bundle() -> anyhow::Result<EncodedPostBundleV1> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(1).await?;
+        let server_id = BucketBundleFixture::new_server_id().await?;
+        fixture.make_bundle_from(&server_id, &posts)
+    }
+
+    #[tokio::test]
+    async fn first_caller_starts_the_walk_and_later_callers_join_it() {
+        let inflight_post_bundle_fetches = InflightPostBundleFetches::default();
+        let location_id = Id::random();
+
+        let (_, starter_fetch_state_sender) = inflight_post_bundle_fetches.join_or_start(location_id);
+        assert!(starter_fetch_state_sender.is_some(), "the first caller starts the walk");
+        let (_, joiner_fetch_state_sender) = inflight_post_bundle_fetches.join_or_start(location_id);
+        assert!(joiner_fetch_state_sender.is_none(), "a second caller joins it");
+
+        let (_, other_location_fetch_state_sender) = inflight_post_bundle_fetches.join_or_start(Id::random());
+        assert!(other_location_fetch_state_sender.is_some(), "other locations get their own walk");
+    }
+
+    #[tokio::test]
+    async fn finish_lets_the_next_caller_start_afresh() {
+        let inflight_post_bundle_fetches = InflightPostBundleFetches::default();
+        let location_id = Id::random();
+
+        let (_, fetch_state_sender) = inflight_post_bundle_fetches.join_or_start(location_id);
+        let _fetch_state_sender = fetch_state_sender.expect("starter");
+        inflight_post_bundle_fetches.finish(location_id);
+        assert!(inflight_post_bundle_fetches.join_or_start(location_id).1.is_some());
+    }
+
+    #[tokio::test]
+    async fn a_walk_that_died_without_settling_does_not_block_later_callers() {
+        let inflight_post_bundle_fetches = InflightPostBundleFetches::default();
+        let location_id = Id::random();
+
+        let (mut fetch_state_receiver, fetch_state_sender) = inflight_post_bundle_fetches.join_or_start(location_id);
+        drop(fetch_state_sender); // e.g. the walk task panicked
+        assert!(await_fetch_answer(location_id, &mut fetch_state_receiver, false).await.is_err(), "its own waiters get an error, not a hang");
+        assert!(inflight_post_bundle_fetches.join_or_start(location_id).1.is_some(), "the next caller starts a new walk");
+    }
+
+    #[tokio::test]
+    async fn joiners_see_a_provisional_bundle_immediately() -> anyhow::Result<()> {
+        let inflight_post_bundle_fetches = InflightPostBundleFetches::default();
+        let location_id = Id::random();
+        let provisional_encoded_post_bundle = some_encoded_post_bundle().await?;
+
+        let (_, fetch_state_sender) = inflight_post_bundle_fetches.join_or_start(location_id);
+        let fetch_state_sender = fetch_state_sender.expect("starter");
+        fetch_state_sender.send_replace(PostBundleFetchState::Provisional(provisional_encoded_post_bundle.clone()));
+
+        let (mut joiner_fetch_state_receiver, _) = inflight_post_bundle_fetches.join_or_start(location_id);
+        assert_eq!(provisional_encoded_post_bundle, await_fetch_answer(location_id, &mut joiner_fetch_state_receiver, false).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn settled_waiters_ignore_the_provisional_bundle() -> anyhow::Result<()> {
+        let location_id = Id::random();
+        let provisional_encoded_post_bundle = some_encoded_post_bundle().await?;
+        let settled_encoded_post_bundle = some_encoded_post_bundle().await?;
+        let (fetch_state_sender, fetch_state_receiver) = watch::channel(PostBundleFetchState::Walking);
+
+        let mut early_fetch_state_receiver = fetch_state_receiver.clone();
+        let mut settled_fetch_state_receiver = fetch_state_receiver.clone();
+        let early_answer = tokio::spawn(async move { await_fetch_answer(location_id, &mut early_fetch_state_receiver, false).await });
+        let settled_answer = tokio::spawn(async move { await_fetch_answer(location_id, &mut settled_fetch_state_receiver, true).await });
+
+        fetch_state_sender.send_replace(PostBundleFetchState::Provisional(provisional_encoded_post_bundle.clone()));
+        assert_eq!(provisional_encoded_post_bundle, early_answer.await??);
+        tokio::task::yield_now().await;
+        assert!(!settled_answer.is_finished(), "a settled waiter must not wake on the provisional bundle");
+
+        fetch_state_sender.send_replace(PostBundleFetchState::Settled(Ok(settled_encoded_post_bundle.clone())));
+        assert_eq!(settled_encoded_post_bundle, settled_answer.await??);
+        Ok(())
+    }
+
+    #[derive(Debug)]
+    struct WalkRootCause;
+    impl std::fmt::Display for WalkRootCause {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(formatter, "the root cause")
+        }
+    }
+    impl std::error::Error for WalkRootCause {}
+
+    #[tokio::test]
+    async fn walk_errors_reach_every_waiter_with_their_chain_intact() -> anyhow::Result<()> {
+        let location_id = Id::random();
+        let (fetch_state_sender, fetch_state_receiver) = watch::channel(PostBundleFetchState::Walking);
+        let walk_error = anyhow::Error::new(WalkRootCause).context("walking towards the bucket");
+        fetch_state_sender.send_replace(PostBundleFetchState::Settled(Err(Arc::new(walk_error))));
+
+        for wait_for_settled in [false, true] {
+            let mut waiter_fetch_state_receiver = fetch_state_receiver.clone();
+            let error = await_fetch_answer(location_id, &mut waiter_fetch_state_receiver, wait_for_settled).await.expect_err("the walk failed");
+
+            let formatted_error = format!("{:#}", error);
+            assert!(formatted_error.contains(&location_id.to_string()), "names the location: {}", formatted_error);
+            assert!(formatted_error.contains("walking towards the bucket"), "keeps the context: {}", formatted_error);
+            assert!(formatted_error.contains("the root cause"), "keeps the root cause: {}", formatted_error);
+            assert!(error.chain().any(|cause| cause.downcast_ref::<WalkRootCause>().is_some()), "the original error stays reachable");
+            assert!(error.downcast_ref::<PostBundleFetchError>().is_some());
+        }
         Ok(())
     }
 }

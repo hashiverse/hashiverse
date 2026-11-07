@@ -285,7 +285,8 @@ async fn post_to_locations(
                 let bucket_location = generate_bucket_location(linked_base_id_detail.bucket_type, linked_base_id_detail.linked_base_id, bucket_duration, timestamp)?;
                 info!("checking posting availability of {:?}", bucket_location);
 
-                let post_bundle = post_bundle_manager.get_post_bundle(&bucket_location, timestamp).await?;
+                // Settled, not provisional: a provisional "not overflowed" would send our claims to a bucket that is already full
+                let post_bundle = post_bundle_manager.get_post_bundle_settled(&bucket_location, timestamp).await?;
                 if !post_bundle.header.overflowed && !post_bundle.header.sealed {
                     info!("Posting to {:?}", bucket_location);
                     let result = post_to_location(&runtime_services, &client_id.id, &peer_tracker, &recent_posts_pen, &bucket_location, &encoded_post, &encoded_post_bytes, &encoded_post_bytes_raw, linked_base_id_detail.referenced_post_header_bytes.as_deref(), &referenced_hashtags, linked_base_id_detail.bucket_type, timestamp, &outcomes_tx).await;

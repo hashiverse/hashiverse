@@ -187,7 +187,8 @@ impl MetaPostManager {
         let bucket_duration = bucket_durations.first().ok_or_else(|| anyhow::anyhow!("No bucket durations for User type"))?;
         let bucket_location = generate_bucket_location(BucketType::User, self.client_id.id, *bucket_duration, timestamp)?;
 
-        let post_bundle = post_bundle_manager.get_post_bundle(&bucket_location, timestamp).await?;
+        // Settled, not provisional: a provisional bundle may lack our existing MetaPost, and we would publish a duplicate
+        let post_bundle = post_bundle_manager.get_post_bundle_settled(&bucket_location, timestamp).await?;
 
         if post_bundle.header.overflowed || post_bundle.header.sealed {
             info!("Current bucket is full/sealed, skipping auto-publish of MetaPostV1");
