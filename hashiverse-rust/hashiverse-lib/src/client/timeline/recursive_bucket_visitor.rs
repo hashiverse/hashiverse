@@ -13,6 +13,10 @@
 //! - **Close** — called when leaving a bucket, so timelines can decide whether to
 //!   back off to coarser granularity or continue stepping within the current level.
 //!
+//! Whatever payload the open callback returns alongside `ContinueWith*` is held on the
+//! stack and handed to that same bucket's close callback (opens and closes nest strictly),
+//! so a caller never has to fetch a bucket's data twice.
+//!
 //! The visitor has zero knowledge of posts, caches, networks, or deduplication — it
 //! is a plain tree walker; everything else is implemented on top of it by
 //! [`crate::client::timeline::single_timeline::SingleTimeline`].
@@ -20,9 +24,9 @@
 use crate::tools::buckets::BucketLocation;
 use crate::tools::time::{DurationMillis, TimeMillis};
 
-pub enum RecursiveBucketVisitorOpenCallbackResult {
-    ContinueWithChildren,
-    ContinueWithoutChildren,
+pub enum RecursiveBucketVisitorOpenCallbackResult<T> {
+    ContinueWithChildren(T),
+    ContinueWithoutChildren(T),
     Stop,
 }
 
@@ -34,10 +38,10 @@ pub enum RecursiveBucketVisitorCloseCallbackResult {
 pub struct RecursiveBucketVisitor {}
 
 impl RecursiveBucketVisitor {
-    pub async fn visit<FOpen, FClose>(time_millis_max_exclusive: TimeMillis, time_millis_min: TimeMillis, bucket_durations: &[DurationMillis], on_bucket_open: &mut FOpen, on_bucket_close: &mut FClose) -> anyhow::Result<bool>
+    pub async fn visit<T, FOpen, FClose>(time_millis_max_exclusive: TimeMillis, time_millis_min: TimeMillis, bucket_durations: &[DurationMillis], on_bucket_open: &mut FOpen, on_bucket_close: &mut FClose) -> anyhow::Result<bool>
     where
-        FOpen: AsyncFnMut(TimeMillis, DurationMillis) -> anyhow::Result<RecursiveBucketVisitorOpenCallbackResult>,
-        FClose: AsyncFnMut(TimeMillis, DurationMillis) -> anyhow::Result<RecursiveBucketVisitorCloseCallbackResult>,
+        FOpen: AsyncFnMut(TimeMillis, DurationMillis) -> anyhow::Result<RecursiveBucketVisitorOpenCallbackResult<T>>,
+        FClose: AsyncFnMut(TimeMillis, DurationMillis, T) -> anyhow::Result<RecursiveBucketVisitorCloseCallbackResult>,
     {
         struct FrameOpen {
             bucket_time_millis: TimeMillis,
@@ -45,14 +49,15 @@ impl RecursiveBucketVisitor {
             oldest_bucket_time_millis_allowed: TimeMillis,
         }
 
-        struct FrameClose {
+        struct FrameClose<T> {
             bucket_time_millis: TimeMillis,
             bucket_duration_i: usize,
+            payload: T,
         }
 
-        enum Frame {
+        enum Frame<T> {
             Open(FrameOpen),
-            Close(FrameClose),
+            Close(FrameClose<T>),
         }
 
         anyhow::ensure!(!bucket_durations.is_empty(), "bucket_durations must have at least one element");
@@ -77,9 +82,9 @@ impl RecursiveBucketVisitor {
         // Pump the stack
         while let Some(frame) = frames.pop() {
             match frame {
-                Frame::Close(FrameClose { bucket_time_millis, bucket_duration_i }) => {
+                Frame::Close(FrameClose { bucket_time_millis, bucket_duration_i, payload }) => {
                     let bucket_duration = bucket_durations[bucket_duration_i];
-                    let callback_result = on_bucket_close(bucket_time_millis, bucket_duration).await?;
+                    let callback_result = on_bucket_close(bucket_time_millis, bucket_duration, payload).await?;
                     if let RecursiveBucketVisitorCloseCallbackResult::Stop = callback_result {
                         return Ok(false);
                     };
@@ -112,18 +117,18 @@ impl RecursiveBucketVisitor {
                         continue;
                     }
 
-                    let callback_result = on_bucket_open(bucket_time_millis, bucket_duration).await?;
-
-                    // If the user has elected to bail early
-                    if let RecursiveBucketVisitorOpenCallbackResult::Stop = callback_result {
-                        return Ok(false);
+                    let (payload, continue_with_children) = match on_bucket_open(bucket_time_millis, bucket_duration).await? {
+                        RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren(payload) => (payload, true),
+                        RecursiveBucketVisitorOpenCallbackResult::ContinueWithoutChildren(payload) => (payload, false),
+                        // If the user has elected to bail early
+                        RecursiveBucketVisitorOpenCallbackResult::Stop => return Ok(false),
                     };
 
-                    // Push our close onto the stack
-                    frames.push(Frame::Close(FrameClose { bucket_time_millis, bucket_duration_i }));
+                    // Push our close onto the stack - carrying the open's payload to it
+                    frames.push(Frame::Close(FrameClose { bucket_time_millis, bucket_duration_i, payload }));
 
                     // If the user wants to go more granular
-                    if let RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren = callback_result {
+                    if continue_with_children {
                         let next_bucket_duration_i = bucket_duration_i + 1;
                         if next_bucket_duration_i < bucket_durations.len() {
                             let next_bucket_duration = bucket_durations[next_bucket_duration_i];
@@ -169,9 +174,9 @@ pub mod tests {
                 &mut async |time_millis, duration_millis| {
                     info!("time_millis: {}, duration_millis: {}", time_millis, duration_millis);
                     total_buckets += 1;
-                    Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren)
+                    Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren(()))
                 },
-                &mut async |_time_millis: TimeMillis, _duration_millis: DurationMillis| Ok(RecursiveBucketVisitorCloseCallbackResult::Continue),
+                &mut async |_time_millis: TimeMillis, _duration_millis: DurationMillis, _payload: ()| Ok(RecursiveBucketVisitorCloseCallbackResult::Continue),
             )
             .await?;
 
@@ -189,9 +194,9 @@ pub mod tests {
                 &mut async |time_millis: TimeMillis, duration_millis: DurationMillis| {
                     info!("time_millis: {}, duration_millis: {}", time_millis, duration_millis);
                     total_buckets += 1;
-                    Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren)
+                    Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren(()))
                 },
-                &mut async |_time_millis: TimeMillis, _duration_millis: DurationMillis| Ok(RecursiveBucketVisitorCloseCallbackResult::Continue),
+                &mut async |_time_millis: TimeMillis, _duration_millis: DurationMillis, _payload: ()| Ok(RecursiveBucketVisitorCloseCallbackResult::Continue),
             )
             .await?;
 
@@ -209,9 +214,9 @@ pub mod tests {
                 &mut async |time_millis, duration_millis| {
                     info!("time_millis: {}, duration_millis: {}", time_millis, duration_millis);
                     total_buckets += 1;
-                    Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren)
+                    Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren(()))
                 },
-                &mut async |_time_millis: TimeMillis, _duration_millis: DurationMillis| Ok(RecursiveBucketVisitorCloseCallbackResult::Continue),
+                &mut async |_time_millis: TimeMillis, _duration_millis: DurationMillis, _payload: ()| Ok(RecursiveBucketVisitorCloseCallbackResult::Continue),
             )
             .await?;
 
@@ -236,9 +241,9 @@ pub mod tests {
                 &mut async |time_millis: TimeMillis, duration_millis: DurationMillis| {
                     info!("time_millis: {}, duration_millis: {}", time_millis, duration_millis);
                     total_buckets += 1;
-                    Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren)
+                    Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren(()))
                 },
-                &mut async |_time_millis: TimeMillis, _duration_millis: DurationMillis| Ok(RecursiveBucketVisitorCloseCallbackResult::Continue),
+                &mut async |_time_millis: TimeMillis, _duration_millis: DurationMillis, _payload: ()| Ok(RecursiveBucketVisitorCloseCallbackResult::Continue),
             )
             .await?;
 
@@ -266,13 +271,13 @@ pub mod tests {
                     total_buckets += 1;
 
                     if duration_millis > MILLIS_IN_DAY {
-                        Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren)
+                        Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren(()))
                     }
                     else {
-                        Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithoutChildren)
+                        Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithoutChildren(()))
                     }
                 },
-                &mut async |_time_millis: TimeMillis, _duration_millis: DurationMillis| Ok(RecursiveBucketVisitorCloseCallbackResult::Continue),
+                &mut async |_time_millis: TimeMillis, _duration_millis: DurationMillis, _payload: ()| Ok(RecursiveBucketVisitorCloseCallbackResult::Continue),
             )
             .await?;
 
@@ -303,15 +308,42 @@ pub mod tests {
                         Ok(RecursiveBucketVisitorOpenCallbackResult::Stop)
                     }
                     else {
-                        Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren)
+                        Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren(()))
                     }
                 },
-                &mut async |_time_millis: TimeMillis, _duration_millis: DurationMillis| Ok(RecursiveBucketVisitorCloseCallbackResult::Continue),
+                &mut async |_time_millis: TimeMillis, _duration_millis: DurationMillis, _payload: ()| Ok(RecursiveBucketVisitorCloseCallbackResult::Continue),
             )
             .await?;
 
             assert_eq!(total_buckets, 9);
         }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn visitor_delivers_open_payload_to_matching_close() -> anyhow::Result<()> {
+        let mut total_opens = 0;
+        let mut total_closes = 0;
+
+        RecursiveBucketVisitor::visit(
+            TimeMillis::zero() + MILLIS_IN_MONTH + MILLIS_IN_WEEK.const_mul(2) + MILLIS_IN_DAY.const_mul(3),
+            TimeMillis::zero(),
+            &BUCKET_DURATIONS[1..4],
+            &mut async |bucket_time_millis: TimeMillis, bucket_duration_millis: DurationMillis| {
+                total_opens += 1;
+                Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren((bucket_time_millis, bucket_duration_millis)))
+            },
+            &mut async |bucket_time_millis: TimeMillis, bucket_duration_millis: DurationMillis, payload: (TimeMillis, DurationMillis)| {
+                total_closes += 1;
+                assert_eq!(payload, (bucket_time_millis, bucket_duration_millis), "a close must receive the payload of its own open");
+                Ok(RecursiveBucketVisitorCloseCallbackResult::Continue)
+            },
+        )
+        .await?;
+
+        assert_eq!(total_opens, 54);
+        assert_eq!(total_closes, total_opens);
 
         Ok(())
     }

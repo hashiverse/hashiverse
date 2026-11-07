@@ -19,6 +19,7 @@
 
 use crate::client::post_bundle::post_bundle_manager::PostBundleManager;
 use crate::client::timeline::recent_posts_pen::RecentPostsPen;
+use crate::protocol::posting::encoded_post_bundle::EncodedPostBundleV1;
 use crate::client::timeline::recursive_bucket_visitor::{RecursiveBucketVisitor, RecursiveBucketVisitorCloseCallbackResult, RecursiveBucketVisitorOpenCallbackResult};
 use crate::tools::buckets::{BucketLocation, BucketType};
 use crate::tools::time::{DurationMillis, TimeMillis, MILLIS_IN_MONTH};
@@ -104,22 +105,20 @@ impl SingleTimeline {
                 let bucket_location = BucketLocation::new(self.bucket_type, self.base_id, bucket_duration_millis, bucket_time_millis)?;
                 let encoded_post_bundle = self.post_bundle_manager.get_post_bundle(&bucket_location, time_millis).await?;
 
-                // Do we keep going deeper?
-                match encoded_post_bundle.header.overflowed {
-                    true => Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren),
-                    false => Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithoutChildren),
+                // Do we keep going deeper?  Either way the visitor hands this same location and bundle to on_bucket_close, so it is fetched once.
+                let overflowed = encoded_post_bundle.header.overflowed;
+                let payload = (bucket_location, encoded_post_bundle);
+                match overflowed {
+                    true => Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithChildren(payload)),
+                    false => Ok(RecursiveBucketVisitorOpenCallbackResult::ContinueWithoutChildren(payload)),
                 }
             },
             // on_bucket_close
-            &mut async |bucket_time_millis: TimeMillis, bucket_duration_millis: DurationMillis| {
-                // log::info!("close {}: bucket_time_millis: {}, bucket_duration_millis: {}", self.base_id, bucket_time_millis, bucket_duration_millis);
+            &mut async |bucket_time_millis: TimeMillis, _bucket_duration_millis: DurationMillis, (bucket_location, encoded_post_bundle): (BucketLocation, EncodedPostBundleV1)| {
+                // log::info!("close {}: bucket_time_millis: {}, bucket_duration_millis: {}", self.base_id, bucket_time_millis, _bucket_duration_millis);
 
                 // Keep pushing back the oldest time we have processed
                 self.oldest_processed_post_bundle_time_millis = self.oldest_processed_post_bundle_time_millis.min(bucket_time_millis);
-
-                // Get location's postbundle
-                let bucket_location = BucketLocation::new(self.bucket_type, self.base_id, bucket_duration_millis, bucket_time_millis)?;
-                let encoded_post_bundle = self.post_bundle_manager.get_post_bundle(&bucket_location, time_millis).await?;
 
                 // Extract all the posts we have not seen before (some post bundles may add posts over time if they are not yet sealed)
                 let mut extraction_start_i = 0;
@@ -176,6 +175,7 @@ pub mod tests {
     use crate::tools::time::{TimeMillis, MILLIS_IN_DAY, MILLIS_IN_MONTH, MILLIS_IN_WEEK};
     use crate::tools::types::Id;
     use log::info;
+    use std::collections::HashSet;
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
@@ -349,6 +349,26 @@ pub mod tests {
         assert_eq!(single_timeline.post_count(), 13);
         assert_eq!(single_timeline.oldest_allowed_post_bundle_time_millis(), TimeMillis::from_epoch_offset_str("-3M")?);
         assert_eq!(single_timeline.oldest_processed_post_bundle_time_millis(), TimeMillis::from_epoch_offset_str("-3M")?);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn timeline_fetches_each_bundle_once() -> anyhow::Result<()> {
+        // An overflowed month forces the walk down into its weeks, so buckets are opened and closed at several depths.
+        let id = Id::random();
+        let stub_post_bundle_manager = Arc::new(StubPostBundleManager::default());
+        stub_post_bundle_manager.add_random_stub_post_bundle(&id, MILLIS_IN_MONTH, "1D", 27)?;
+        stub_post_bundle_manager.add_random_stub_post_bundle(&id, MILLIS_IN_WEEK, "1W", 17)?;
+        stub_post_bundle_manager.add_random_stub_post_bundle(&id, MILLIS_IN_WEEK, "3W", 22)?;
+
+        let mut single_timeline = SingleTimeline::new(BucketType::User, &id, stub_post_bundle_manager.clone(), empty_pen());
+        single_timeline.get_more_posts(TimeMillis::from_epoch_offset_str("1M")?, 1000, &BUCKET_DURATIONS[1..4]).await?;
+
+        let requested_location_ids = stub_post_bundle_manager.requested_location_ids();
+        let distinct_requested_location_ids: HashSet<Id> = requested_location_ids.iter().copied().collect();
+        assert!(requested_location_ids.len() > 1, "the walk should have visited several buckets");
+        assert_eq!(requested_location_ids.len(), distinct_requested_location_ids.len(), "each bucket's bundle must be fetched exactly once");
 
         Ok(())
     }
