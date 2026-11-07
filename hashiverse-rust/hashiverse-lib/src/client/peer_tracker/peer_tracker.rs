@@ -15,6 +15,13 @@
 //!   fresh ones from gossip (`AnnounceV2`) or from RPC responses are folded in.
 //! - **Flush** — peer mutations set `peers_need_flush`; the outer client batches those
 //!   into periodic writes to storage so every RPC response doesn't trigger a disk write.
+//!
+//! ## Locking
+//!
+//! The tracker is shared as a [`SharedPeerTracker`] (`Arc<parking_lot::RwLock<PeerTracker>>`) so that
+//! concurrent DHT walks can interleave.  Every critical section is synchronous and short: anything that
+//! awaits (RPCs, storage writes) or is expensive (peer verification) happens with no guard held.
+//! `parking_lot` guards are `!Send`, so holding one across an `.await` in a `Send` future fails to compile.
 
 use crate::anyhow_assert_eq;
 use crate::client::client_storage::client_storage;
@@ -30,6 +37,9 @@ use crate::tools::types::Id;
 use crate::tools::{config, json, tools};
 use log::{info, trace, warn};
 use std::sync::Arc;
+
+/// The client-wide handle to the peer tracker.  Lock it only for short synchronous sections - never across an `.await`.
+pub type SharedPeerTracker = Arc<parking_lot::RwLock<PeerTracker>>;
 
 /// The client's local view of the known peer set and the entry point for Kademlia-style
 /// routing.
@@ -51,6 +61,8 @@ pub struct PeerTracker {
     peers_need_flush: bool,
     peers: Vec<Peer>,
     max_peers: usize,
+    /// Serialises flushes so a slow, older snapshot can never land in storage after a newer one.
+    flush_serialiser: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl PeerTracker {
@@ -85,6 +97,7 @@ impl PeerTracker {
             peers_need_flush: peers_were_dropped,
             peers,
             max_peers,
+            flush_serialiser: Arc::new(tokio::sync::Mutex::new(())),
         })
     }
 
@@ -113,28 +126,45 @@ impl PeerTracker {
         (peers, peers_were_dropped)
     }
 
-    pub async fn flush(&mut self) -> anyhow::Result<()> {
+    /// Clears the dirty flag and returns the peers to persist, or `None` if nothing changed since the last flush.
+    pub fn take_flush_snapshot(&mut self) -> Option<Vec<Peer>> {
         if !self.peers_need_flush {
+            return None;
+        }
+        self.peers_need_flush = false;
+        Some(self.peers.clone())
+    }
+
+    pub fn mark_needs_flush(&mut self) {
+        self.peers_need_flush = true;
+    }
+
+    pub fn current_time_millis(&self) -> TimeMillis {
+        self.runtime_services.time_provider.current_time_millis()
+    }
+
+    /// Verify-and-insert in one go.  Holders of a [`SharedPeerTracker`] should instead call [`Self::needs_verification`] under a read lock,
+    /// [`Self::verify_candidate`] with no lock held, then [`Self::insert_verified`] under a write lock - verification is the expensive part.
+    pub fn add_peer(&mut self, peer: Peer) -> anyhow::Result<()> {
+        if !self.needs_verification(&peer) {
             return Ok(());
         }
-
-        trace!("Flushing peers to storage");
-        self.peers_need_flush = false;
-        client_storage::put_struct(self.client_storage.as_ref(), BUCKET_PEER, "peers", &self.peers, self.runtime_services.time_provider.current_time_millis()).await?;
-
+        Self::verify_candidate(&peer, self.current_time_millis())?;
+        self.insert_verified(peer);
         Ok(())
     }
 
-    pub fn add_peer(&mut self, peer: Peer) -> anyhow::Result<()> {
-        let search_result = self.peers.binary_search_by_key(&peer.id, |peer| peer.id);
-
-        // Cheap dedupe before the expensive verify: servers resend the same peers in every peers_nearer list
-        if let Ok(i) = search_result {
-            if peer.timestamp <= self.peers[i].timestamp {
-                return Ok(());
-            }
+    /// Cheap dedupe before the expensive verify: servers resend the same peers in every peers_nearer list.
+    /// False if we already hold this peer with a timestamp at least as new.
+    pub fn needs_verification(&self, peer: &Peer) -> bool {
+        match self.peers.binary_search_by_key(&peer.id, |peer| peer.id) {
+            Ok(i) => peer.timestamp > self.peers[i].timestamp,
+            Err(_) => true,
         }
+    }
 
+    /// Everything a peer must pass before it may enter the tracker.  Pure, so it can run with no lock held.
+    pub fn verify_candidate(peer: &Peer, current_time_millis: TimeMillis) -> anyhow::Result<()> {
         // Sanity check that this peer is kosher
         if let Err(e) = peer.verify() {
             anyhow::bail!("peer verification error: {}", e);
@@ -146,12 +176,19 @@ impl PeerTracker {
         }
 
         // A far-future timestamp would win every later newest-timestamp comparison, so the real peer could never replace it
-        let current_time_millis = self.runtime_services.time_provider.current_time_millis();
         peer.verify_timestamps(current_time_millis)?;
 
-        match search_result {
+        Ok(())
+    }
+
+    /// Inserts a peer that has passed [`Self::verify_candidate`].  Re-checks the timestamp dedupe, because another walk may have
+    /// inserted a newer copy between our verify and this insert.
+    pub fn insert_verified(&mut self, peer: Peer) {
+        match self.peers.binary_search_by_key(&peer.id, |peer| peer.id) {
             Ok(i) => {
-                // Newer than what we hold (checked above)
+                if peer.timestamp <= self.peers[i].timestamp {
+                    return;
+                }
                 self.peers[i] = peer;
             }
             Err(i) => {
@@ -160,10 +197,11 @@ impl PeerTracker {
                 }
                 else {
                     // Full: the newcomer only gets in by out-scoring our weakest peer
+                    let current_time_millis = self.current_time_millis();
                     let weakest_peer = self.peers.iter().enumerate().map(|(index, existing_peer)| (index, existing_peer.score(current_time_millis))).min_by(|a, b| a.1.total_cmp(&b.1));
-                    let Some((weakest_peer_index, weakest_peer_score)) = weakest_peer else { return Ok(()) };
+                    let Some((weakest_peer_index, weakest_peer_score)) = weakest_peer else { return };
                     if peer.score(current_time_millis) <= weakest_peer_score {
-                        return Ok(());
+                        return;
                     }
                     self.peers.remove(weakest_peer_index);
                     let insert_index = self.peers.binary_search_by_key(&peer.id, |peer| peer.id).unwrap_or_else(|insert_index| insert_index);
@@ -173,8 +211,6 @@ impl PeerTracker {
         }
 
         self.peers_need_flush = true;
-
-        Ok(())
     }
 
     pub fn remove_peer(&mut self, peer: &Peer) {
@@ -198,43 +234,80 @@ impl PeerTracker {
         &self.peers
     }
 
-    pub async fn iterate_to_location(&mut self, bucket_location_id: Id, max_iterations_since_high_watermark: usize, cache_radius: Option<LeadingAgreementBits>) -> anyhow::Result<PeerIterator<'_>> {
-        self.bootstrap().await?;
+    /// Persists the peers if they changed.  The storage write happens with no tracker lock held.
+    pub async fn flush(peer_tracker: &SharedPeerTracker) -> anyhow::Result<()> {
+        let flush_serialiser = peer_tracker.read().flush_serialiser.clone();
+        let _flush_guard = flush_serialiser.lock().await;
 
-        Ok(PeerIterator::new(self, bucket_location_id, max_iterations_since_high_watermark, cache_radius))
+        let (client_storage, current_time_millis, peers) = {
+            let mut peer_tracker = peer_tracker.write();
+            let Some(peers) = peer_tracker.take_flush_snapshot() else { return Ok(()) };
+            (peer_tracker.client_storage.clone(), peer_tracker.current_time_millis(), peers)
+        };
+
+        trace!("Flushing peers to storage");
+        let result = client_storage::put_struct(client_storage.as_ref(), BUCKET_PEER, "peers", &peers, current_time_millis).await;
+        if result.is_err() {
+            peer_tracker.write().mark_needs_flush();
+        }
+        result
     }
 
-    pub async fn bootstrap(&mut self) -> anyhow::Result<()> {
-        // We only need to bootsrap if we have noone to talk to!
-        if !self.is_empty() {
-            return Ok(());
-        }
+    /// Bootstraps if necessary, then starts a walk towards `bucket_location_id`.  The iterator locks the tracker only briefly per step.
+    pub async fn iterate_to_location(peer_tracker: &SharedPeerTracker, bucket_location_id: Id, max_iterations_since_high_watermark: usize, cache_radius: Option<LeadingAgreementBits>) -> anyhow::Result<PeerIterator> {
+        Self::bootstrap(peer_tracker).await?;
+
+        Ok(PeerIterator::new(peer_tracker.clone(), bucket_location_id, max_iterations_since_high_watermark, cache_radius))
+    }
+
+    /// Seeds an empty tracker from the bootstrap addresses.  RPCs and verification happen with no lock held; two concurrent
+    /// bootstraps may both fetch, which is harmless because inserts are idempotent.
+    pub async fn bootstrap(peer_tracker: &SharedPeerTracker) -> anyhow::Result<()> {
+        // We only need to bootstrap if we have noone to talk to!
+        let runtime_services = {
+            let peer_tracker = peer_tracker.read();
+            if !peer_tracker.is_empty() {
+                return Ok(());
+            }
+            peer_tracker.runtime_services.clone()
+        };
 
         info!("bootstrapping PeerTracker");
 
         // Lets randomize these addresses so that the first one is not snowed
-        let mut bootstrap_addresses = self.runtime_services.transport_factory.get_bootstrap_addresses().await;
+        let mut bootstrap_addresses = runtime_services.transport_factory.get_bootstrap_addresses().await;
         tools::shuffle(&mut bootstrap_addresses);
 
         // Our bootstrap process has handed us a bunch of raw addresses, so we need to convert them into peers
         for bootstrap_address in bootstrap_addresses {
             let try_result: anyhow::Result<()> = try {
-                {
-                    info!("bootstrapping {}", bootstrap_address);
+                info!("bootstrapping {}", bootstrap_address);
 
-                    let request = json::struct_to_bytes(&BootstrapV1 {})?;
-                    let response = rpc::rpc::rpc_server_unknown(&self.runtime_services, &Id::zero(), &bootstrap_address, PayloadRequestKind::BootstrapV1, request).await?;
-                    anyhow_assert_eq!(&PayloadResponseKind::BootstrapResponseV1, &response.response_request_kind);
-                    let response = json::bytes_to_struct::<BootstrapResponseV1>(&response.bytes)?;
-                    if response.peers_random.len() > config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE {
-                        warn!("ignoring {} of {} bootstrapped peers from {} (cap is {})", response.peers_random.len() - config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE, response.peers_random.len(), bootstrap_address, config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE);
-                    }
-                    for peer in response.peers_random.into_iter().take(config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE) {
-                        let result = self.add_peer(peer);
-                        if let Err(e) = result {
+                let request = json::struct_to_bytes(&BootstrapV1 {})?;
+                let response = rpc::rpc::rpc_server_unknown(&runtime_services, &Id::zero(), &bootstrap_address, PayloadRequestKind::BootstrapV1, request).await?;
+                anyhow_assert_eq!(&PayloadResponseKind::BootstrapResponseV1, &response.response_request_kind);
+                let response = json::bytes_to_struct::<BootstrapResponseV1>(&response.bytes)?;
+                if response.peers_random.len() > config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE {
+                    warn!("ignoring {} of {} bootstrapped peers from {} (cap is {})", response.peers_random.len() - config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE, response.peers_random.len(), bootstrap_address, config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE);
+                }
+
+                let current_time_millis = runtime_services.time_provider.current_time_millis();
+                let verified_peers: Vec<Peer> = response
+                    .peers_random
+                    .into_iter()
+                    .take(config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE)
+                    .filter(|peer| match Self::verify_candidate(peer, current_time_millis) {
+                        Ok(()) => true,
+                        Err(e) => {
                             warn!("problem while adding bootstrapped peer: {}", e);
+                            false
                         }
-                    }
+                    })
+                    .collect();
+
+                let mut peer_tracker = peer_tracker.write();
+                for peer in verified_peers {
+                    peer_tracker.insert_verified(peer);
                 }
             };
 
@@ -243,7 +316,7 @@ impl PeerTracker {
             }
 
             // We only need to continue bootstrapping if we still have noone to talk to!
-            if !self.is_empty() {
+            if !peer_tracker.read().is_empty() {
                 break;
             }
         }
@@ -255,7 +328,7 @@ impl PeerTracker {
 #[cfg(test)]
 mod tests {
     use crate::client::client_storage::mem_client_storage::MemClientStorage;
-    use crate::client::peer_tracker::peer_tracker::PeerTracker;
+    use crate::client::peer_tracker::peer_tracker::{PeerTracker, SharedPeerTracker};
     use crate::tools::config;
     use crate::tools::runtime_services::RuntimeServices;
     use crate::tools::server_id::ServerId;
@@ -461,7 +534,7 @@ mod tests {
 
             let (_, peer) = make_peer(&runtime_services).await?;
             peer_tracker.add_peer(peer.clone())?;
-            peer_tracker.flush().await?;
+            assert!(peer_tracker.take_flush_snapshot().is_some());
             assert!(!peer_tracker.needs_flush());
 
             // Same timestamp but invalid: if verify ran this would be rejected; the dedupe must short-circuit first.
@@ -512,7 +585,7 @@ mod tests {
         async fn add_peers_considers_at_most_the_per_response_cap() -> anyhow::Result<()> {
             let runtime_services = RuntimeServices::default_for_testing();
             let client_storage = MemClientStorage::new().await?;
-            let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage).await?;
+            let peer_tracker: SharedPeerTracker = Arc::new(parking_lot::RwLock::new(PeerTracker::new(runtime_services.clone(), client_storage).await?));
 
             let mut response_peers = Vec::new();
             for _ in 0..config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE + 3 {
@@ -520,9 +593,82 @@ mod tests {
                 response_peers.push(peer);
             }
 
-            let mut peer_iterator = PeerIterator::new(&mut peer_tracker, Id::random(), 1, None);
+            let mut peer_iterator = PeerIterator::new(peer_tracker.clone(), Id::random(), 1, None);
             peer_iterator.add_peers(response_peers);
-            assert_eq!(config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE, peer_tracker.len());
+            assert_eq!(config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE, peer_tracker.read().len());
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn insert_verified_rechecks_timestamp() -> anyhow::Result<()> {
+            let (runtime_services, manual_time_provider) = manual_runtime_services();
+            let client_storage = MemClientStorage::new().await?;
+            let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage).await?;
+
+            let (server_id, older_peer) = make_peer(&runtime_services).await?;
+            manual_time_provider.set_time(START_TIME_MILLIS + MILLIS_IN_DAY);
+            let mut newer_peer = older_peer.clone();
+            newer_peer.sign(runtime_services.time_provider.as_ref(), &server_id.keys.signature_key)?;
+            assert!(newer_peer.timestamp > older_peer.timestamp, "test setup: the re-signed copy must be newer");
+
+            // Another walk verified the older copy, but the newer one was inserted first: the older one must not overwrite it
+            peer_tracker.insert_verified(newer_peer.clone());
+            peer_tracker.insert_verified(older_peer);
+            assert_eq!(vec![newer_peer], *peer_tracker.peers());
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn needs_verification_skips_known_peers_that_are_not_newer() -> anyhow::Result<()> {
+            let (runtime_services, manual_time_provider) = manual_runtime_services();
+            let client_storage = MemClientStorage::new().await?;
+            let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage).await?;
+
+            let (server_id, peer) = make_peer(&runtime_services).await?;
+            assert!(peer_tracker.needs_verification(&peer), "an unknown peer needs verifying");
+            peer_tracker.add_peer(peer.clone())?;
+            assert!(!peer_tracker.needs_verification(&peer), "the same copy does not");
+
+            manual_time_provider.set_time(START_TIME_MILLIS + MILLIS_IN_DAY);
+            let mut newer_peer = peer.clone();
+            newer_peer.sign(runtime_services.time_provider.as_ref(), &server_id.keys.signature_key)?;
+            assert!(peer_tracker.needs_verification(&newer_peer), "a newer copy does");
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn flush_snapshot_clears_and_mark_restores_flag() -> anyhow::Result<()> {
+            let runtime_services = RuntimeServices::default_for_testing();
+            let client_storage = MemClientStorage::new().await?;
+            let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage).await?;
+            assert!(peer_tracker.take_flush_snapshot().is_none(), "nothing to flush yet");
+
+            let (_, peer) = make_peer(&runtime_services).await?;
+            peer_tracker.add_peer(peer.clone())?;
+            assert_eq!(Some(vec![peer]), peer_tracker.take_flush_snapshot());
+            assert!(!peer_tracker.needs_flush());
+            assert!(peer_tracker.take_flush_snapshot().is_none());
+
+            peer_tracker.mark_needs_flush();
+            assert!(peer_tracker.needs_flush());
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn shared_flush_persists_peers() -> anyhow::Result<()> {
+            let runtime_services = RuntimeServices::default_for_testing();
+            let client_storage = MemClientStorage::new().await?;
+            let peer_tracker: SharedPeerTracker = Arc::new(parking_lot::RwLock::new(PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?));
+
+            for _ in 0..3 {
+                let (_, peer) = make_peer(&runtime_services).await?;
+                peer_tracker.write().add_peer(peer)?;
+            }
+            PeerTracker::flush(&peer_tracker).await?;
+            assert!(!peer_tracker.read().needs_flush());
+
+            let reloaded_peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage).await?;
+            assert_eq!(*peer_tracker.read().peers(), *reloaded_peer_tracker.peers());
             Ok(())
         }
     }

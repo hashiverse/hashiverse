@@ -21,7 +21,7 @@ use crate::anyhow_assert_eq;
 use crate::client::caching::cache_radius_tracker::CacheRadiusTracker;
 use crate::client::caching::post_bundle_cache_uploader;
 use crate::client::client_storage::client_storage::{ClientStorage, BUCKET_POST_BUNDLE};
-use crate::client::peer_tracker::peer_tracker::PeerTracker;
+use crate::client::peer_tracker::peer_tracker::{PeerTracker, SharedPeerTracker};
 use crate::client::post_bundle::post_bundle_healing;
 use crate::client::post_bundle::post_bundle_manager::PostBundleManager;
 use crate::protocol::payload::payload::{CacheRequestTokenV1, GetPostBundleResponseV1, GetPostBundleV1, PayloadRequestKind, PayloadResponseKind};
@@ -40,7 +40,7 @@ use log::{info, trace, warn};
 use scopeguard::defer;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 
 /// The production [`PostBundleManager`] implementation — the one that actually talks to the
 /// network.
@@ -62,7 +62,7 @@ use tokio::sync::{Mutex, RwLock};
 pub struct LivePostBundleManager {
     runtime_services: Arc<RuntimeServices>,
     client_storage: Arc<dyn ClientStorage>,
-    peer_tracker: Arc<RwLock<PeerTracker>>,
+    peer_tracker: SharedPeerTracker,
     sponsor_id: Id,
     post_bundle_inflight: Mutex<HashMap<Id, Arc<Mutex<()>>>>,
     post_bundle_cache_radius_tracker: CacheRadiusTracker,
@@ -73,7 +73,7 @@ impl LivePostBundleManager {
         runtime_services: Arc<RuntimeServices>,
         sponsor_id: Id,
         client_storage: Arc<dyn ClientStorage>,
-        peer_tracker: Arc<RwLock<PeerTracker>>,
+        peer_tracker: SharedPeerTracker,
     ) -> Self {
         Self {
             runtime_services,
@@ -154,8 +154,7 @@ impl PostBundleManager
         let mut cache_request_tokens: Vec<CacheRequestTokenV1> = Vec::new();
         let mut positive_responder_leading_agreement_bits: Vec<LeadingAgreementBits> = Vec::new();
         {
-            let mut peer_tracker = self.peer_tracker.write().await;
-            let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, 2 * config::REDUNDANT_SERVERS_PER_POST, cache_radius).await?;
+            let mut peer_iter = PeerTracker::iterate_to_location(&self.peer_tracker, bucket_location.location_id, 2 * config::REDUNDANT_SERVERS_PER_POST, cache_radius).await?;
             while let Some((peer, leading_agreement_bits)) = peer_iter.next_peer() {
                 if accepted_post_bundles.accepted_originator_ids().contains(&peer.id) {
                     continue;
@@ -210,7 +209,7 @@ impl PostBundleManager
                 }
             }
 
-            let result = peer_tracker.flush().await;
+            let result = PeerTracker::flush(&self.peer_tracker).await;
             if let Err(e) = result {
                 warn!("Error flushing peer tracker: {}", e);
             }
