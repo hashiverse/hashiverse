@@ -35,6 +35,12 @@ use crate::server::post_bundle_caching_shared::{CachedBundle, GetCacheResult, CA
 /// Ballpark: 20 posts × 50 KB each × up to 5 originators ≈ 5 MB per location.
 const POST_BUNDLE_PLACEHOLDER_WEIGHT: u32 = 4 * 1024 * 1024;
 
+/// A cached bundle plus its signed header timestamp, so a replayed older version from the same originator can't replace a newer one.
+struct CachedPostBundle {
+    bundle_time_millis: TimeMillis,
+    cached_bundle: CachedBundle,
+}
+
 // --------------------------------------------------------------------------------------------
 // CachedPostBundleLocationEntry
 // --------------------------------------------------------------------------------------------
@@ -43,7 +49,7 @@ const POST_BUNDLE_PLACEHOLDER_WEIGHT: u32 = 4 * 1024 * 1024;
 /// Multiple originator versions are stored — different servers may hold different subsets of posts.
 struct CachedPostBundleLocationEntry {
     /// Originator peer_id → cached bundle.
-    bundles: HashMap<Id, CachedBundle>,
+    bundles: HashMap<Id, CachedPostBundle>,
     hit_count: u32,
 }
 
@@ -53,7 +59,7 @@ impl CachedPostBundleLocationEntry {
     }
 
     fn weight(&self) -> u32 {
-        let total: u32 = self.bundles.values().map(|b| b.bytes.len() as u32).sum();
+        let total: u32 = self.bundles.values().map(|cached_post_bundle| cached_post_bundle.cached_bundle.bytes.len() as u32).sum();
         if total == 0 { POST_BUNDLE_PLACEHOLDER_WEIGHT } else { total }
     }
 }
@@ -123,8 +129,8 @@ impl PostBundleCache {
             let already_retrieved_set: std::collections::HashSet<Id> = already_retrieved_peer_ids.iter().copied().collect();
             let cached_items: Vec<Bytes> = entry.bundles
                 .iter()
-                .filter(|(originator_id, bundle)| !already_retrieved_set.contains(originator_id) && !bundle.is_stale(now))
-                .map(|(_, bundle)| bundle.bytes.clone())
+                .filter(|(originator_id, cached_post_bundle)| !already_retrieved_set.contains(originator_id) && !cached_post_bundle.cached_bundle.is_stale(now))
+                .map(|(_, cached_post_bundle)| cached_post_bundle.cached_bundle.bytes.clone())
                 .collect();
 
             let already_cached_peer_ids: Vec<Id> = entry.bundles.keys().copied().collect();
@@ -145,12 +151,16 @@ impl PostBundleCache {
 
     /// Called by the dispatch handler when a `CachePostBundleV1` upload arrives.
     /// The token must have been verified and expiry-checked by the caller.
-    /// Returns `true` if accepted, `false` if the entry was evicted before the upload arrived.
+    /// `bundle_time_millis` is the bundle's signed `header.time_millis`: an upload older than the bundle already cached
+    /// for the same originator is rejected (newest wins). There is deliberately no flat age limit - old sealed bundles are fine.
+    /// Returns `true` if accepted, `false` if the entry was evicted before the upload arrived, the upload is older than
+    /// the cached bundle for this originator, or it lost the per-location capacity eviction.
     pub fn on_upload(
         &self,
         location_id: Id,
         originator_peer_id: Id,
         bundle_bytes: Bytes,
+        bundle_time_millis: TimeMillis,
         server_time: TimeMillis,
         is_sealed: bool,
     ) -> bool {
@@ -160,11 +170,17 @@ impl PostBundleCache {
         };
 
         let mut entry = entry_arc.lock().unwrap();
+        if let Some(existing_cached_post_bundle) = entry.bundles.get(&originator_peer_id)
+            && bundle_time_millis < existing_cached_post_bundle.bundle_time_millis
+        {
+            return false;
+        }
+
         let expires_at = if is_sealed { None } else { Some(server_time + MILLIS_IN_MINUTE.const_mul(5)) };
-        let bundle = CachedBundle { bytes: bundle_bytes, expires_at };
+        let cached_post_bundle = CachedPostBundle { bundle_time_millis, cached_bundle: CachedBundle { bytes: bundle_bytes, expires_at } };
 
         // Insert (or update) the new originator
-        entry.bundles.insert(originator_peer_id, bundle);
+        entry.bundles.insert(originator_peer_id, cached_post_bundle);
 
         // If over capacity, evict the worst entry: furthest from location_id,
         // breaking ties by expires_at (stalest loses). This may evict the entry
@@ -173,12 +189,12 @@ impl PostBundleCache {
         while entry.bundles.len() > self.max_originators_per_location {
             let evict_key = entry.bundles
                 .iter()
-                .min_by(|(id_a, bundle_a), (id_b, bundle_b)| {
+                .min_by(|(id_a, cached_post_bundle_a), (id_b, cached_post_bundle_b)| {
                     let distance_a = leading_agreement_bits_xor(id_a.as_ref(), location_id.as_ref());
                     let distance_b = leading_agreement_bits_xor(id_b.as_ref(), location_id.as_ref());
                     distance_a.cmp(&distance_b).then_with(|| {
-                        let expires_a = bundle_a.expires_at.unwrap_or(TimeMillis(i64::MAX));
-                        let expires_b = bundle_b.expires_at.unwrap_or(TimeMillis(i64::MAX));
+                        let expires_a = cached_post_bundle_a.cached_bundle.expires_at.unwrap_or(TimeMillis(i64::MAX));
+                        let expires_b = cached_post_bundle_b.cached_bundle.expires_at.unwrap_or(TimeMillis(i64::MAX));
                         expires_a.cmp(&expires_b)
                     })
                 })
@@ -268,7 +284,7 @@ mod tests {
         // Register the placeholder entry via on_get
         cache.on_get(&bucket_location, &[], &peer_self, &server_id, now);
 
-        let accepted = cache.on_upload(location_id, originator_id, bundle_bytes.clone(), now, false);
+        let accepted = cache.on_upload(location_id, originator_id, bundle_bytes.clone(), now, now, false);
         assert!(accepted);
 
         let result = cache.on_get(&bucket_location, &[], &peer_self, &server_id, now);
@@ -287,7 +303,7 @@ mod tests {
         let originator_id = Id::random();
 
         cache.on_get(&bucket_location, &[], &peer_self, &server_id, now);
-        cache.on_upload(location_id, originator_id, Bytes::from_static(b"bundle"), now, false);
+        cache.on_upload(location_id, originator_id, Bytes::from_static(b"bundle"), now, now, false);
 
         let result = cache.on_get(&bucket_location, &[originator_id], &peer_self, &server_id, now);
         assert!(result.cached_items.is_empty());
@@ -302,7 +318,7 @@ mod tests {
         let originator_id = Id::random();
 
         // No on_get call — entry was never inserted — upload must be rejected
-        let accepted = cache.on_upload(location_id, originator_id, Bytes::from_static(b"bundle"), TimeMillis(1_000_000), false);
+        let accepted = cache.on_upload(location_id, originator_id, Bytes::from_static(b"bundle"), TimeMillis(1_000_000), TimeMillis(1_000_000), false);
         assert!(!accepted);
 
         Ok(())
@@ -333,7 +349,7 @@ mod tests {
         for &p in &[20usize, 40, 60, 80, 100] {
             let bytes = Bytes::from(format!("bundle-agreement-{}", p));
             // sealed => never individually stale, so on_get returns every survivor.
-            cache.on_upload(location_id, originator_at(p), bytes, now, true);
+            cache.on_upload(location_id, originator_at(p), bytes, now, now, true);
         }
 
         let result = cache.on_get(&bucket_location, &[], &peer_self, &server_id, now);
@@ -345,6 +361,38 @@ mod tests {
         for &p in &[20usize, 40] {
             assert!(!cached.contains(format!("bundle-agreement-{}", p).as_bytes()), "furthest originator (agreement {}) must be evicted", p);
         }
+        Ok(())
+    }
+
+    /// A replayed older (but genuinely signed) bundle from the same originator must not roll back a newer cached one,
+    /// while an older bundle from a *different* originator is still accepted - no flat age limit.
+    #[tokio::test]
+    async fn test_upload_keeps_newer_bundle_for_same_originator() -> anyhow::Result<()> {
+        let (server_id, peer_self) = make_test_server_and_peer().await?;
+        let cache = PostBundleCache::new(5, 64 * 1024 * 1024, Arc::new(RealTimeProvider));
+        let bucket_location = make_test_bucket_location();
+        let location_id = bucket_location.location_id;
+        let now = TimeMillis(1_000_000);
+        let originator_id = Id::random();
+        let other_originator_id = Id::random();
+        let newer_bundle_bytes = Bytes::from_static(b"newer_bundle");
+        let older_bundle_bytes = Bytes::from_static(b"older_bundle");
+        let newest_bundle_bytes = Bytes::from_static(b"newest_bundle");
+        let other_originator_bundle_bytes = Bytes::from_static(b"other_originator_old_bundle");
+
+        cache.on_get(&bucket_location, &[], &peer_self, &server_id, now);
+
+        assert!(cache.on_upload(location_id, originator_id, newer_bundle_bytes.clone(), TimeMillis(900_000), now, true));
+        assert!(!cache.on_upload(location_id, originator_id, older_bundle_bytes, TimeMillis(800_000), now, true), "older bundle from the same originator must be rejected");
+        let result = cache.on_get(&bucket_location, &[], &peer_self, &server_id, now);
+        assert_eq!(result.cached_items, vec![newer_bundle_bytes]);
+
+        assert!(cache.on_upload(location_id, originator_id, newest_bundle_bytes.clone(), TimeMillis(950_000), now, true), "newer bundle from the same originator must replace the cached one");
+        assert!(cache.on_upload(location_id, other_originator_id, other_originator_bundle_bytes.clone(), TimeMillis(100_000), now, true), "an old bundle from another originator is still cacheable");
+        let result = cache.on_get(&bucket_location, &[], &peer_self, &server_id, now);
+        let cached_items: std::collections::HashSet<Bytes> = result.cached_items.into_iter().collect();
+        assert_eq!(cached_items, std::collections::HashSet::from([newest_bundle_bytes, other_originator_bundle_bytes]));
+
         Ok(())
     }
 

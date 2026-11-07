@@ -1214,7 +1214,8 @@ impl HashiverseServer {
                 encoded_post_bundle.normalise_flags_for_bucket(&request.token.bucket_location, time_millis);
                 let originator_peer_id = encoded_post_bundle.header.peer.id;
                 let is_sealed = encoded_post_bundle.header.sealed;
-                if self.post_bundle_cache.on_upload(request.token.bucket_location.location_id, originator_peer_id, bundle_bytes, time_millis, is_sealed) {
+                let bundle_time_millis = encoded_post_bundle.header.time_millis;
+                if self.post_bundle_cache.on_upload(request.token.bucket_location.location_id, originator_peer_id, bundle_bytes, bundle_time_millis, time_millis, is_sealed) {
                     any_accepted = true;
                 }
             };
