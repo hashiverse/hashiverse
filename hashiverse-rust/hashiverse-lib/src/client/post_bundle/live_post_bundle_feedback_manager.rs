@@ -108,7 +108,7 @@ impl PostBundleFeedbackManager for LivePostBundleFeedbackManager {
 
         // We need to refresh...
         let mut peers_visited = Vec::new();
-        let mut accepted_post_bundle_feedbacks = AcceptedPostBundleFeedbacks::new(post_bundle_location_id);
+        let mut accepted_post_bundle_feedbacks = AcceptedPostBundleFeedbacks::new(post_bundle_location_id, time_millis);
         let mut cache_request_tokens: Vec<CacheRequestTokenV1> = Vec::new();
         let mut positive_responder_leading_agreement_bits: Vec<LeadingAgreementBits> = Vec::new();
         {
@@ -216,6 +216,7 @@ impl PostBundleFeedbackManager for LivePostBundleFeedbackManager {
 /// end the walk early nor mask a genuine originator's copy via `already_retrieved_peer_ids`.
 struct AcceptedPostBundleFeedbacks {
     location_id: Id,
+    time_millis: TimeMillis,
     accepted_originator_ids: Vec<Id>,
     bundles: Vec<EncodedPostBundleFeedbackV1>,
     /// The intact originator-signed bytes of every accepted, non-empty bundle that passes full verify(): the only thing we may forward to caches.
@@ -223,8 +224,8 @@ struct AcceptedPostBundleFeedbacks {
 }
 
 impl AcceptedPostBundleFeedbacks {
-    fn new(location_id: Id) -> Self {
-        Self { location_id, accepted_originator_ids: Vec::new(), bundles: Vec::new(), bundle_bytes_for_upload: Vec::new() }
+    fn new(location_id: Id, time_millis: TimeMillis) -> Self {
+        Self { location_id, time_millis, accepted_originator_ids: Vec::new(), bundles: Vec::new(), bundle_bytes_for_upload: Vec::new() }
     }
 
     /// Originators whose bundles we have accepted - passed to servers so they don't send us those again.
@@ -253,6 +254,7 @@ impl AcceptedPostBundleFeedbacks {
             return Ok(false);
         }
         encoded_post_bundle_feedback.verify_for_location(&self.location_id)?;
+        self.verify_not_from_the_future(&encoded_post_bundle_feedback)?;
         if encoded_post_bundle_feedback.feedbacks_bytes.is_empty() {
             trace!("Ignoring empty cached PostBundleFeedback from peer.id={}", encoded_post_bundle_feedback.header.peer.id);
             return Ok(false);
@@ -274,10 +276,20 @@ impl AcceptedPostBundleFeedbacks {
             return Ok(false);
         }
         encoded_post_bundle_feedback.verify_origin_for_location(&self.location_id)?;
+        self.verify_not_from_the_future(&encoded_post_bundle_feedback)?;
 
         trace!("Accepted PostBundleFeedback from peer.id={} with length {}", encoded_post_bundle_feedback.header.peer.id, encoded_post_bundle_feedback.feedbacks_bytes.len());
         self.accept(encoded_post_bundle_feedback_bytes, encoded_post_bundle_feedback);
         Ok(true)
+    }
+
+    /// merge() keeps the newest header, and our local cache judges freshness by it - so a future-dated bundle would pin a stale view in it.
+    fn verify_not_from_the_future(&self, encoded_post_bundle_feedback: &EncodedPostBundleFeedbackV1) -> anyhow::Result<()> {
+        let time_millis_latest_allowed = self.time_millis + config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD;
+        if encoded_post_bundle_feedback.header.time_millis > time_millis_latest_allowed {
+            anyhow::bail!("PostBundleFeedback from peer.id={} is dated {}, later than the allowed {}", encoded_post_bundle_feedback.header.peer.id, encoded_post_bundle_feedback.header.time_millis, time_millis_latest_allowed);
+        }
+        Ok(())
     }
 
     fn accept(&mut self, encoded_post_bundle_feedback_bytes: Bytes, encoded_post_bundle_feedback: EncodedPostBundleFeedbackV1) {
@@ -298,6 +310,7 @@ mod tests {
     use crate::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
     use crate::tools::server_id::ServerId;
     use crate::tools::time_provider::time_provider::RealTimeProvider;
+    use crate::tools::time::MILLIS_IN_MILLISECOND;
     use crate::tools::types::Pow;
 
     async fn make_genuine_server_id() -> anyhow::Result<ServerId> {
@@ -321,7 +334,7 @@ mod tests {
     #[tokio::test]
     async fn self_signed_and_empty_cached_bundles_do_not_reach_quorum() -> anyhow::Result<()> {
         let location_id = Id::random();
-        let mut accepted_post_bundle_feedbacks = AcceptedPostBundleFeedbacks::new(location_id);
+        let mut accepted_post_bundle_feedbacks = AcceptedPostBundleFeedbacks::new(location_id, TimeMillis(1000));
         for _ in 0..config::REDUNDANT_SERVERS_PER_POST {
             let unworked_server_id = make_unworked_server_id().await?;
             assert!(accepted_post_bundle_feedbacks.offer_cached(bundle_bytes(&unworked_server_id, location_id, &[make_valid_feedback(Id::random(), 1)?])?).is_err());
@@ -336,7 +349,7 @@ mod tests {
     async fn cached_bundle_must_be_for_this_location_and_fully_valid() -> anyhow::Result<()> {
         let location_id = Id::random();
         let server_id = make_genuine_server_id().await?;
-        let mut accepted_post_bundle_feedbacks = AcceptedPostBundleFeedbacks::new(location_id);
+        let mut accepted_post_bundle_feedbacks = AcceptedPostBundleFeedbacks::new(location_id, TimeMillis(1000));
         assert!(accepted_post_bundle_feedbacks.offer_cached(bundle_bytes(&server_id, Id::random(), &[make_valid_feedback(Id::random(), 1)?])?).is_err());
         assert!(accepted_post_bundle_feedbacks.offer_cached(bundle_bytes(&server_id, location_id, &[make_forged_feedback(Id::random(), 1)])?).is_err());
         assert_eq!(accepted_post_bundle_feedbacks.quorum_count(), 0);
@@ -353,7 +366,7 @@ mod tests {
         forged_bundle.header.peer = genuine_server_id.to_peer(&RealTimeProvider)?;
         forged_bundle.header.signature_generate(&impostor_server_id.keys.signature_key);
 
-        let mut accepted_post_bundle_feedbacks = AcceptedPostBundleFeedbacks::new(location_id);
+        let mut accepted_post_bundle_feedbacks = AcceptedPostBundleFeedbacks::new(location_id, TimeMillis(1000));
         assert!(accepted_post_bundle_feedbacks.offer_cached(forged_bundle.to_bytes()?).is_err());
         assert!(!accepted_post_bundle_feedbacks.accepted_originator_ids().contains(&genuine_server_id.id));
 
@@ -368,7 +381,7 @@ mod tests {
         let location_id = Id::random();
         let responding_server_id = make_genuine_server_id().await?;
         let other_server_id = make_genuine_server_id().await?;
-        let mut accepted_post_bundle_feedbacks = AcceptedPostBundleFeedbacks::new(location_id);
+        let mut accepted_post_bundle_feedbacks = AcceptedPostBundleFeedbacks::new(location_id, TimeMillis(1000));
         let responding_peer = responding_server_id.to_peer(&RealTimeProvider)?;
         assert!(accepted_post_bundle_feedbacks.offer_direct(bundle_bytes(&other_server_id, location_id, &[make_valid_feedback(Id::random(), 1)?])?, &responding_peer).is_err());
         assert!(accepted_post_bundle_feedbacks.offer_direct(bundle_bytes(&responding_server_id, Id::random(), &[])?, &responding_peer).is_err(), "and be for this location");
@@ -380,7 +393,7 @@ mod tests {
     #[tokio::test]
     async fn direct_bundles_count_once_and_only_valid_ones_are_uploaded() -> anyhow::Result<()> {
         let location_id = Id::random();
-        let mut accepted_post_bundle_feedbacks = AcceptedPostBundleFeedbacks::new(location_id);
+        let mut accepted_post_bundle_feedbacks = AcceptedPostBundleFeedbacks::new(location_id, TimeMillis(1000));
 
         let empty_server_id = make_genuine_server_id().await?;
         assert!(accepted_post_bundle_feedbacks.offer_direct(bundle_bytes(&empty_server_id, location_id, &[])?, &empty_server_id.to_peer(&RealTimeProvider)?)?);
@@ -398,6 +411,31 @@ mod tests {
         assert_eq!(accepted_post_bundle_feedbacks.bundle_bytes_for_upload(), vec![(honest_server_id.id, honest_bundle_bytes)]);
         let merged = EncodedPostBundleFeedbackV1::merge(accepted_post_bundle_feedbacks.bundles()).expect("non-empty input");
         assert_eq!(merged.get_post_pow_for_feedback_type(&valid_feedback.post_id, 1), valid_feedback.pow, "the poisoned server's honest entry still counts");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn future_dated_bundles_are_rejected() -> anyhow::Result<()> {
+        let location_id = Id::random();
+        let time_millis_now = TimeMillis(1000);
+        let time_millis_latest_allowed = time_millis_now + config::CLIENT_POST_TIMESTAMP_DELTA_THRESHOLD;
+        let mut accepted_post_bundle_feedbacks = AcceptedPostBundleFeedbacks::new(location_id, time_millis_now);
+
+        let cached_server_id = make_genuine_server_id().await?;
+        let future_cached_bundle = make_bundle_signed_by(&cached_server_id, location_id, time_millis_latest_allowed + MILLIS_IN_MILLISECOND, &[make_valid_feedback(Id::random(), 1)?])?;
+        assert!(accepted_post_bundle_feedbacks.offer_cached(future_cached_bundle.to_bytes()?).is_err());
+
+        let direct_server_id = make_genuine_server_id().await?;
+        let future_direct_bundle = make_bundle_signed_by(&direct_server_id, location_id, time_millis_latest_allowed + MILLIS_IN_MILLISECOND, &[])?;
+        assert!(accepted_post_bundle_feedbacks.offer_direct(future_direct_bundle.to_bytes()?, &direct_server_id.to_peer(&RealTimeProvider)?).is_err());
+        assert_eq!(accepted_post_bundle_feedbacks.quorum_count(), 0);
+
+        // Right at the bound, both are still accepted
+        let edge_cached_bundle = make_bundle_signed_by(&cached_server_id, location_id, time_millis_latest_allowed, &[make_valid_feedback(Id::random(), 1)?])?;
+        assert!(accepted_post_bundle_feedbacks.offer_cached(edge_cached_bundle.to_bytes()?)?);
+        let edge_direct_bundle = make_bundle_signed_by(&direct_server_id, location_id, time_millis_latest_allowed, &[])?;
+        assert!(accepted_post_bundle_feedbacks.offer_direct(edge_direct_bundle.to_bytes()?, &direct_server_id.to_peer(&RealTimeProvider)?)?);
+        assert_eq!(accepted_post_bundle_feedbacks.quorum_count(), 2);
         Ok(())
     }
 }
