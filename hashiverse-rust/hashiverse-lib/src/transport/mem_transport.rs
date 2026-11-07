@@ -309,9 +309,10 @@ mod tests {
         use crate::transport::transport::TransportFactory;
         use bytes::Bytes;
 
-        // 20 scaled seconds per rpc = 200ms of real time at 100x
-        let time_provider = Arc::new(ScaledTimeProvider::new(100.0));
-        let rpc_delay = MILLIS_IN_SECOND.const_mul(20);
+        // 5 scaled seconds per rpc = 500ms of real time at 10x: each assertion's pass/fail boundary is a whole delay
+        // (500ms of real time) away from the expected timing, which leaves headroom on a loaded CI runner
+        let time_provider = Arc::new(ScaledTimeProvider::new(10.0));
+        let rpc_delay = MILLIS_IN_SECOND.const_mul(5);
         const CONCURRENT_RPCS: usize = 5;
 
         let factory = MemTransportFactory::new(NoopDdosProtection::default(), ManualBootstrapProvider::default());
