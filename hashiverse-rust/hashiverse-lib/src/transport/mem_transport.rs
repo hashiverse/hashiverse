@@ -21,6 +21,8 @@ use bytes::Bytes;
 use log::info;
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use crate::tools::time::DurationMillis;
+use crate::tools::time_provider::time_provider::TimeProvider;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -166,6 +168,8 @@ pub struct MemTransportFactory {
     server_manager: Arc<ServerManager>,
     ddos_protection: Arc<dyn DdosProtection>,
     bootstrap_provider: Arc<dyn BootstrapProvider>,
+    /// Simulated latency added to every `rpc` call, slept on the given clock.  Shared across clones of this factory.
+    rpc_delay: Arc<RwLock<Option<(Arc<dyn TimeProvider>, DurationMillis)>>>,
 }
 
 impl MemTransportFactory {
@@ -174,7 +178,18 @@ impl MemTransportFactory {
             server_manager: Arc::new(ServerManager::new()),
             ddos_protection,
             bootstrap_provider,
+            rpc_delay: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Simulates network latency: every subsequent `rpc` call sleeps `rpc_delay` on `time_provider` before reaching the server,
+    /// so it scales with the test's clock.  Lets tests tell RPCs that overlap from RPCs that run one after another.
+    pub fn set_rpc_delay(&self, time_provider: Arc<dyn TimeProvider>, rpc_delay: DurationMillis) {
+        *self.rpc_delay.write() = Some((time_provider, rpc_delay));
+    }
+
+    pub fn clear_rpc_delay(&self) {
+        *self.rpc_delay.write() = None;
     }
 
     #[allow(clippy::should_implement_trait)] // wraps Arc<Self>, can't satisfy the Default trait
@@ -233,6 +248,11 @@ impl TransportFactory for MemTransportFactory {
     }
 
     async fn rpc(&self, address: &str, bytes: Bytes) -> Result<Bytes> {
+        let rpc_delay = self.rpc_delay.read().clone();
+        if let Some((time_provider, rpc_delay)) = rpc_delay {
+            time_provider.sleep_millis(rpc_delay).await;
+        }
+
         let port: u16 = address.parse()?;
 
         let server_entry = {
@@ -278,5 +298,49 @@ mod tests {
     async fn bind_port_zero_test() -> anyhow::Result<()> {
         let factory: Arc<dyn crate::transport::transport::TransportFactory> = Arc::new(MemTransportFactory::new(NoopDdosProtection::default(), ManualBootstrapProvider::default()));
         crate::transport::transport::tests::bind_port_zero_test(factory).await
+    }
+
+    /// The delay is slept on the supplied (here scaled) clock, applies to every call, is shared by clones of the factory,
+    /// and delays concurrent calls independently.  (An RPC to a port with no server still pays the delay first, so no server is needed.)
+    #[tokio::test]
+    async fn rpc_delay_is_per_call_concurrent_and_on_the_given_clock() -> anyhow::Result<()> {
+        use crate::tools::time::MILLIS_IN_SECOND;
+        use crate::tools::time_provider::time_provider::{ScaledTimeProvider, TimeProvider};
+        use crate::transport::transport::TransportFactory;
+        use bytes::Bytes;
+
+        // 20 scaled seconds per rpc = 200ms of real time at 100x
+        let time_provider = Arc::new(ScaledTimeProvider::new(100.0));
+        let rpc_delay = MILLIS_IN_SECOND.const_mul(20);
+        const CONCURRENT_RPCS: usize = 5;
+
+        let factory = MemTransportFactory::new(NoopDdosProtection::default(), ManualBootstrapProvider::default());
+        let factory_clone = factory.clone();
+
+        // No delay by default
+        let started = time_provider.current_time_millis();
+        assert!(factory.rpc("65000", Bytes::new()).await.is_err());
+        assert!(time_provider.current_time_millis() - started < rpc_delay);
+
+        // Setting it on a clone affects the original, and the delay elapses on the scaled clock
+        factory_clone.set_rpc_delay(time_provider.clone(), rpc_delay);
+        let started = time_provider.current_time_millis();
+        assert!(factory.rpc("65000", Bytes::new()).await.is_err());
+        assert!(time_provider.current_time_millis() - started >= rpc_delay);
+
+        // Concurrent calls overlap: the batch takes about one delay, not CONCURRENT_RPCS of them
+        let started = time_provider.current_time_millis();
+        let results = futures::future::join_all((0..CONCURRENT_RPCS).map(|_| factory.rpc("65000", Bytes::new()))).await;
+        assert!(results.iter().all(|result| result.is_err()));
+        let elapsed = time_provider.current_time_millis() - started;
+        assert!(elapsed >= rpc_delay);
+        assert!(elapsed < rpc_delay.const_mul(2), "concurrent delayed rpcs must overlap, took {}", elapsed);
+
+        // And it can be switched off again
+        factory.clear_rpc_delay();
+        let started = time_provider.current_time_millis();
+        assert!(factory.rpc("65000", Bytes::new()).await.is_err());
+        assert!(time_provider.current_time_millis() - started < rpc_delay);
+        Ok(())
     }
 }
