@@ -14,11 +14,12 @@ use hashiverse_lib::tools::pow_generator::native_parallel_pow_generator::NativeP
 use hashiverse_lib::tools::runtime_services::RuntimeServices;
 use hashiverse_lib::tools::time::{DurationMillis, MILLIS_IN_MINUTE};
 use hashiverse_lib::tools::time_provider::time_provider::{ScaledTimeProvider, TimeProvider};
-use hashiverse_lib::tools::tools::{configure_logging_with_time_provider, get_temp_dir};
+use hashiverse_lib::tools::tools::{configure_logging_with_time_provider, get_temp_dir, TempDirHandle};
 use hashiverse_lib::tools::types::Id;
 use hashiverse_lib::transport::bootstrap_provider::manual_bootstrap_provider::ManualBootstrapProvider;
 use hashiverse_lib::transport::ddos::noop_ddos::NoopDdosProtection;
 use hashiverse_lib::transport::mem_transport::MemTransportFactory;
+use hashiverse_server_lib::environment::environment::EnvironmentFactory;
 use hashiverse_server_lib::environment::mem_environment_store::MemEnvironmentFactory;
 use hashiverse_server_lib::server::args::Args;
 use hashiverse_server_lib::server::hashiverse_server::HashiverseServer;
@@ -41,7 +42,7 @@ struct Cluster {
     transport_factory: Arc<MemTransportFactory>,
     client: Arc<HashiverseClient>,
     cancellation_token: CancellationToken,
-    _temp_dir: tempfile::TempDir,
+    _temp_dir: TempDirHandle,
 }
 
 async fn start_cluster_and_client() -> anyhow::Result<Cluster> {
