@@ -17,6 +17,16 @@ DOMPurify.addHook("uponSanitizeElement", (node: Node, data) => {
 	if (!src_lower.startsWith("https://www.youtube-nocookie.com/embed/")) return fail_and_exit("url problem");
 });
 
+// Links in posts point off-site: open them in a new window so Hashiverse stays open behind them.
+// Set here rather than allowed through (target is not in ADD_ATTR), so an author can never choose some other target or drop the rel.
+DOMPurify.addHook("afterSanitizeAttributes", (node: Element) => {
+	if ("A" !== node.tagName) return;
+	const href = node.getAttribute("href") || "";
+	if (!/^https?:\/\//i.test(href)) return;
+	node.setAttribute("target", "_blank");
+	node.setAttribute("rel", "noopener noreferrer nofollow");
+});
+
 const purify_config = {
 	ADD_TAGS: ["iframe", "hashtag", "mention", "reply", "repost", "sequel", "urlpreview", "colgroup", "col"],
 	ADD_ATTR: [
