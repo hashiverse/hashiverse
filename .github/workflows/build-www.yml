@@ -27,6 +27,8 @@ jobs:
       # --- Rust docs ---
 
       - uses: ./.github/actions/install-rust-toolchain
+        with:
+          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -35,7 +37,12 @@ jobs:
 
       - name: Build Rust docs
         working-directory: hashiverse-rust
-        run: cargo doc --no-deps --workspace --release
+        # hashiverse-client-wasm only compiles for wasm32 (its hashiverse-lib imports are wasm-gated), so document it for that target
+        # and drop its pages into the host doc tree (same toolchain, so the shared static.files match).
+        run: |
+          cargo doc --no-deps --workspace --exclude hashiverse-client-wasm --release
+          cargo doc --no-deps --release --target wasm32-unknown-unknown -p hashiverse-client-wasm
+          cp -r target/wasm32-unknown-unknown/doc/hashiverse_client_wasm target/doc/
 
       # --- Astro site ---
 

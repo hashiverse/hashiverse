@@ -30,7 +30,13 @@ copy(
 );
 
 // Rust docs → dist/dev/hashiverse-rust/
-run('cargo doc --no-deps --workspace --release', join(root, 'hashiverse-rust'));
+// hashiverse-client-wasm only compiles for wasm32, so document it for that target and drop its pages into the host doc tree
+run('cargo doc --no-deps --workspace --exclude hashiverse-client-wasm --release', join(root, 'hashiverse-rust'));
+run('cargo doc --no-deps --release --target wasm32-unknown-unknown -p hashiverse-client-wasm', join(root, 'hashiverse-rust'));
+copy(
+  join(root, 'hashiverse-rust/target/wasm32-unknown-unknown/doc/hashiverse_client_wasm'),
+  join(root, 'hashiverse-rust/target/doc/hashiverse_client_wasm'),
+);
 copy(
   join(root, 'hashiverse-rust/target/doc'),
   join(__dirname, 'dist/dev/hashiverse-rust'),
