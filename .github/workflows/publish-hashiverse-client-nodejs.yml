@@ -279,14 +279,22 @@ jobs:
           scratch=$(mktemp -d)
           cd "$scratch"
           npm init -y >/dev/null
-          # Retry briefly — registry propagation can lag a few seconds.
-          for i in 1 2 3 4 5; do
-            if npm install "@hashiverse/hashiverse-client-nodejs@$version" --no-audit --no-fund; then
+          # The registry CDN can serve a stale packument for up to ~5 minutes
+          # after publish, so retry for ~6 minutes. --prefer-online makes npm
+          # revalidate metadata on every attempt instead of reusing its cache.
+          installed=0
+          for i in $(seq 1 12); do
+            if npm install "@hashiverse/hashiverse-client-nodejs@$version" --no-audit --no-fund --prefer-online; then
+              installed=1
               break
             fi
-            echo "install attempt $i failed, retrying..."
-            sleep 5
+            echo "install attempt $i failed, retrying in 30s..."
+            sleep 30
           done
+          if [ "$installed" != "1" ]; then
+            echo "::error::@hashiverse/hashiverse-client-nodejs@$version not installable from npm after 12 attempts"
+            exit 1
+          fi
           node --input-type=module -e "
             import { HashiverseClient, convertTextToHashiverseHtmlXHashtag } from '@hashiverse/hashiverse-client-nodejs';
             if (typeof HashiverseClient !== 'function') throw new Error('HashiverseClient missing');
