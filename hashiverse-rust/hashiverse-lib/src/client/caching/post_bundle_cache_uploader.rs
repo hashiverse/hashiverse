@@ -42,11 +42,7 @@ pub fn upload_post_bundle_caches(
                 continue;
             }
 
-            let filtered: Vec<&[u8]> = bundles
-                .iter()
-                .filter(|(originator_id, _)| !token.already_cached_peer_ids.contains(originator_id))
-                .map(|(_, bytes)| bytes.as_ref())
-                .collect();
+            let filtered: Vec<&[u8]> = bundles_not_already_cached(&token.already_cached_peer_ids, &bundles).into_iter().map(|bytes| bytes.as_ref()).collect();
 
             if filtered.is_empty() {
                 continue;
@@ -75,27 +71,31 @@ pub fn upload_post_bundle_caches(
     });
 }
 
-/// Fire-and-forget: uploads the single combined-best feedback to every token's server.
+/// Fire-and-forget: for each token, uploads every collected feedback bundle whose originator is
+/// not already cached at the token's server, one `CachePostBundleFeedbackV1` per bundle.
+///
+/// `bundles` must be the intact, originator-signed bytes (they have to pass `verify()` on the
+/// receiving server) — never the client's merged view from `EncodedPostBundleFeedbackV1::merge`.
 pub fn upload_post_bundle_feedback_caches(
     runtime_services: Arc<RuntimeServices>,
     sponsor_id: Id,
     tokens: Vec<CacheRequestTokenV1>,
-    feedback_bytes: Bytes,
+    bundles: Vec<(Id, Bytes)>,
 ) {
-    if tokens.is_empty() || feedback_bytes.is_empty() {
+    if tokens.is_empty() || bundles.is_empty() {
         return;
     }
 
     spawn_background_task(async move {
         for token in &tokens {
-            let now = runtime_services.time_provider.current_time_millis();
-            if token.is_expired(now) {
-                continue;
-            }
+            for feedback_bytes in bundles_not_already_cached(&token.already_cached_peer_ids, &bundles) {
+                let now = runtime_services.time_provider.current_time_millis();
+                if token.is_expired(now) {
+                    break;
+                }
 
-            {
                 let result: anyhow::Result<()> = async {
-                    let request_bytes = CachePostBundleFeedbackV1::new_to_bytes(token, &feedback_bytes)?;
+                    let request_bytes = CachePostBundleFeedbackV1::new_to_bytes(token, feedback_bytes)?;
                     let response = rpc::rpc::rpc_server_known(
                         &runtime_services,
                         &sponsor_id,
@@ -116,4 +116,27 @@ pub fn upload_post_bundle_feedback_caches(
             }
         }
     });
+}
+
+/// The bundles whose originator the token's server does not already hold in its cache.
+fn bundles_not_already_cached<'a>(already_cached_peer_ids: &[Id], bundles: &'a [(Id, Bytes)]) -> Vec<&'a Bytes> {
+    bundles.iter().filter(|(originator_id, _)| !already_cached_peer_ids.contains(originator_id)).map(|(_, bundle_bytes)| bundle_bytes).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundles_not_already_cached_skips_cached_originators() {
+        let cached_originator_id = Id::random();
+        let uncached_originator_id = Id::random();
+        let cached_bundle_bytes = Bytes::from_static(b"cached");
+        let uncached_bundle_bytes = Bytes::from_static(b"uncached");
+        let bundles = vec![(cached_originator_id, cached_bundle_bytes), (uncached_originator_id, uncached_bundle_bytes.clone())];
+
+        assert_eq!(bundles_not_already_cached(&[cached_originator_id], &bundles), vec![&uncached_bundle_bytes]);
+        assert_eq!(bundles_not_already_cached(&[], &bundles).len(), 2);
+        assert!(bundles_not_already_cached(&[cached_originator_id, uncached_originator_id], &bundles).is_empty());
+    }
 }

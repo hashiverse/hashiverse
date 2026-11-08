@@ -23,13 +23,14 @@ use crate::client::client_storage::client_storage::{ClientStorage, BUCKETS, BUCK
 use crate::client::key_locker::key_locker::KeyLocker;
 use crate::client::meta_post::meta_post::MetaPost;
 use crate::client::meta_post::meta_post_manager::MetaPostManager;
-use crate::client::peer_tracker::peer_tracker::PeerTracker;
+use crate::client::peer_tracker::peer_tracker::{PeerTracker, SharedPeerTracker};
 use crate::client::post_bundle::live_post_bundle_manager::LivePostBundleManager;
 use crate::client::post_bundle::post_bundle_manager::PostBundleManager;
 use crate::client::post_bundle::posting;
 use crate::client::timeline::recent_posts_pen::RecentPostsPen;
 use crate::client::timeline::single_timeline::SingleTimeline;
 use crate::protocol::posting::encoded_post::EncodedPostV1;
+use crate::protocol::posting::encoded_post_bundle::EncodedPostBundleV1;
 use crate::protocol::posting::encoded_post_feedback::EncodedPostFeedbackV1;
 use crate::tools::buckets::{bucket_durations_for_type, BucketLocation, BucketType};
 use crate::tools::client_id::ClientId;
@@ -87,7 +88,7 @@ pub struct HashiverseClient {
     post_bundle_feedback_manager: Arc<LivePostBundleFeedbackManager>,
     meta_post_manager: MetaPostManager,
     client_id: ClientId,
-    peer_tracker: Arc<RwLock<PeerTracker>>,
+    peer_tracker: SharedPeerTracker,
     recent_posts_pen: Arc<RwLock<RecentPostsPen>>,
     single_timeline: Arc<RwLock<Option<SingleTimeline>>>,
     multiple_timeline: Arc<RwLock<Option<MultipleTimeline>>>,
@@ -98,7 +99,7 @@ impl HashiverseClient {
         let client_id = key_locker.client_id().clone();
         info!("client_id={}", client_id);
 
-        let peer_tracker = Arc::new(RwLock::new(PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?));
+        let peer_tracker: SharedPeerTracker = Arc::new(parking_lot::RwLock::new(PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?));
         let post_bundle_manager = Arc::new(LivePostBundleManager::new(runtime_services.clone(), client_id.id, client_storage.clone(), peer_tracker.clone()));
         let post_bundle_feedback_manager = Arc::new(LivePostBundleFeedbackManager::new(runtime_services.clone(), client_id.id, client_storage.clone(), peer_tracker.clone()));
 
@@ -219,8 +220,25 @@ impl HashiverseClient {
 
     pub async fn get_post(&self, bucket_location: BucketLocation, post_id: &Id) -> anyhow::Result<(BucketLocation, EncodedPostV1, Bytes, bool)>
     {
-        let post_bundle = self.post_bundle_manager.get_post_bundle(&bucket_location, self.runtime_services.time_provider.current_time_millis()).await?;
+        let time_millis = self.runtime_services.time_provider.current_time_millis();
 
+        // The first (possibly provisional) bundle usually has the post; if not, only a later responder might, so wait for the settled bundle
+        let post_bundle = self.post_bundle_manager.get_post_bundle(&bucket_location, time_millis).await?;
+        if let Some(found_post) = Self::find_post_in_bundle(&bucket_location, &post_bundle, post_id)? {
+            return Ok(found_post);
+        }
+
+        // If we get here, there was no matching post in the provisional bundle, so what for the settled bundle and try again
+        let post_bundle = self.post_bundle_manager.get_post_bundle_settled(&bucket_location, time_millis).await?;
+        if let Some(found_post) = Self::find_post_in_bundle(&bucket_location, &post_bundle, post_id)? {
+            return Ok(found_post);
+        }
+
+        // No post found, even in settled bundle
+        anyhow::bail!("Post {} not found in bundle {}", post_id, bucket_location.location_id)
+    }
+
+    fn find_post_in_bundle(bucket_location: &BucketLocation, post_bundle: &EncodedPostBundleV1, post_id: &Id) -> anyhow::Result<Option<(BucketLocation, EncodedPostV1, Bytes, bool)>> {
         let mut offset = 0;
         for i in 0..(post_bundle.header.num_posts as usize) {
             let len = post_bundle.header.encoded_post_lengths[i];
@@ -228,12 +246,11 @@ impl HashiverseClient {
                 let post_bytes = post_bundle.encoded_posts_bytes.slice(offset..offset + len);
                 let encoded_post = EncodedPostV1::decode_from_bytes(post_bytes.clone(), &bucket_location.base_id, true, true)?;
                 let healed = post_bundle.header.encoded_post_healed.contains(post_id);
-                return Ok((bucket_location, encoded_post, post_bytes, healed));
+                return Ok(Some((bucket_location.clone(), encoded_post, post_bytes, healed)));
             }
             offset += len;
         }
-
-        anyhow::bail!("Post {} not found in bundle {}", post_id, bucket_location.location_id)
+        Ok(None)
     }
 
     pub async fn get_post_feedbacks(&self, bucket_location: BucketLocation, post_id: Id) -> anyhow::Result<[u64; 256]>
@@ -353,23 +370,21 @@ impl HashiverseClient {
 
     async fn get_random_peer(&self) -> anyhow::Result<Peer> {
         {
-            let peer_tracker = self.peer_tracker.read().await;
+            let peer_tracker = self.peer_tracker.read();
             if !peer_tracker.peers().is_empty() {
                 return Ok(tools::random_element(peer_tracker.peers()).clone());
             }
         }
 
         // No peers — try bootstrapping
-        {
-            let mut peer_tracker = self.peer_tracker.write().await;
-            peer_tracker.bootstrap().await?;
-            anyhow::ensure!(!peer_tracker.peers().is_empty(), "Still no known peers available after bootstrap");
-            Ok(tools::random_element(peer_tracker.peers()).clone())
-        }
+        PeerTracker::bootstrap(&self.peer_tracker).await?;
+        let peer_tracker = self.peer_tracker.read();
+        anyhow::ensure!(!peer_tracker.peers().is_empty(), "Still no known peers available after bootstrap");
+        Ok(tools::random_element(peer_tracker.peers()).clone())
     }
 
     pub async fn get_all_known_peers(&self) -> Vec<Peer> {
-        self.peer_tracker.read().await.peers().clone()
+        self.peer_tracker.read().peers().clone()
     }
 
     pub async fn fetch_url_preview(&self, url: &str) -> anyhow::Result<FetchUrlPreviewResponseV1> {
@@ -399,7 +414,7 @@ impl HashiverseClient {
     /// is open-ended; the server decides what fields to include and at what nesting.
     pub async fn fetch_peer_stats(&self, peer_id: &Id) -> anyhow::Result<serde_json::Value> {
         let peer = {
-            let peer_tracker = self.peer_tracker.read().await;
+            let peer_tracker = self.peer_tracker.read();
             peer_tracker.peers().iter().find(|peer| &peer.id == peer_id).cloned()
         };
         let peer = peer.ok_or_else(|| anyhow::anyhow!("peer not known to this client: {}", peer_id))?;

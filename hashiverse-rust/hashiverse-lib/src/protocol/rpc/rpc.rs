@@ -10,8 +10,8 @@
 //!    [`rpc_server_known_with_requisite_pow`]).
 //! 2. **Dispatch** over the supplied transport.
 //! 3. **Decode** the response, verifying the signature over the request's
-//!    `pow_content_hash` — so a reply can only have come from the specific server we
-//!    addressed, not a replay from another peer.
+//!    `pow_content_hash` (salted by the server) — so a reply can only have come from the
+//!    specific server we addressed, not a replay from another peer.
 //! 4. **Return** typed payloads or an `ErrorResponseV1`.
 //!
 //! Call sites either use [`rpc_server_unknown`] (first contact / bootstrap) or
@@ -199,7 +199,7 @@ mod tests {
 
         let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), pow_min, true, runtime_services.pow_generator.as_ref()).await?;
         trace!("server_id.pow={}", server_id.pow);
-        let payload_request_kind = PayloadRequestKind::AnnounceV1;
+        let payload_request_kind = PayloadRequestKind::PingV1;
         let mut payload_request = [0u8; 1024];
         tools::random_fill_bytes(&mut payload_request);
         let request_flags = RpcRequestPacketTxFlags::COMPRESSED | RpcRequestPacketTxFlags::SERVER_KNOWN;
@@ -236,13 +236,13 @@ mod tests {
             &server_id.salt,
             &rpc_request_packet_rx.pow_content_hash,
             response_flags,
-            PayloadResponseKind::AnnounceResponseV1,
+            PayloadResponseKind::PingResponseV1,
             BytesGatherer::from_bytes(Bytes::copy_from_slice(&payload_response)),
         )?;
 
         let rpc_response_packet_rx = RpcResponsePacketRx::decode(&server_id.id, &rpc_request_packet_rx.pow_content_hash, pow_min, gatherer.to_bytes())?;
 
-        assert_eq!(rpc_response_packet_rx.response_request_kind, PayloadResponseKind::AnnounceResponseV1);
+        assert_eq!(rpc_response_packet_rx.response_request_kind, PayloadResponseKind::PingResponseV1);
         assert_eq!(rpc_response_packet_rx.bytes.as_ref(), payload_response);
 
         Ok(())
@@ -257,7 +257,7 @@ mod tests {
         let pow_min_for_rpc = Pow(12);
 
         let server_id = ServerId::new("own_pow", &time_provider, pow_min_for_server_id, true, pow_generator.as_ref()).await?;
-        let payload_request_kind = PayloadRequestKind::AnnounceV1;
+        let payload_request_kind = PayloadRequestKind::PingV1;
         let mut payload_request = [0u8; 1024];
         tools::random_fill_bytes(&mut payload_request);
         let flags = RpcRequestPacketTxFlags::COMPRESSED;
@@ -282,15 +282,154 @@ mod tests {
             &server_id.salt,
             &rpc_request_packet_rx.pow_content_hash,
             response_flags,
-            PayloadResponseKind::AnnounceResponseV1,
+            PayloadResponseKind::PingResponseV1,
             BytesGatherer::from_bytes(Bytes::copy_from_slice(&payload_response)),
         )?;
 
         let rpc_response_packet_rx = RpcResponsePacketRx::decode(&Id::zero(), &rpc_request_packet_rx.pow_content_hash, pow_min_for_server_id, gatherer.to_bytes())?;
 
-        assert_eq!(rpc_response_packet_rx.response_request_kind, PayloadResponseKind::AnnounceResponseV1);
+        assert_eq!(rpc_response_packet_rx.response_request_kind, PayloadResponseKind::PingResponseV1);
         assert_eq!(rpc_response_packet_rx.bytes.as_ref(), payload_response);
 
+        Ok(())
+    }
+
+    // ── Salted response signature (C1: servers must not be a signing oracle) ──
+
+    use crate::protocol::rpc::rpc_response::RPC_RESPONSE_PACKET_VERSION;
+    use crate::tools::types::{Hash, Signature, Salt, HASH_BYTES, ID_BYTES, PQ_COMMITMENT_BYTES, SALT_BYTES, SIGNATURE_BYTES, VERIFICATION_KEY_BYTES};
+    use crate::tools::time::TIME_MILLIS_BYTES;
+
+    const RESPONSE_SIGNATURE_OFFSET: usize = 1 + 1 + 2 + VERIFICATION_KEY_BYTES + PQ_COMMITMENT_BYTES + ID_BYTES + TIME_MILLIS_BYTES + HASH_BYTES + SALT_BYTES;
+    const RESPONSE_SALT_OFFSET: usize = RESPONSE_SIGNATURE_OFFSET + SIGNATURE_BYTES;
+
+    fn encode_test_response(server_id: &ServerId, pow_content_hash: &Hash) -> anyhow::Result<Bytes> {
+        let bytes_gatherer = RpcResponsePacketTx::encode(
+            &server_id.keys.signature_key,
+            &server_id.keys.verification_key_bytes,
+            &server_id.keys.pq_commitment_bytes,
+            &server_id.sponsor_id,
+            &server_id.timestamp,
+            &server_id.hash,
+            &server_id.salt,
+            pow_content_hash,
+            RpcResponsePacketTxFlags::COMPRESSED,
+            PayloadResponseKind::ErrorResponseV1,
+            BytesGatherer::from_bytes(Bytes::from_static(b"{}")),
+        )?;
+        Ok(bytes_gatherer.to_bytes())
+    }
+
+    fn extract_response_signature(response_bytes: &Bytes) -> anyhow::Result<Signature> {
+        Ok(Signature(response_bytes[RESPONSE_SIGNATURE_OFFSET..RESPONSE_SIGNATURE_OFFSET + SIGNATURE_BYTES].try_into()?))
+    }
+
+    fn extract_response_salt(response_bytes: &Bytes) -> anyhow::Result<Salt> {
+        Ok(Salt(response_bytes[RESPONSE_SALT_OFFSET..RESPONSE_SALT_OFFSET + SALT_BYTES].try_into()?))
+    }
+
+    async fn test_server_id(runtime_services: &RuntimeServices) -> anyhow::Result<ServerId> {
+        ServerId::new("own_pow", runtime_services.time_provider.as_ref(), Pow(8), true, runtime_services.pow_generator.as_ref()).await
+    }
+
+    #[tokio::test]
+    async fn rpc_response_signature_is_not_a_signing_oracle_for_peer() -> anyhow::Result<()> {
+        let runtime_services = RuntimeServices::default_for_testing();
+        let server_id = test_server_id(&runtime_services).await?;
+
+        // Attacker forges a Peer record for the server: their own address, far-future timestamp,
+        // and the server's genuine pows copied from its real record.
+        let mut forged_peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
+        forged_peer.address = "6.6.6.6:666".to_string();
+        forged_peer.timestamp = TimeMillis(i64::MAX / 2);
+        let forged_peer_digest = forged_peer.signature_hash_generate()?;
+
+        // Sanity: a signature over the raw digest (the old, unsalted behaviour) would forge it.
+        {
+            let mut unsalted_forged_peer = forged_peer.clone();
+            unsalted_forged_peer.signature = crate::tools::signing::sign(&server_id.keys.signature_key, forged_peer_digest.as_ref());
+            assert!(unsalted_forged_peer.verify().is_ok(), "test setup: raw-digest signature should forge the peer");
+        }
+
+        // The attacker submits the forged digest as pow_content_hash and harvests the response signature.
+        let response_bytes = encode_test_response(&server_id, &forged_peer_digest)?;
+        forged_peer.signature = extract_response_signature(&response_bytes)?;
+        assert!(forged_peer.verify().is_err(), "response signature must not be usable as a Peer signature");
+
+        // ...while the response itself still verifies for the honest caller.
+        RpcResponsePacketRx::decode(&server_id.id, &forged_peer_digest, Pow(8), response_bytes)?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rpc_response_signature_is_not_a_signing_oracle_for_submit_post_claim_token() -> anyhow::Result<()> {
+        use crate::protocol::payload::payload::SubmitPostClaimTokenV1;
+        use crate::tools::buckets::{BucketLocation, BucketType, BUCKET_DURATIONS};
+
+        let runtime_services = RuntimeServices::default_for_testing();
+        let server_id = test_server_id(&runtime_services).await?;
+        let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
+        let bucket_location = BucketLocation::new(BucketType::User, Id::random(), BUCKET_DURATIONS[0], TimeMillis(1_000_000))?;
+        let post_id = Id::random();
+
+        // Mirrors SubmitPostClaimTokenV1::get_hash_for_signing.
+        let claim_token_digest = hashing::hash_multiple(&[peer.id.as_ref(), bucket_location.get_hash_for_signing().as_ref(), post_id.as_ref(), "SubmitPostClaimTokenV1".as_bytes()]);
+
+        // Sanity: the genuine token's signature is exactly sign(claim_token_digest), so the mirror above is correct.
+        let genuine_claim_token = SubmitPostClaimTokenV1::new(peer.clone(), bucket_location.clone(), post_id, &server_id.keys.signature_key);
+        assert_eq!(genuine_claim_token.token_signature, crate::tools::signing::sign(&server_id.keys.signature_key, claim_token_digest.as_ref()));
+
+        let response_bytes = encode_test_response(&server_id, &claim_token_digest)?;
+        let forged_claim_token = SubmitPostClaimTokenV1 { peer, bucket_location, post_id, token_signature: extract_response_signature(&response_bytes)? };
+        assert!(forged_claim_token.verify().is_err(), "response signature must not be usable as a claim token signature");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rpc_response_salt_or_signature_tamper_is_rejected() -> anyhow::Result<()> {
+        let runtime_services = RuntimeServices::default_for_testing();
+        let server_id = test_server_id(&runtime_services).await?;
+        let pow_content_hash = hashing::hash(b"some request");
+        let response_bytes = encode_test_response(&server_id, &pow_content_hash)?;
+
+        RpcResponsePacketRx::decode(&server_id.id, &pow_content_hash, Pow(8), response_bytes.clone())?;
+
+        for tamper_offset in [RESPONSE_SALT_OFFSET, RESPONSE_SALT_OFFSET + SALT_BYTES - 1, RESPONSE_SIGNATURE_OFFSET, RESPONSE_SALT_OFFSET - 1] {
+            let mut tampered_response_bytes = response_bytes.to_vec();
+            tampered_response_bytes[tamper_offset] ^= 0x01;
+            assert!(RpcResponsePacketRx::decode(&server_id.id, &pow_content_hash, Pow(8), Bytes::from(tampered_response_bytes)).is_err(), "tamper at offset {} must be rejected", tamper_offset);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rpc_response_old_version_is_rejected() -> anyhow::Result<()> {
+        let runtime_services = RuntimeServices::default_for_testing();
+        let server_id = test_server_id(&runtime_services).await?;
+        let pow_content_hash = hashing::hash(b"some request");
+        let response_bytes = encode_test_response(&server_id, &pow_content_hash)?;
+        assert_eq!(response_bytes[0], RPC_RESPONSE_PACKET_VERSION);
+
+        let mut old_version_response_bytes = response_bytes.to_vec();
+        old_version_response_bytes[0] = 1;
+        let error = RpcResponsePacketRx::decode(&server_id.id, &pow_content_hash, Pow(8), Bytes::from(old_version_response_bytes)).err().expect("version 1 must be rejected");
+        assert!(error.to_string().contains("Unsupported RpcResponsePacket version: 1"), "unexpected error: {}", error);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rpc_response_salt_is_fresh_per_response() -> anyhow::Result<()> {
+        let runtime_services = RuntimeServices::default_for_testing();
+        let server_id = test_server_id(&runtime_services).await?;
+        let pow_content_hash = hashing::hash(b"some request");
+
+        let response_bytes_1 = encode_test_response(&server_id, &pow_content_hash)?;
+        let response_bytes_2 = encode_test_response(&server_id, &pow_content_hash)?;
+        assert_ne!(extract_response_salt(&response_bytes_1)?, extract_response_salt(&response_bytes_2)?);
+        assert_ne!(extract_response_signature(&response_bytes_1)?, extract_response_signature(&response_bytes_2)?);
+
+        RpcResponsePacketRx::decode(&server_id.id, &pow_content_hash, Pow(8), response_bytes_1)?;
+        RpcResponsePacketRx::decode(&server_id.id, &pow_content_hash, Pow(8), response_bytes_2)?;
         Ok(())
     }
 
@@ -348,11 +487,12 @@ mod tests {
 
     #[test]
     fn rpc_response_decode_header_too_short_for_payload_len() {
-        // The header up to (but not including) the u32 payload_len field is 212 bytes.
-        // Providing 214 bytes (header + 2) used to pass the old `+ 2` minimum-length check
-        // but panic on get_u32_le() which needs 4 bytes. Now correctly rejected.
-        let mut data = vec![0u8; 214];
-        data[0] = 1; // version
+        // The header up to (but not including) the u32 payload_len field is 220 bytes
+        // (212 + 8 bytes of pow_content_hash_salt). Providing header + 2 bytes used to pass
+        // the old `+ 2` minimum-length check but panic on get_u32_le() which needs 4 bytes.
+        // Now correctly rejected.
+        let mut data = vec![0u8; 222];
+        data[0] = crate::protocol::rpc::rpc_response::RPC_RESPONSE_PACKET_VERSION;
         let destination_id = Id::zero();
         let pow_content_hash = hashing::hash(&[0u8]);
         assert!(RpcResponsePacketRx::decode(&destination_id, &pow_content_hash, Pow(0), Bytes::from(data)).is_err());

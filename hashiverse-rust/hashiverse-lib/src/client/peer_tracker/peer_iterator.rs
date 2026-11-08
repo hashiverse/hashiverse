@@ -16,16 +16,18 @@
 //!   cache radius are skipped, because whatever we'd fetch from them is already cached
 //!   further out; fetching again just hammers the closest nodes.
 
-use crate::client::peer_tracker::peer_tracker::PeerTracker;
+use crate::client::peer_tracker::peer_tracker::{PeerTracker, SharedPeerTracker};
 use crate::protocol::peer::Peer;
-use crate::tools::tools;
+use crate::tools::{config, tools};
 use crate::tools::tools::LeadingAgreementBits;
 use crate::tools::types::Id;
 use log::warn;
 use std::collections::HashSet;
 
-pub struct PeerIterator<'a> {
-    tracker: &'a mut PeerTracker,
+/// Holds only a [`SharedPeerTracker`] handle: each call locks the tracker briefly and synchronously, so concurrent walks
+/// interleave freely and nothing is locked while the caller awaits its RPCs.
+pub struct PeerIterator {
+    tracker: SharedPeerTracker,
     bucket_location_id: Id,
     max_iterations_since_high_watermark: usize,
     peers_already_queried: HashSet<Id>,
@@ -34,8 +36,8 @@ pub struct PeerIterator<'a> {
     cache_radius: Option<LeadingAgreementBits>,
 }
 
-impl<'a> PeerIterator<'a> {
-    pub fn new(tracker: &'a mut PeerTracker, bucket_location_id: Id, max_iterations_since_high_watermark: usize, cache_radius: Option<LeadingAgreementBits>) -> Self {
+impl PeerIterator {
+    pub fn new(tracker: SharedPeerTracker, bucket_location_id: Id, max_iterations_since_high_watermark: usize, cache_radius: Option<LeadingAgreementBits>) -> Self {
         Self {
             tracker,
             bucket_location_id,
@@ -50,12 +52,14 @@ impl<'a> PeerIterator<'a> {
         loop {
             let nearest_peer = self
                 .tracker
+                .read()
                 .peers()
                 .iter()
                 .filter(|peer| !self.peers_already_queried.contains(&peer.id))
                 .map(|peer| (peer, tools::leading_agreement_bits_xor(&self.bucket_location_id.0, &peer.id.0)))
                 .filter(|(_, lab)| self.cache_radius.is_none_or(|r| *lab < r))
-                .max_by_key(|peer| peer.1);
+                .max_by_key(|peer| peer.1)
+                .map(|(peer, lab)| (peer.clone(), lab));
 
             match nearest_peer {
                 Some(nearest_peer) => {
@@ -77,12 +81,12 @@ impl<'a> PeerIterator<'a> {
                         *r = (*r + 1).min(256);
                     }
 
-                    return Some((nearest_peer.0.clone(), nearest_peer.1));
+                    return Some(nearest_peer);
                 }
                 None => {
                     // No unvisited peer passes the current radius filter.
                     // If there are no unvisited peers at all, we are done.
-                    let any_unvisited = self.tracker.peers().iter().any(|p| !self.peers_already_queried.contains(&p.id));
+                    let any_unvisited = self.tracker.read().peers().iter().any(|p| !self.peers_already_queried.contains(&p.id));
                     if !any_unvisited {
                         return None;
                     }
@@ -106,14 +110,37 @@ impl<'a> PeerIterator<'a> {
     }
 
     pub fn add_peers(&mut self, peers: Vec<Peer>) {
-        for peer in peers {
-            if let Err(e) = self.tracker.add_peer(peer) {
-                warn!("not adding invalid peer: {}", e);
+        if peers.len() > config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE {
+            warn!("ignoring {} of {} suggested peers (cap is {})", peers.len() - config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE, peers.len(), config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE);
+        }
+
+        // Dedupe under a read lock, verify (the expensive part) with no lock held, then insert under one short write lock
+        let (candidate_peers, current_time_millis) = {
+            let tracker = self.tracker.read();
+            let candidate_peers: Vec<Peer> = peers.into_iter().take(config::CLIENT_MAX_PEERS_CONSIDERED_PER_RESPONSE).filter(|peer| tracker.needs_verification(peer)).collect();
+            (candidate_peers, tracker.current_time_millis())
+        };
+
+        let verified_peers: Vec<Peer> = candidate_peers
+            .into_iter()
+            .filter(|peer| match PeerTracker::verify_candidate(peer, current_time_millis) {
+                Ok(()) => true,
+                Err(e) => {
+                    warn!("not adding invalid peer: {}", e);
+                    false
+                }
+            })
+            .collect();
+
+        if !verified_peers.is_empty() {
+            let mut tracker = self.tracker.write();
+            for peer in verified_peers {
+                tracker.insert_verified(peer);
             }
         }
     }
     pub fn remove_peer(&mut self, peer: &Peer) {
-        self.tracker.remove_peer(peer);
+        self.tracker.write().remove_peer(peer);
     }
 }
 
@@ -131,7 +158,8 @@ pub trait ConvergeToLocationVisitor: Send + Sync {
 #[cfg(test)]
 mod tests {
     use crate::client::client_storage::mem_client_storage::MemClientStorage;
-    use crate::client::peer_tracker::peer_tracker::PeerTracker;
+    use crate::client::peer_tracker::peer_tracker::{PeerTracker, SharedPeerTracker};
+    use std::sync::Arc;
     use crate::tools::buckets::{BUCKET_DURATIONS, BucketLocation, BucketType, generate_bucket_location};
     use crate::tools::config;
     use crate::tools::runtime_services::RuntimeServices;
@@ -143,7 +171,7 @@ mod tests {
     async fn converge_basics_test() -> anyhow::Result<()> {
         let runtime_services = RuntimeServices::default_for_testing();
         let client_storage = MemClientStorage::new().await?;
-        let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
+        let peer_tracker: SharedPeerTracker = Arc::new(parking_lot::RwLock::new(PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?));
 
         const NUM_PEERS: usize = 100;
 
@@ -151,16 +179,16 @@ mod tests {
             for _ in 0..NUM_PEERS {
                 let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
                 let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-                peer_tracker.add_peer(peer)?;
+                peer_tracker.write().add_peer(peer)?;
             }
-            assert_eq!(NUM_PEERS, peer_tracker.len());
+            assert_eq!(NUM_PEERS, peer_tracker.read().len());
         }
 
         // Now iterate through them all
         {
             let bucket_location = generate_bucket_location(BucketType::User, Id::random(), BUCKET_DURATIONS[0], runtime_services.time_provider.current_time_millis())?;
             let mut count = 0;
-            let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, usize::MAX, None).await?;
+            let mut peer_iter = PeerTracker::iterate_to_location(&peer_tracker, bucket_location.location_id, usize::MAX, None).await?;
             while let Some(_peer) = peer_iter.next_peer() {
                 count += 1;
             }
@@ -171,7 +199,7 @@ mod tests {
         {
             let bucket_location = generate_bucket_location(BucketType::User, Id::random(), BUCKET_DURATIONS[0], runtime_services.time_provider.current_time_millis())?;
             let mut count = 0;
-            let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, usize::MAX, None).await?;
+            let mut peer_iter = PeerTracker::iterate_to_location(&peer_tracker, bucket_location.location_id, usize::MAX, None).await?;
             if peer_iter.next_peer().is_some() {
                 count += 1;
             }
@@ -182,7 +210,7 @@ mod tests {
         {
             let bucket_location = generate_bucket_location(BucketType::User, Id::random(), BUCKET_DURATIONS[0], runtime_services.time_provider.current_time_millis())?;
             let mut count = 0;
-            let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, usize::MAX, None).await?;
+            let mut peer_iter = PeerTracker::iterate_to_location(&peer_tracker, bucket_location.location_id, usize::MAX, None).await?;
             while let Some((peer, _)) = peer_iter.next_peer() {
                 count += 1;
                 if 0 == count % 2 {
@@ -190,7 +218,7 @@ mod tests {
                 }
             }
             assert_eq!(NUM_PEERS, count);
-            assert_eq!(NUM_PEERS / 2, peer_tracker.len());
+            assert_eq!(NUM_PEERS / 2, peer_tracker.read().len());
         }
 
         Ok(())
@@ -200,7 +228,7 @@ mod tests {
     async fn converge_termination_test() -> anyhow::Result<()> {
         let runtime_services = RuntimeServices::default_for_testing();
         let client_storage = MemClientStorage::new().await?;
-        let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
+        let peer_tracker: SharedPeerTracker = Arc::new(parking_lot::RwLock::new(PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?));
 
         const NUM_PEERS: usize = 100;
 
@@ -208,15 +236,15 @@ mod tests {
             for _ in 0..NUM_PEERS {
                 let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
                 let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-                peer_tracker.add_peer(peer)?;
+                peer_tracker.write().add_peer(peer)?;
             }
-            assert_eq!(NUM_PEERS, peer_tracker.len());
+            assert_eq!(NUM_PEERS, peer_tracker.read().len());
         }
 
         {
             let bucket_location = generate_bucket_location(BucketType::User, Id::random(), BUCKET_DURATIONS[0], runtime_services.time_provider.current_time_millis())?;
             let mut count = 0;
-            let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, 3, None).await?;
+            let mut peer_iter = PeerTracker::iterate_to_location(&peer_tracker, bucket_location.location_id, 3, None).await?;
             while let Some(_peer) = peer_iter.next_peer() {
                 count += 1;
             }
@@ -230,7 +258,7 @@ mod tests {
     async fn converge_insertions_test() -> anyhow::Result<()> {
         let runtime_services = RuntimeServices::default_for_testing();
         let client_storage = MemClientStorage::new().await?;
-        let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
+        let peer_tracker: SharedPeerTracker = Arc::new(parking_lot::RwLock::new(PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?));
 
         const NUM_PEERS: usize = 100;
 
@@ -238,16 +266,16 @@ mod tests {
             for _ in 0..NUM_PEERS {
                 let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
                 let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-                peer_tracker.add_peer(peer)?;
+                peer_tracker.write().add_peer(peer)?;
             }
-            assert_eq!(NUM_PEERS, peer_tracker.len());
+            assert_eq!(NUM_PEERS, peer_tracker.read().len());
         }
 
         // Now iterate through them, but add a few more peers
         {
             let bucket_location = generate_bucket_location(BucketType::User, Id::random(), BUCKET_DURATIONS[0], runtime_services.time_provider.current_time_millis())?;
             let mut count = 0;
-            let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, usize::MAX, None).await?;
+            let mut peer_iter = PeerTracker::iterate_to_location(&peer_tracker, bucket_location.location_id, usize::MAX, None).await?;
             while let Some(_peer) = peer_iter.next_peer() {
                 count += 1;
 
@@ -263,7 +291,7 @@ mod tests {
             }
 
             assert_eq!(50, count);
-            assert_eq!(NUM_PEERS + 5, peer_tracker.len());
+            assert_eq!(NUM_PEERS + 5, peer_tracker.read().len());
         }
 
         Ok(())
@@ -273,7 +301,7 @@ mod tests {
     async fn converge_targeting_test() -> anyhow::Result<()> {
         let runtime_services = RuntimeServices::default_for_testing();
         let client_storage = MemClientStorage::new().await?;
-        let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
+        let peer_tracker: SharedPeerTracker = Arc::new(parking_lot::RwLock::new(PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?));
 
         const NUM_PEERS: usize = 100;
 
@@ -281,9 +309,9 @@ mod tests {
             for _ in 0..NUM_PEERS {
                 let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
                 let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
-                peer_tracker.add_peer(peer)?;
+                peer_tracker.write().add_peer(peer)?;
             }
-            assert_eq!(NUM_PEERS, peer_tracker.len());
+            assert_eq!(NUM_PEERS, peer_tracker.read().len());
         }
 
         // This is the peer we are actually targeting
@@ -309,7 +337,7 @@ mod tests {
             };
 
             let mut count = 0;
-            let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, usize::MAX, None).await?;
+            let mut peer_iter = PeerTracker::iterate_to_location(&peer_tracker, bucket_location.location_id, usize::MAX, None).await?;
             while let Some((peer, _)) = peer_iter.next_peer() {
                 count += 1;
                 match count {
@@ -327,7 +355,7 @@ mod tests {
             }
 
             assert_eq!(PEER_DISCOVERY_I_PLUS_1, count);
-            assert_eq!(NUM_PEERS + 1, peer_tracker.len());
+            assert_eq!(NUM_PEERS + 1, peer_tracker.read().len());
         }
 
         Ok(())
@@ -339,7 +367,7 @@ mod tests {
     async fn converge_cache_radius_test() -> anyhow::Result<()> {
         let runtime_services = RuntimeServices::default_for_testing();
         let client_storage = MemClientStorage::new().await?;
-        let mut peer_tracker = PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?;
+        let peer_tracker: SharedPeerTracker = Arc::new(parking_lot::RwLock::new(PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?));
 
         let location_id = Id::zero();
 
@@ -350,16 +378,16 @@ mod tests {
             let peer = server_id.to_peer(runtime_services.time_provider.as_ref())?;
             let lab = crate::tools::tools::leading_agreement_bits_xor(&location_id.0, &peer.id.0);
             labs_added.push(lab);
-            peer_tracker.add_peer(peer)?;
+            peer_tracker.write().add_peer(peer)?;
         }
-        assert_eq!(NUM_PEERS, peer_tracker.len());
+        assert_eq!(NUM_PEERS, peer_tracker.read().len());
 
         let mut sorted_labs = labs_added.clone();
         sorted_labs.sort();
         let cache_radius = sorted_labs[NUM_PEERS / 2];
 
         let mut labs_visited: Vec<crate::tools::tools::LeadingAgreementBits> = Vec::new();
-        let mut peer_iter = peer_tracker.iterate_to_location(location_id, usize::MAX, Some(cache_radius)).await?;
+        let mut peer_iter = PeerTracker::iterate_to_location(&peer_tracker, location_id, usize::MAX, Some(cache_radius)).await?;
         while let Some((_, lab)) = peer_iter.next_peer() {
             labs_visited.push(lab);
         }
@@ -371,6 +399,72 @@ mod tests {
             assert!(labs_visited[0] < cache_radius, "first peer should be outside the initial cache zone, got lab={} cache_radius={}", labs_visited[0], cache_radius);
         }
 
+        Ok(())
+    }
+
+    /// Two walks over one shared tracker interleave step by step; each sees the other's additions and removals.
+    #[tokio::test]
+    async fn two_iterators_interleave() -> anyhow::Result<()> {
+        let runtime_services = RuntimeServices::default_for_testing();
+        let client_storage = MemClientStorage::new().await?;
+        let peer_tracker: SharedPeerTracker = Arc::new(parking_lot::RwLock::new(PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?));
+
+        const NUM_PEERS: usize = 20;
+        for _ in 0..NUM_PEERS {
+            let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+            peer_tracker.write().add_peer(server_id.to_peer(runtime_services.time_provider.as_ref())?)?;
+        }
+
+        let mut peer_iter_a = PeerTracker::iterate_to_location(&peer_tracker, Id::random(), usize::MAX, None).await?;
+        let mut peer_iter_b = PeerTracker::iterate_to_location(&peer_tracker, Id::random(), usize::MAX, None).await?;
+
+        // Walk A removes the peers it visits; walk B adds a fresh peer each step
+        let mut visited_by_a = 0;
+        let mut added_by_b = 0;
+        let mut a_done = false;
+        let mut b_done = false;
+        while !(a_done && b_done) {
+            if !a_done {
+                match peer_iter_a.next_peer() {
+                    Some((peer, _)) => {
+                        visited_by_a += 1;
+                        peer_iter_a.remove_peer(&peer);
+                    }
+                    None => a_done = true,
+                }
+            }
+            if !b_done {
+                match peer_iter_b.next_peer() {
+                    Some(_) if added_by_b < 5 => {
+                        let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+                        peer_iter_b.add_peers(vec![server_id.to_peer(runtime_services.time_provider.as_ref())?]);
+                        added_by_b += 1;
+                    }
+                    Some(_) => {}
+                    None => b_done = true,
+                }
+            }
+        }
+
+        // A visited (and removed) every peer that existed while it walked, including those B added before A finished
+        assert!(visited_by_a >= NUM_PEERS, "A must visit at least the initial peers, visited {}", visited_by_a);
+        assert_eq!(NUM_PEERS + added_by_b - visited_by_a, peer_tracker.read().len());
+        Ok(())
+    }
+
+    /// An outstanding iterator holds no lock, so the tracker stays readable and writable between steps.
+    #[tokio::test]
+    async fn tracker_unlocked_while_iterator_alive() -> anyhow::Result<()> {
+        let runtime_services = RuntimeServices::default_for_testing();
+        let client_storage = MemClientStorage::new().await?;
+        let peer_tracker: SharedPeerTracker = Arc::new(parking_lot::RwLock::new(PeerTracker::new(runtime_services.clone(), client_storage.clone()).await?));
+        let server_id = ServerId::new("own_pow", runtime_services.time_provider.as_ref(), config::SERVER_KEY_POW_MIN, true, runtime_services.pow_generator.as_ref()).await?;
+        peer_tracker.write().add_peer(server_id.to_peer(runtime_services.time_provider.as_ref())?)?;
+
+        let mut peer_iter = PeerTracker::iterate_to_location(&peer_tracker, Id::random(), usize::MAX, None).await?;
+        assert!(peer_tracker.try_write().is_some(), "no lock may be held after construction");
+        assert!(peer_iter.next_peer().is_some());
+        assert!(peer_tracker.try_write().is_some(), "no lock may be held between steps");
         Ok(())
     }
 }

@@ -38,55 +38,15 @@ struct HealWork {
     post_byte_map: HashMap<Id, (usize, usize)>,
 }
 
-/// Selects and returns the best bundle (most posts), then spawns a background task that
-/// serially heals every server whose bundle is missing posts that any other server has.
-/// Returns None if bundles is empty.
-pub fn heal_post_bundles(runtime_services: Arc<RuntimeServices>, sponsor_id: Id, bucket_location: BucketLocation, peers_visited: &[Peer], bundles: Vec<EncodedPostBundleV1>) {
-    if bundles.is_empty() {
-        return;
-    }
-
-    // Build a post_byte_map for each bundle once (offset, len per post_id)
-    let byte_maps: Vec<HashMap<Id, (usize, usize)>> = bundles
-        .iter()
-        .map(|bundle| {
-            let mut map = HashMap::new();
-            let mut offset = 0usize;
-            for (post_id, &len) in bundle.header.encoded_post_ids.iter().zip(bundle.header.encoded_post_lengths.iter()) {
-                map.insert(*post_id, (offset, len));
-                offset += len;
-            }
-            map
-        })
-        .collect();
-
-    // For each (donor, target) pair: if donor has posts that target is missing, queue a heal.
-    // Only target servers we directly visited — we should not heal servers where we have only a cached snapshot of their data.
-    // This might queue up duplicate heal tasks for the server, but the server will deny the second heal attempt.
-    let mut work: Vec<HealWork> = Vec::new();
-    for donor_idx in 0..bundles.len() {
-        for target_idx in 0..bundles.len() {
-            if donor_idx == target_idx {
-                continue;
-            }
-            let donor = &bundles[donor_idx];
-            let target = &bundles[target_idx];
-            let donor_map = &byte_maps[donor_idx];
-            if !peers_visited.iter().any(|p| p.id == target.header.peer.id) {
-                continue;
-            }
-            if donor.header.encoded_post_ids.iter().any(|id| !target.header.encoded_post_ids.contains(id)) {
-                info!("Queueing healing for target_peer={} bucket_location={}", target.header.peer, bucket_location);
-                work.push(HealWork {
-                    target_peer: target.header.peer.clone(),
-                    bucket_location: bucket_location.clone(),
-                    donor_header: donor.header.clone(),
-                    donor_posts_bytes: donor.encoded_posts_bytes.clone(),
-                    post_byte_map: donor_map.clone(),
-                });
-            }
-        }
-    }
+/// Spawns a background task that serially heals every target server whose bundle is missing posts that a donor bundle has.
+///
+/// - `donor_bundles` must be authoritative bundles (verified, holding at least one genuinely signed post) - direct responses or cached snapshots,
+///   including snapshots signed by servers that have since died.
+/// - `target_bundles` are the bundles returned directly by the servers we visited, paired with the [`Peer`] we actually sent the RPC to.
+///   We only heal servers we have spoken to (never one we only hold a cached snapshot of), and we address them using that authenticated
+///   peer rather than the `peer` inside the bundle header, whose address is whatever the bundle's publisher chose to put there.
+pub fn heal_post_bundles(runtime_services: Arc<RuntimeServices>, sponsor_id: Id, bucket_location: BucketLocation, donor_bundles: &[EncodedPostBundleV1], target_bundles: &[(Peer, EncodedPostBundleV1)]) {
+    let work = build_heal_work(&bucket_location, donor_bundles, target_bundles);
 
     if !work.is_empty() {
         crate::tools::tools::spawn_background_task(async move {
@@ -98,6 +58,44 @@ pub fn heal_post_bundles(runtime_services: Arc<RuntimeServices>, sponsor_id: Id,
             }
         });
     }
+}
+
+/// For each (donor, target) pair: if the donor has posts that the target is missing, queue a heal of the target from that donor.
+/// This might queue up duplicate heal tasks for a server, but the server will deny the second heal attempt.
+fn build_heal_work(bucket_location: &BucketLocation, donor_bundles: &[EncodedPostBundleV1], target_bundles: &[(Peer, EncodedPostBundleV1)]) -> Vec<HealWork> {
+    // Build a post_byte_map for each donor once (offset, len per post_id)
+    let donor_byte_maps: Vec<HashMap<Id, (usize, usize)>> = donor_bundles
+        .iter()
+        .map(|donor_bundle| {
+            let mut map = HashMap::new();
+            let mut offset = 0usize;
+            for (post_id, &len) in donor_bundle.header.encoded_post_ids.iter().zip(donor_bundle.header.encoded_post_lengths.iter()) {
+                map.insert(*post_id, (offset, len));
+                offset += len;
+            }
+            map
+        })
+        .collect();
+
+    let mut work: Vec<HealWork> = Vec::new();
+    for (donor_bundle, donor_byte_map) in donor_bundles.iter().zip(donor_byte_maps.iter()) {
+        for (target_peer, target_bundle) in target_bundles {
+            if donor_bundle.header.peer.id == target_peer.id {
+                continue;
+            }
+            if donor_bundle.header.encoded_post_ids.iter().any(|id| !target_bundle.header.encoded_post_ids.contains(id)) {
+                info!("Queueing healing for target_peer={} bucket_location={}", target_peer, bucket_location);
+                work.push(HealWork {
+                    target_peer: target_peer.clone(),
+                    bucket_location: bucket_location.clone(),
+                    donor_header: donor_bundle.header.clone(),
+                    donor_posts_bytes: donor_bundle.encoded_posts_bytes.clone(),
+                    post_byte_map: donor_byte_map.clone(),
+                });
+            }
+        }
+    }
+    work
 }
 
 async fn try_heal_single_bundle(
@@ -144,4 +142,69 @@ async fn try_heal_single_bundle(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::posting::encoded_post_bundle::test_fixtures::BucketBundleFixture;
+    use crate::tools::time_provider::time_provider::RealTimeProvider;
+
+    #[tokio::test]
+    async fn heals_targets_missing_donor_posts_addressed_via_the_rpc_peer() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(2).await?;
+
+        let donor_server_id = BucketBundleFixture::new_server_id().await?;
+        let donor_bundle = fixture.make_bundle_from(&donor_server_id, &posts)?;
+
+        // The target's own bundle claims an address chosen by its publisher; the peer we actually spoke to has a different one
+        let target_server_id = BucketBundleFixture::new_server_id().await?;
+        let mut header_peer = target_server_id.to_peer(&RealTimeProvider)?;
+        header_peer.address = "attacker-chosen-address".to_string();
+        header_peer.sign(&RealTimeProvider, &target_server_id.keys.signature_key)?;
+        let target_bundle = fixture.make_bundle_signed_by(&target_server_id, header_peer, fixture.time_millis_now, &posts[..1])?;
+        let mut rpc_peer = target_server_id.to_peer(&RealTimeProvider)?;
+        rpc_peer.address = "the-address-we-actually-used".to_string();
+
+        let work = build_heal_work(&fixture.bucket_location, std::slice::from_ref(&donor_bundle), &[(rpc_peer, target_bundle)]);
+        assert_eq!(work.len(), 1);
+        assert_eq!(work[0].target_peer.address, "the-address-we-actually-used");
+        assert_eq!(work[0].donor_header, donor_bundle.header);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn does_not_heal_up_to_date_targets_or_donors_themselves() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(2).await?;
+
+        let donor_server_id = BucketBundleFixture::new_server_id().await?;
+        let donor_bundle = fixture.make_bundle_from(&donor_server_id, &posts)?;
+        let up_to_date_server_id = BucketBundleFixture::new_server_id().await?;
+        let up_to_date_bundle = fixture.make_bundle_from(&up_to_date_server_id, &posts)?;
+
+        let target_bundles = vec![
+            (donor_server_id.to_peer(&RealTimeProvider)?, donor_bundle.clone()),
+            (up_to_date_server_id.to_peer(&RealTimeProvider)?, up_to_date_bundle),
+        ];
+        assert!(build_heal_work(&fixture.bucket_location, std::slice::from_ref(&donor_bundle), &target_bundles).is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn empty_direct_responder_is_a_target() -> anyhow::Result<()> {
+        let fixture = BucketBundleFixture::new().await?;
+        let posts = fixture.make_own_posts(1).await?;
+
+        let donor_server_id = BucketBundleFixture::new_server_id().await?;
+        let donor_bundle = fixture.make_bundle_from(&donor_server_id, &posts)?;
+        let empty_server_id = BucketBundleFixture::new_server_id().await?;
+        let empty_bundle = fixture.make_bundle_from(&empty_server_id, &[])?;
+
+        let work = build_heal_work(&fixture.bucket_location, &[donor_bundle], &[(empty_server_id.to_peer(&RealTimeProvider)?, empty_bundle)]);
+        assert_eq!(work.len(), 1);
+        assert_eq!(work[0].target_peer.id, empty_server_id.id);
+        Ok(())
+    }
 }

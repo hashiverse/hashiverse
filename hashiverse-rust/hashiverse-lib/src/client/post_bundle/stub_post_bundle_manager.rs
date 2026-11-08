@@ -22,6 +22,7 @@ use bytes::Bytes;
 
 pub struct StubPostBundleManager {
     post_bundles: RwLock<HashMap<Id, EncodedPostBundleV1>>,
+    requested_location_ids: RwLock<Vec<Id>>,
 }
 
 impl StubPostBundleManager {
@@ -53,11 +54,16 @@ impl StubPostBundleManager {
 
         Ok(())
     }
+
+    /// Every location_id passed to `get_post_bundle`, in request order.
+    pub fn requested_location_ids(&self) -> Vec<Id> {
+        self.requested_location_ids.read().clone()
+    }
 }
 
 impl Default for StubPostBundleManager {
     fn default() -> Self {
-        Self { post_bundles: RwLock::new(HashMap::new()) }
+        Self { post_bundles: RwLock::new(HashMap::new()), requested_location_ids: RwLock::new(Vec::new()) }
     }
 }
 
@@ -65,6 +71,7 @@ impl Default for StubPostBundleManager {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl PostBundleManager for StubPostBundleManager {
     async fn get_post_bundle(&self, bucket_location: &BucketLocation, time_millis: TimeMillis) -> anyhow::Result<EncodedPostBundleV1> {
+        self.requested_location_ids.write().push(bucket_location.location_id);
         let post_bundles = self.post_bundles.read();
         let post_bundle = post_bundles.get(&bucket_location.location_id);
         let post_bundle = match post_bundle {
@@ -72,12 +79,12 @@ impl PostBundleManager for StubPostBundleManager {
                 let mut post_bundle = post_bundle.clone();
                 post_bundle.header.time_millis = time_millis;
                 post_bundle.header.overflowed = post_bundle.header.num_posts > config::ENCODED_POST_BUNDLE_V1_OVERFLOWED_NUM_POSTS;
-                post_bundle.header.sealed = post_bundle.header.overflowed || time_millis > bucket_location.bucket_time_millis + bucket_location.duration + config::ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS;
+                post_bundle.header.sealed = bucket_location.is_sealed_at(time_millis, post_bundle.header.overflowed);
                 trace!("Returning stub postbundle: {}", post_bundle);
                 post_bundle
             }
             None => {
-                let sealed = time_millis > bucket_location.bucket_time_millis + bucket_location.duration + config::ENCODED_POST_BUNDLE_V1_ELAPSED_THRESHOLD_MILLIS;
+                let sealed = bucket_location.is_sealed_at(time_millis, false);
                 let mut post_bundle = EncodedPostBundleV1::stub();
                 post_bundle.header.time_millis = time_millis;
                 post_bundle.header.location_id = bucket_location.location_id;

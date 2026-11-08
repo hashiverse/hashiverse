@@ -15,7 +15,7 @@
 
 use crate::anyhow_assert_eq;
 use crate::client::key_locker::key_locker::KeyLocker;
-use crate::client::peer_tracker::peer_tracker::PeerTracker;
+use crate::client::peer_tracker::peer_tracker::{PeerTracker, SharedPeerTracker};
 use crate::client::post_bundle::live_post_bundle_manager::LivePostBundleManager;
 use crate::client::post_bundle::post_bundle_manager::PostBundleManager;
 use crate::client::timeline::recent_posts_pen::RecentPostsPen;
@@ -72,7 +72,7 @@ pub async fn submit_post(
     client_id: &ClientId,
     key_locker: &Arc<dyn KeyLocker>,
     post_bundle_manager: Arc<LivePostBundleManager>,
-    peer_tracker: Arc<RwLock<PeerTracker>>,
+    peer_tracker: SharedPeerTracker,
     recent_posts_pen: &Arc<RwLock<RecentPostsPen>>,
     post: &str,
     wait_for_all_submissions: bool,
@@ -265,7 +265,7 @@ async fn post_to_locations(
     runtime_services: Arc<RuntimeServices>,
     client_id: ClientId,
     post_bundle_manager: Arc<LivePostBundleManager>,
-    peer_tracker: Arc<RwLock<PeerTracker>>,
+    peer_tracker: SharedPeerTracker,
     recent_posts_pen: Arc<RwLock<RecentPostsPen>>,
     linked_base_id_details: Vec<LinkedBaseIdDetail>,
     encoded_post: EncodedPostV1,
@@ -285,7 +285,8 @@ async fn post_to_locations(
                 let bucket_location = generate_bucket_location(linked_base_id_detail.bucket_type, linked_base_id_detail.linked_base_id, bucket_duration, timestamp)?;
                 info!("checking posting availability of {:?}", bucket_location);
 
-                let post_bundle = post_bundle_manager.get_post_bundle(&bucket_location, timestamp).await?;
+                // Settled, not provisional: a provisional "not overflowed" would send our claims to a bucket that is already full
+                let post_bundle = post_bundle_manager.get_post_bundle_settled(&bucket_location, timestamp).await?;
                 if !post_bundle.header.overflowed && !post_bundle.header.sealed {
                     info!("Posting to {:?}", bucket_location);
                     let result = post_to_location(&runtime_services, &client_id.id, &peer_tracker, &recent_posts_pen, &bucket_location, &encoded_post, &encoded_post_bytes, &encoded_post_bytes_raw, linked_base_id_detail.referenced_post_header_bytes.as_deref(), &referenced_hashtags, linked_base_id_detail.bucket_type, timestamp, &outcomes_tx).await;
@@ -324,7 +325,7 @@ async fn post_to_locations(
 async fn post_to_location(
     runtime_services: &RuntimeServices,
     sponsor_id: &Id,
-    peer_tracker: &Arc<RwLock<PeerTracker>>,
+    peer_tracker: &SharedPeerTracker,
     recent_posts_pen: &Arc<RwLock<RecentPostsPen>>,
     bucket_location: &BucketLocation,
     encoded_post: &EncodedPostV1,
@@ -340,15 +341,14 @@ async fn post_to_location(
     let mut submit_post_claim_tokens = Vec::new();
     let mut submit_post_commit_tokens = Vec::new();
 
-    let mut peer_tracker = peer_tracker.write().await;
-    let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, 2 * config::REDUNDANT_SERVERS_PER_POST, None).await?;
+    let mut peer_iter = PeerTracker::iterate_to_location(peer_tracker, bucket_location.location_id, 2 * config::REDUNDANT_SERVERS_PER_POST, None).await?;
     while let Some((peer, leading_agreement_bits)) = peer_iter.next_peer() {
         let result: anyhow::Result<()> = try {
             info!("Requesting SubmitPostClaim with leading_agreement_bits={} from peer {}", leading_agreement_bits, peer);
 
             // First we need to get permission to post
             let request = SubmitPostClaimV1::new_to_bytes(bucket_location, referenced_post_header_bytes, referenced_hashtags, encoded_post_bytes.bytes_without_body())?;
-            let requisite_pow = amplification::get_minimum_post_pow(encoded_post.header.post_length, encoded_post.header.linked_base_ids.len(), bucket_location.duration);
+            let requisite_pow = amplification::get_minimum_post_pow(encoded_post.header.post_length, encoded_post.header.linked_base_ids.len(), bucket_location.duration)?;
             let response = rpc::rpc::rpc_server_known_with_requisite_pow_and_no_compression(runtime_services, sponsor_id, &peer, PayloadRequestKind::SubmitPostClaimV1, request, requisite_pow).await?;
             anyhow_assert_eq!(&PayloadResponseKind::SubmitPostClaimResponseV1, &response.response_request_kind);
             let response = json::bytes_to_struct::<SubmitPostClaimResponseV1>(&response.bytes)?;
@@ -402,7 +402,7 @@ async fn post_to_location(
 pub async fn post_feedback_to_location(
     runtime_services: &RuntimeServices,
     sponsor_id: &Id,
-    peer_tracker: &Arc<RwLock<PeerTracker>>,
+    peer_tracker: &SharedPeerTracker,
     bucket_location: &BucketLocation,
     encoded_post_feedback: &EncodedPostFeedbackV1,
 ) -> anyhow::Result<()> {
@@ -410,8 +410,7 @@ pub async fn post_feedback_to_location(
     let mut peers_visited = Vec::new();
     let mut submit_post_feedback_accepts = Vec::new();
 
-    let mut peer_tracker = peer_tracker.write().await;
-    let mut peer_iter = peer_tracker.iterate_to_location(bucket_location.location_id, 2 * config::REDUNDANT_SERVERS_PER_POST, None).await?;
+    let mut peer_iter = PeerTracker::iterate_to_location(peer_tracker, bucket_location.location_id, 2 * config::REDUNDANT_SERVERS_PER_POST, None).await?;
     while let Some((peer, leading_agreement_bits)) = peer_iter.next_peer() {
         let result: anyhow::Result<()> = try {
             info!("Requesting SubmitPostFeedbackV1 with leading_agreement_bits={} from peer {}", leading_agreement_bits, peer);

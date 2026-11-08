@@ -99,7 +99,7 @@ async fn drive_hits_upload_and_verify_cached(
     anyhow_assert!(cache_request_token.is_some(), "server {} did not issue a CacheRequestToken after the hit threshold", server.server_id.id);
 
     let post_bundle = EncodedPostBundleV1::from_bytes(bundle_bytes.clone(), true)?;
-    let accepted = server.post_bundle_cache.on_upload(bucket_location.location_id, post_bundle.header.peer.id, bundle_bytes.clone(), now, post_bundle.header.sealed);
+    let accepted = server.post_bundle_cache.on_upload(bucket_location.location_id, post_bundle.header.peer.id, bundle_bytes.clone(), post_bundle.header.time_millis, now, post_bundle.header.sealed);
     anyhow_assert!(accepted, "server {} rejected the post bundle cache upload", server.server_id.id);
 
     let cached = server.post_bundle_cache.on_get(bucket_location, &[], &peer_self, &server.server_id, now);

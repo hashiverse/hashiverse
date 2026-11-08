@@ -28,7 +28,7 @@ use crate::server::post_bundle_caching::PostBundleCache;
 use crate::server::post_bundle_feedback_caching::PostBundleFeedbackCache;
 use crate::server::stats::RequestRateWindows;
 use hashiverse_lib::anyhow_assert_eq;
-use hashiverse_lib::protocol::payload::payload::{AnnounceResponseV1, AnnounceResponseV2, AnnounceV1, AnnounceV2, BootstrapResponseV1, BootstrapV1, PayloadRequestKind, PayloadResponseKind, PeerStatsResponseV1, PAYLOAD_REQUEST_KIND_COUNT};
+use hashiverse_lib::protocol::payload::payload::{AnnounceResponseV2, AnnounceV2, BootstrapResponseV1, BootstrapV1, PayloadRequestKind, PayloadResponseKind, PeerStatsResponseV1, PAYLOAD_REQUEST_KIND_COUNT};
 use hashiverse_lib::protocol::peer::Peer;
 use hashiverse_lib::protocol::rpc;
 use hashiverse_lib::tools::runtime_services::RuntimeServices;
@@ -126,6 +126,11 @@ impl HashiverseServer {
                     if let Some(peer_buckets) = peer_buckets {
                         for peer_bucket in peer_buckets {
                             for peer in peer_bucket {
+                                // Re-check on load: records persisted before timestamp checks existed may be poisoned.
+                                if let Err(e) = peer.verify().and_then(|_| peer.verify_timestamps(now)) {
+                                    warn!("dropping persisted peer {} that failed verification: {}", peer, e);
+                                    continue;
+                                }
                                 kademlia.add_peer(peer, now)?;
                             }
                         }
@@ -185,7 +190,7 @@ impl HashiverseServer {
 
     pub async fn add_potential_peer_to_kademlia(&self, peer: Peer, time_millis: TimeMillis) {
         // Verify this peer
-        let result = peer.verify();
+        let result = peer.verify().and_then(|_| peer.verify_timestamps(time_millis));
         if let Err(e) = result {
             warn!("peer {} failed verification: {}", peer, e);
             return;
@@ -337,36 +342,18 @@ impl HashiverseServer {
                     };
 
                     let try_result: anyhow::Result<()> = try {
-                        // Try V2 first. If V2 fails for any reason — peer is V1-only and doesn't
-                        // know the variant, our chain didn't validate at their end, transient
-                        // network error — fall back to V1. Only if V1 *also* fails do we prune.
-                        // This keeps the network functional during the V1 coexistence window:
-                        // we never drop a peer just because they haven't upgraded yet.
-                        let v2_result = self.rpc_server_known(
+                        // Any failure — peer unreachable, our ownership proof didn't validate at their end,
+                        // a malformed response — prunes the peer below.
+                        let rpc_response_packet_rx = self.rpc_server_known(
                             &announce_peer,
                             PayloadRequestKind::AnnounceV2,
                             json::struct_to_bytes(&AnnounceV2 { peer_self: peer_self.clone(), proof_payload: proof_payload.to_vec() })?,
-                        ).await;
-
-                        match v2_result {
-                            Ok(rpc_response_packet_rx) => {
-                                anyhow_assert_eq!(&PayloadResponseKind::AnnounceResponseV2, &rpc_response_packet_rx.response_request_kind);
-                                let response = json::bytes_to_struct::<AnnounceResponseV2>(&rpc_response_packet_rx.bytes)?;
-                                self.add_potential_peer_to_kademlia(response.peer_self, now).await;
-                                for peer in response.peers_nearest {
-                                    self.add_potential_peer_to_kademlia(peer, now).await;
-                                }
-                            }
-                            Err(v2_err) => {
-                                trace!("V2 announce to {} failed: {}; falling back to V1", announce_peer, v2_err);
-                                let rpc_response_packet_rx = self.rpc_server_known(&announce_peer, PayloadRequestKind::AnnounceV1, json::struct_to_bytes(&AnnounceV1 { peer_self: peer_self.clone() })?).await?;
-                                anyhow_assert_eq!(&PayloadResponseKind::AnnounceResponseV1, &rpc_response_packet_rx.response_request_kind);
-                                let response = json::bytes_to_struct::<AnnounceResponseV1>(&rpc_response_packet_rx.bytes)?;
-                                self.add_potential_peer_to_kademlia(response.peer_self, now).await;
-                                for peer in response.peers_nearest {
-                                    self.add_potential_peer_to_kademlia(peer, now).await;
-                                }
-                            }
+                        ).await?;
+                        anyhow_assert_eq!(&PayloadResponseKind::AnnounceResponseV2, &rpc_response_packet_rx.response_request_kind);
+                        let response = json::bytes_to_struct::<AnnounceResponseV2>(&rpc_response_packet_rx.bytes)?;
+                        self.add_potential_peer_to_kademlia(response.peer_self, now).await;
+                        for peer in response.peers_nearest {
+                            self.add_potential_peer_to_kademlia(peer, now).await;
                         }
                     };
 
@@ -407,7 +394,77 @@ impl kademlia::Peer<Id> for Peer {
         &self.id
     }
     fn score(&self, time_millis: TimeMillis) -> f64 {
-        // This score makes sure that peers are currently active, but also benefits peers who have been active for a while
-        self.pow_current_day.pow_decayed_day(time_millis) + self.pow_current_month.pow_decayed_month(time_millis)
+        Peer::score(self, time_millis)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::environment::mem_environment_store::MemEnvironmentFactory;
+    use hashiverse_lib::protocol::peer::PeerPow;
+    use hashiverse_lib::tools::pow_generator::single_threaded_pow_generator::SingleThreadedPowGenerator;
+    use hashiverse_lib::tools::time::MILLIS_IN_DAY;
+    use hashiverse_lib::tools::time_provider::time_provider::RealTimeProvider;
+    use hashiverse_lib::tools::types::{Hash, Pow};
+    use hashiverse_lib::transport::mem_transport::MemTransportFactory;
+
+    /// 2100-01-01T00:00:00Z
+    const YEAR_2100_MILLIS: TimeMillis = TimeMillis(4_102_444_800_000);
+
+    async fn make_server() -> anyhow::Result<Arc<HashiverseServer>> {
+        let runtime_services = Arc::new(RuntimeServices { time_provider: Arc::new(RealTimeProvider), transport_factory: MemTransportFactory::default(), pow_generator: Arc::new(SingleThreadedPowGenerator::new()) });
+        HashiverseServer::new(runtime_services, Arc::new(MemEnvironmentFactory::new("")), Args::default_for_testing()).await
+    }
+
+    async fn make_other_server_id() -> anyhow::Result<ServerId> {
+        ServerId::new("other_server", &RealTimeProvider, config::SERVER_KEY_POW_MIN, true, &SingleThreadedPowGenerator::new()).await
+    }
+
+    fn kademlia_contains(server: &HashiverseServer, id: &Id) -> bool {
+        server.kademlia.read().get_all_peers().iter().any(|peer| peer.id == *id)
+    }
+
+    #[tokio::test]
+    async fn honest_peer_is_added_to_kademlia() -> anyhow::Result<()> {
+        let server = make_server().await?;
+        let other_server_id = make_other_server_id().await?;
+        let honest_peer = other_server_id.to_peer(&RealTimeProvider)?;
+
+        server.add_potential_peer_to_kademlia(honest_peer, RealTimeProvider.current_time_millis()).await;
+        assert!(kademlia_contains(&server, &other_server_id.id));
+        Ok(())
+    }
+
+    // Regression for C4: a correctly signed record whose pow_current_day is self-dated to 2100 passes
+    // Peer::verify (the pow genuinely matches its inputs) but must not get into the routing table.
+    #[tokio::test]
+    async fn future_dated_peer_is_not_added_to_kademlia() -> anyhow::Result<()> {
+        let server = make_server().await?;
+        let other_server_id = make_other_server_id().await?;
+        let mut future_dated_peer = other_server_id.to_peer(&RealTimeProvider)?;
+        future_dated_peer.pow_current_day = PeerPow::new(other_server_id.id, &future_dated_peer.verification_key_bytes, &future_dated_peer.pq_commitment_bytes, YEAR_2100_MILLIS, Hash::random(), Salt::random())?;
+        future_dated_peer.sign(&RealTimeProvider, &other_server_id.keys.signature_key)?;
+        future_dated_peer.verify()?; // The signature/pow checks alone are satisfied — this is the gap
+
+        server.add_potential_peer_to_kademlia(future_dated_peer, RealTimeProvider.current_time_millis()).await;
+        assert!(!kademlia_contains(&server, &other_server_id.id), "future-dated peer must be rejected");
+        Ok(())
+    }
+
+    #[test]
+    fn future_dated_peer_cannot_outscore_honest_peer() {
+        let now = RealTimeProvider.current_time_millis();
+        let mut future_dated_peer = Peer::zero();
+        future_dated_peer.pow_current_day = PeerPow { timestamp: YEAR_2100_MILLIS, pow: Pow(1), ..PeerPow::zero() };
+        future_dated_peer.pow_current_month = PeerPow { timestamp: YEAR_2100_MILLIS, pow: Pow(0), ..PeerPow::zero() };
+
+        let mut honest_peer = Peer::zero();
+        honest_peer.pow_current_day = PeerPow { timestamp: now - MILLIS_IN_DAY, pow: Pow(20), ..PeerPow::zero() };
+        honest_peer.pow_current_month = PeerPow { timestamp: now - MILLIS_IN_DAY, pow: Pow(20), ..PeerPow::zero() };
+
+        let future_dated_score = future_dated_peer.score(now);
+        assert!(future_dated_score.is_finite(), "score={}", future_dated_score);
+        assert!(future_dated_score < honest_peer.score(now), "future_dated_score={} honest_score={}", future_dated_score, honest_peer.score(now));
     }
 }
