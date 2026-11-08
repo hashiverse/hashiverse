@@ -15,8 +15,8 @@ describe("storage reset", () => {
         dataDir = mkdtempSync(join(tmpdir(), "hashiverse-storage-reset-"));
     });
 
-    afterEach(() => {
-        cleanupTmpDir(dataDir);
+    afterEach(async () => {
+        await cleanupTmpDir(dataDir);
     });
 
     it("resetStorage does not throw", async () => {

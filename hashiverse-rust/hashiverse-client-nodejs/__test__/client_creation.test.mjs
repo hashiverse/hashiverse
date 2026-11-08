@@ -24,8 +24,8 @@ describe("client creation", () => {
         parentDir = mkdtempSync(join(tmpdir(), "hashiverse-client-creation-"));
     });
 
-    afterEach(() => {
-        cleanupTmpDir(parentDir);
+    afterEach(async () => {
+        await cleanupTmpDir(parentDir);
     });
 
     it("createFromKeyphrase returns a client", async () => {

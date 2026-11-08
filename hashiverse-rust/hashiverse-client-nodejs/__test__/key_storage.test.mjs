@@ -24,8 +24,8 @@ describe("key storage", () => {
         dataDir = mkdtempSync(join(tmpdir(), "hashiverse-key-storage-"));
     });
 
-    afterEach(() => {
-        cleanupTmpDir(dataDir);
+    afterEach(async () => {
+        await cleanupTmpDir(dataDir);
     });
 
     it("new client's key is listed", async () => {

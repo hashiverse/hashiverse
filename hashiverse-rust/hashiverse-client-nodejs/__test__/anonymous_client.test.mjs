@@ -15,8 +15,8 @@ describe("anonymous client", () => {
         dataDir = mkdtempSync(join(tmpdir(), "hashiverse-anon-"));
     });
 
-    afterEach(() => {
-        cleanupTmpDir(dataDir);
+    afterEach(async () => {
+        await cleanupTmpDir(dataDir);
     });
 
     it("anonymous client has a clientId", async () => {
