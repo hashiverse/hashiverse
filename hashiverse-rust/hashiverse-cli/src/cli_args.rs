@@ -2,10 +2,10 @@
 //!
 //! Secrets (the keyphrase and the key-file password) are deliberately NOT accepted as argv
 //! flags: argv is visible to other users via `ps` and lands in shell history. They come from
-//! the `HASHIVERSE_KEYPHRASE` / `HASHIVERSE_PASSWORD` environment variables, or from a hidden
-//! console prompt. See [`crate::unlock`].
+//! the `HASHIVERSE_KEYPHRASE` / `HASHIVERSE_PASSWORD` environment variables only; the CLI never
+//! prompts. See [`crate::unlock`].
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 pub const ENV_KEYPHRASE: &str = "HASHIVERSE_KEYPHRASE";
@@ -20,7 +20,7 @@ pub struct CliArgs {
     #[arg(long, env = ENV_DATA_DIR, global = true)]
     pub data_dir: Option<PathBuf>,
 
-    /// Client id (hex) of a key previously stored in the data dir. Unlocked with HASHIVERSE_PASSWORD or a prompt.
+    /// Client id (hex) of a key previously stored in the data dir. Requires HASHIVERSE_PASSWORD.
     #[arg(long, env = ENV_PROFILE, global = true)]
     pub profile: Option<String>,
 
@@ -35,6 +35,43 @@ pub struct CliArgs {
     /// Log level for the underlying client (error, warn, info, debug, trace).
     #[arg(long, default_value = "warn", global = true)]
     pub log_level: String,
+
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+pub const DEFAULT_TRENDING_LIMIT: u16 = 20;
+
+#[derive(Subcommand, Debug, PartialEq, Eq, Clone)]
+pub enum Command {
+    /// Submit a plain-text post. #hashtags and @<64-hex client id> mentions are recognised.
+    Post {
+        /// The post text. Multiple words are joined with spaces, so quoting is optional.
+        #[arg(required = true, num_args = 1.., trailing_var_arg = true, allow_hyphen_values = true)]
+        text: Vec<String>,
+    },
+    /// List posts by a user. Repeating this in the REPL fetches progressively older posts.
+    User {
+        /// The user's client id (hex).
+        client_id_hex: String,
+        /// How many batches of posts to fetch.
+        #[arg(long, default_value_t = 1)]
+        pages: u32,
+    },
+    /// List posts with a hashtag. Repeating this in the REPL fetches progressively older posts.
+    Hashtag {
+        /// The hashtag, with or without the leading '#'.
+        hashtag: String,
+        /// How many batches of posts to fetch.
+        #[arg(long, default_value_t = 1)]
+        pages: u32,
+    },
+    /// Show trending hashtags.
+    Trending {
+        /// Maximum number of hashtags to show.
+        #[arg(long, default_value_t = DEFAULT_TRENDING_LIMIT)]
+        limit: u16,
+    },
 }
 
 #[cfg(test)]
@@ -51,6 +88,41 @@ mod tests {
     fn bootstrap_is_comma_separated() {
         let cli_args = CliArgs::try_parse_from(["hashiverse-cli", "--bootstrap", "1.2.3.4:443,5.6.7.8:443"]).unwrap();
         assert_eq!(cli_args.bootstrap, vec!["1.2.3.4:443".to_string(), "5.6.7.8:443".to_string()]);
+    }
+
+    fn parse_command(argv: &[&str]) -> Command {
+        let mut full_argv = vec!["hashiverse-cli"];
+        full_argv.extend_from_slice(argv);
+        CliArgs::try_parse_from(full_argv).unwrap().command.unwrap()
+    }
+
+    #[test]
+    fn no_subcommand_is_none() {
+        assert_eq!(CliArgs::try_parse_from(["hashiverse-cli"]).unwrap().command, None);
+    }
+
+    #[test]
+    fn post_joins_unquoted_words_and_keeps_hyphens() {
+        assert_eq!(parse_command(&["post", "hello", "#world", "-", "--json-ish"]), Command::Post { text: vec!["hello".into(), "#world".into(), "-".into(), "--json-ish".into()] });
+    }
+
+    #[test]
+    fn post_requires_text() {
+        assert!(CliArgs::try_parse_from(["hashiverse-cli", "post"]).is_err());
+    }
+
+    #[test]
+    fn global_json_flag_works_after_subcommand() {
+        let cli_args = CliArgs::try_parse_from(["hashiverse-cli", "trending", "--json"]).unwrap();
+        assert!(cli_args.json);
+        assert_eq!(cli_args.command, Some(Command::Trending { limit: DEFAULT_TRENDING_LIMIT }));
+    }
+
+    #[test]
+    fn user_and_hashtag_pages() {
+        assert_eq!(parse_command(&["user", "abcd"]), Command::User { client_id_hex: "abcd".into(), pages: 1 });
+        assert_eq!(parse_command(&["hashtag", "#rust", "--pages", "3"]), Command::Hashtag { hashtag: "#rust".into(), pages: 3 });
+        assert_eq!(parse_command(&["trending", "--limit", "5"]), Command::Trending { limit: 5 });
     }
 
     #[test]

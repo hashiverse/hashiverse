@@ -8,4 +8,7 @@
 //! drive the same code paths.
 
 pub mod cli_args;
+pub mod commands;
+pub mod render;
+pub mod repl;
 pub mod unlock;
