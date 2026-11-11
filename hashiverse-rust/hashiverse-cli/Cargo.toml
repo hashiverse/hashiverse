@@ -1,0 +1,31 @@
+[package]
+name = "hashiverse-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Command-line client for Hashiverse — your open-source decentralized X/Twitter replacement."
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "hashiverse_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hashiverse-cli"
+path = "src/main.rs"
+
+[dependencies]
+hashiverse-lib = { workspace = true }
+hashiverse-client-rust = { path = "../hashiverse-client-rust" }
+anyhow = { workspace = true }
+log = { workspace = true }
+clap = { version = "4.5.38", features = ["derive", "env"] }
+tokio = { version = "1.45", features = ["macros", "rt-multi-thread"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "tls12"] }
+rpassword = "7.5.5"
