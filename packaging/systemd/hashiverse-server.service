@@ -20,5 +20,24 @@ RestartSec=5
 LimitNOFILE=65536
 # Runs as root: it binds :443 and manages its ipset/iptables DDoS block list.
 
+# Sandbox. Exercised by packaging/test (the stand-in binary probes what is allowed and denied).
+# Root, but only with the networking capabilities it needs: binding :443, and ipset/iptables.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+# /usr, /boot, /efi and /etc read-only; /home, /root and /run/user hidden.
+# "full", not "strict": iptables needs a writable /run/xtables.lock, and the data dir
+# /var/lib/hashiverse-server stays writable.
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+LockPersonality=yes
+# AF_NETLINK for ipset/iptables. ProtectKernelModules is deliberately off so that the kernel
+# can still autoload the ip_set/xt_set modules on first use.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK AF_UNIX
+
 [Install]
 WantedBy=multi-user.target

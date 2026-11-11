@@ -3,6 +3,9 @@ Description=Upgrade hashiverse-server from the hashiverse package repository
 Documentation=https://www.hashiverse.com
 Wants=network-online.target
 After=network-online.target
+# Starting hashiverse-server-updater (e.g. `systemctl enable --now hashiverse-server-updater`)
+# starts the timer too.
+Wants=hashiverse-server-updater.timer
 
 [Service]
 # Runs once and exits; started daily by hashiverse-server-updater.timer, or by hand with

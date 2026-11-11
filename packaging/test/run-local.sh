@@ -16,7 +16,7 @@ work_dir="${1:-$(mktemp -d)}"
 shift || true
 images=("$@")
 if [ "${#images[@]}" -eq 0 ]; then
-    images=(debian:12 ubuntu:22.04 rockylinux:9 fedora:latest jrei/systemd-debian:12)
+    images=(debian:12 ubuntu:22.04 rockylinux:9 fedora:latest jrei/systemd-debian:12 rockylinux/rockylinux:9-ubi-init)
 fi
 
 version_1="0.0.1"
@@ -36,13 +36,33 @@ docker_path() {
 echo "=== stand-in binaries"
 for version in "$version_1" "$version_2"; do
     mkdir -p "$work_dir/bin-$version"
-    for binary in hashiverse-server hashiverse-cli; do
-        cat > "$work_dir/bin-$version/$binary" <<EOF
+    cat > "$work_dir/bin-$version/hashiverse-cli" <<EOF
 #!/bin/sh
-case "\${1:-}" in --help|--version) echo "stand-in $binary $version"; exit 0 ;; esac
+case "\${1:-}" in --help|--version) echo "stand-in hashiverse-cli $version"; exit 0 ;; esac
 exec sleep infinity
 EOF
-    done
+    # The server stand-in records what the systemd unit's sandbox lets it do, for install-test.sh to
+    # check: what the real server needs (its data dir, ipset, iptables) must be allowed, the rest denied.
+    cat > "$work_dir/bin-$version/hashiverse-server" <<EOF
+#!/bin/sh
+case "\${1:-}" in --help|--version) echo "stand-in hashiverse-server $version"; exit 0 ;; esac
+probe_file=/var/lib/hashiverse-server/hardening-probe.txt
+probe() {
+    probe_name="\$1"
+    shift
+    if "\$@" >/dev/null 2>&1; then echo "\$probe_name=allowed"; else echo "\$probe_name=denied"; fi
+}
+{
+    probe write_data_dir touch /var/lib/hashiverse-server/hardening-probe-write
+    probe ipset ipset create hashiverse-hardening-probe hash:ip --exist
+    probe iptables iptables -L INPUT -n
+    probe write_usr touch /usr/bin/hashiverse-hardening-probe
+    probe write_root_home touch /root/hashiverse-hardening-probe
+    probe sys_admin unshare --mount true
+} > "\$probe_file.tmp"
+mv "\$probe_file.tmp" "\$probe_file"
+exec sleep infinity
+EOF
 done
 
 echo "=== nfpm packages"

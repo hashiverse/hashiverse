@@ -23,6 +23,7 @@
 #   <output-dir>/apt/hashiverse-mirrors.txt      client mirror list -> /etc/apt/
 #   <output-dir>/rpm/*.rpm, rpm/repodata/        signed rpms and metadata (repomd.xml.asc)
 #   <output-dir>/rpm/hashiverse.repo             client config -> /etc/yum.repos.d/
+#                                                (expects the key at /etc/pki/rpm-gpg/RPM-GPG-KEY-hashiverse)
 set -euo pipefail
 
 if [ "$#" -ne 3 ]; then
@@ -129,6 +130,7 @@ if [ -n "$passphrase_file" ]; then
     rpmsign_gpg_extra_args="$rpmsign_gpg_extra_args --passphrase-file $passphrase_file"
 fi
 rpmsign --addsign \
+    --define "__gpg $(command -v gpg)" \
     --define "_gpg_name $gpg_key_id" \
     --define "_gpg_sign_cmd_extra_args $rpmsign_gpg_extra_args" \
     "$rpm_dir"/*.rpm
@@ -152,15 +154,9 @@ gpg "${gpg_sign_args[@]}" --armor --detach-sign --output "$rpm_dir/repodata/repo
     echo "enabled=1"
     echo "gpgcheck=1"
     echo "repo_gpgcheck=1"
-    first=true
-    for mirror in $mirrors; do
-        if [ "$first" = true ]; then
-            echo "gpgkey=$mirror/hashiverse-packages.asc"
-            first=false
-        else
-            echo "       $mirror/hashiverse-packages.asc"
-        fi
-    done
+    # A local key file: dnf fails if any listed gpgkey URL is unreachable, so it can't fail over
+    # between key URLs. The install instructions fetch the key here once, from any mirror.
+    echo "gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-hashiverse"
 } > "$rpm_dir/hashiverse.repo"
 
 echo "built repository in $output_dir"

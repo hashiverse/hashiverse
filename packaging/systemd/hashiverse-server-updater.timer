@@ -1,5 +1,8 @@
 [Unit]
 Description=Daily hashiverse-server upgrade check
+# Stopping hashiverse-server-updater (e.g. `systemctl disable --now hashiverse-server-updater`)
+# stops this timer too.
+PartOf=hashiverse-server-updater.service
 
 [Timer]
 OnCalendar=daily

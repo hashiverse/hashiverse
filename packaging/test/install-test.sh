@@ -39,7 +39,9 @@ fi
 
 installed_version() {
     if [ "$family" = apt ]; then
-        dpkg-query -W -f='${Version}' "$1" 2>/dev/null || true
+        # Only fully installed packages; a removed package lingers in config-files state.
+        dpkg-query -W -f='${db:Status-Abbrev} ${Version}
+' "$1" 2>/dev/null | sed -n "s/^ii *//p" || true
     else
         rpm -q --queryformat '%{VERSION}' "$1" 2>/dev/null | grep -v "not installed" || true
     fi
@@ -65,6 +67,7 @@ install)
         apt-get update
         apt-get install -y hashiverse-server hashiverse-cli
     else
+        curl -fsSL "$base_url/hashiverse-packages.asc" -o /etc/pki/rpm-gpg/RPM-GPG-KEY-hashiverse
         curl -fsSL "$base_url/rpm/hashiverse.repo" -o /etc/yum.repos.d/hashiverse.repo
         dnf install -y hashiverse-server hashiverse-cli
     fi
@@ -90,6 +93,24 @@ install)
         systemctl is-enabled --quiet hashiverse-server-updater.timer || fail "updater timer not enabled after install"
         systemctl is-active --quiet hashiverse-server-updater.timer || fail "updater timer not active after install"
         pass "node and updater timer enabled and running"
+
+        # The stand-in server binary (run-local.sh) writes this once it has probed its sandbox.
+        probe_file=/var/lib/hashiverse-server/hardening-probe.txt
+        for _ in $(seq 1 30); do
+            if [ -f "$probe_file" ]; then break; fi
+            sleep 1
+        done
+        [ -f "$probe_file" ] || fail "no $probe_file: the node couldn't write its data dir, or isn't the stand-in binary"
+        expect_probe() {
+            grep -qx "$1=$2" "$probe_file" || fail "node sandbox: expected $1=$2, got $(grep "^$1=" "$probe_file" || echo nothing)"
+        }
+        expect_probe write_data_dir allowed
+        expect_probe ipset allowed
+        expect_probe iptables allowed
+        expect_probe write_usr denied
+        expect_probe write_root_home denied
+        expect_probe sys_admin denied
+        pass "node sandbox: data dir, ipset and iptables allowed; /usr, /root and CAP_SYS_ADMIN denied"
     fi
     ;;
 
@@ -122,19 +143,23 @@ upgrade)
         fi
         pass "plain-name disable turns auto-update off"
 
-        systemctl enable --now hashiverse-server-updater.timer
-        systemctl is-active --quiet hashiverse-server-updater.timer || fail "could not re-enable the timer"
+        systemctl enable --now hashiverse-server-updater
+        systemctl is-enabled --quiet hashiverse-server-updater.timer || fail "'systemctl enable --now hashiverse-server-updater' left the timer disabled"
+        systemctl is-active --quiet hashiverse-server-updater.timer || fail "'systemctl enable --now hashiverse-server-updater' left the timer stopped"
+        pass "plain-name enable turns auto-update back on"
     fi
     ;;
 
 remove)
+    # Stand in for the server identity a running node keeps here (the node never runs without systemd).
+    echo "stand-in identity" > /var/lib/hashiverse-server/identity-marker
     if [ "$family" = apt ]; then
         apt-get remove -y hashiverse-server
     else
         dnf remove -y hashiverse-server
     fi
     [ -z "$(installed_version hashiverse-server)" ] || fail "hashiverse-server still installed"
-    [ -d /var/lib/hashiverse-server ] || fail "/var/lib/hashiverse-server (server identity) was deleted on removal"
+    [ -f /var/lib/hashiverse-server/identity-marker ] || fail "/var/lib/hashiverse-server (server identity) was deleted on removal"
     if [ "$have_systemd" = true ]; then
         if systemctl is-active --quiet hashiverse-server.service; then
             fail "hashiverse-server still running after removal"

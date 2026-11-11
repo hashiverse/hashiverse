@@ -26,6 +26,7 @@ depends:
 contents:
   - src: ${HASHIVERSE_BINARY_DIR}/hashiverse-server
     dst: /usr/bin/hashiverse-server
+    expand: true
     file_info:
       mode: 0755
 

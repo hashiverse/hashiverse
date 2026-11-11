@@ -17,5 +17,6 @@ description: |
 contents:
   - src: ${HASHIVERSE_BINARY_DIR}/hashiverse-cli
     dst: /usr/bin/hashiverse-cli
+    expand: true
     file_info:
       mode: 0755

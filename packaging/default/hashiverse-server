@@ -7,5 +7,4 @@
 #   --port 443
 #   --log-level info                         (error, warn, info, debug, trace)
 #   --max-post-database-size-megabytes 20480
-#   --passphrase-path /etc/hashiverse-server/passphrase
 HASHIVERSE_SERVER_ARGS="--log-level info"
