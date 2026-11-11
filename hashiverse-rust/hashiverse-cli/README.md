@@ -70,9 +70,9 @@ Global options, accepted before or after the command:
 
 ### Output
 
-Text output prints each post as a header line (UTC time, author client id, post id) followed by the post body rendered from Hashiverse's HTML to plain text: hashtags as `#Tag`, mentions as `@<client id>`, line breaks preserved, links as `text <url>`, images as `[image: url]`.
+Text output prints each post as a header line starting with `POST>>` (then UTC time, author client id, post id) followed by the full post body rendered from Hashiverse's HTML to plain text: hashtags as `#Tag`, mentions as `@<client id>`, line breaks preserved, links as `text <url>`, images as `[image: url]`.
 
-`--json` prints the raw data instead, including the original `post_html` and `bucket_location` of each post.
+`--json` prints the raw data instead, including the original `post_html` and `bucket_location` of each post. In JSON mode stdout carries only the JSON: the identity line is suppressed, and logs and errors always go to stderr.
 
 ```bash
 hashiverse-cli hashtag rust --pages 2
@@ -104,7 +104,11 @@ The commands take a `&HashiverseClient` rather than building their own, so the s
 ## Tests
 
 ```bash
+# Unit tests: identity resolution, argument parsing, rendering, the prompt loop
 cargo nextest run --cargo-profile profiling -p hashiverse-cli
+
+# End-to-end against an in-memory network of servers (guest reads, guest post refused, author posts)
+cargo nextest run --cargo-profile profiling -p hashiverse-integration-tests test_cli_commands
 ```
 
 ## License

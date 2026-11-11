@@ -49,6 +49,23 @@ fn render_element(element_ref: ElementRef, output: &mut String) {
         "mention" => {
             output.push('@');
             output.push_str(element.attr("client_id").unwrap_or_default());
+            // Mentions are normally empty, but never drop content: if the HTML parser nested
+            // following text inside (e.g. from a non-closed `<mention …/>`), it still shows.
+            render_children(element_ref, output);
+        }
+        // The web client stores math as LaTeX in an attribute, with no text content.
+        "span" | "div" if element.attr("data-type").is_some_and(|data_type| data_type.ends_with("math-editor")) => {
+            let is_block = element.name() == "div";
+            if is_block {
+                ensure_line_break(output);
+            }
+            output.push('$');
+            output.push_str(element.attr("latex").unwrap_or_default());
+            output.push('$');
+            render_children(element_ref, output);
+            if is_block {
+                ensure_line_break(output);
+            }
         }
         "hashtag" => {
             let mut visible_text = String::new();
@@ -104,7 +121,7 @@ pub fn format_posts_text(cli_posts: &[CliPost]) -> String {
         if index > 0 {
             output.push('\n');
         }
-        output.push_str(&format!("{}  {}  post:{}{}\n", format_time_millis(cli_post.time_millis), cli_post.client_id, cli_post.post_id, if cli_post.healed { "  (healed)" } else { "" }));
+        output.push_str(&format!("POST>> {}  {}  post:{}{}\n", format_time_millis(cli_post.time_millis), cli_post.client_id, cli_post.post_id, if cli_post.healed { "  (healed)" } else { "" }));
         output.push_str(&render_post_html_to_text(&cli_post.post_html));
         output.push('\n');
     }
@@ -181,6 +198,25 @@ mod tests {
     }
 
     #[test]
+    fn non_closed_mention_does_not_swallow_following_text() {
+        assert_eq!(render_post_html_to_text("hi <mention client_id=\"ab\"/> and the rest"), "hi @ab and the rest");
+    }
+
+    #[test]
+    fn math_renders_its_latex() {
+        assert_eq!(render_post_html_to_text("x <span latex=\"a^2\" data-type=\"inline-math-editor\"></span> y"), "x $a^2$ y");
+        assert_eq!(render_post_html_to_text("x<div latex=\"\\sum\" data-type=\"block-math-editor\"></div>y"), "x\n$\\sum$\ny");
+    }
+
+    #[test]
+    fn news_agent_card_with_hashtags_renders_everything() {
+        // The shape news-agent posts: a URL preview card, then `<p/>` and hashtags.
+        let card_html = convert_text_to_hashiverse_html_x_url_preview("Title", "A long description that must not be cut", "", "https://x.org/a");
+        let post_html = format!("{}<p/>{} {}", card_html, hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html_x_hashtag("Tesla"), hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html_x_hashtag("ev"));
+        assert_eq!(render_post_html_to_text(&post_html), "x.org\nTitle <https://x.org/a>\nA long description that must not be cut\n#Tesla #ev");
+    }
+
+    #[test]
     fn paragraphs_become_lines() {
         assert_eq!(render_post_html_to_text("<p>first</p><p>second</p>"), "first\nsecond");
     }
@@ -211,7 +247,7 @@ mod tests {
 
     #[test]
     fn posts_text_has_header_and_body() {
-        assert_eq!(format_posts_text(&[sample_cli_post()]), "2023-11-14 22:13:20Z  22  post:11\nhi #there");
+        assert_eq!(format_posts_text(&[sample_cli_post()]), "POST>> 2023-11-14 22:13:20Z  22  post:11\nhi #there");
         assert_eq!(format_posts_text(&[]), "(no posts)");
     }
 
