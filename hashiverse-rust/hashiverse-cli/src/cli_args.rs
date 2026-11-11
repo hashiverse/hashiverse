@@ -45,12 +45,17 @@ pub const DEFAULT_TRENDING_LIMIT: u16 = 20;
 #[derive(Subcommand, Debug, PartialEq, Eq, Clone)]
 pub enum Command {
     /// Submit a plain-text post. #hashtags and @<64-hex client id> mentions are recognised.
+    ///
+    /// Options (e.g. --json) must come before the text: everything after the first word of text
+    /// is part of the post, so `post hi --json` posts "hi --json".
     Post {
         /// The post text. Multiple words are joined with spaces, so quoting is optional.
         #[arg(required = true, num_args = 1.., trailing_var_arg = true, allow_hyphen_values = true)]
         text: Vec<String>,
     },
     /// List posts by a user. Repeating this in the REPL fetches progressively older posts.
+    ///
+    /// Switching to a different timeline starts that one from the newest again.
     User {
         /// The user's client id (hex).
         client_id_hex: String,
@@ -59,6 +64,8 @@ pub enum Command {
         pages: u32,
     },
     /// List posts with a hashtag. Repeating this in the REPL fetches progressively older posts.
+    ///
+    /// Switching to a different timeline starts that one from the newest again.
     Hashtag {
         /// The hashtag, with or without the leading '#'.
         hashtag: String,
@@ -104,6 +111,13 @@ mod tests {
     #[test]
     fn post_joins_unquoted_words_and_keeps_hyphens() {
         assert_eq!(parse_command(&["post", "hello", "#world", "-", "--json-ish"]), Command::Post { text: vec!["hello".into(), "#world".into(), "-".into(), "--json-ish".into()] });
+    }
+
+    #[test]
+    fn post_options_before_text_are_parsed_as_options() {
+        let cli_args = CliArgs::try_parse_from(["hashiverse-cli", "post", "--json", "hello", "world"]).unwrap();
+        assert!(cli_args.json);
+        assert_eq!(cli_args.command, Some(Command::Post { text: vec!["hello".into(), "world".into()] }));
     }
 
     #[test]

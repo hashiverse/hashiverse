@@ -179,8 +179,16 @@ impl ReplSession for LiveReplSession<'_> {
     }
 }
 
+/// Where non-data output (prompts, help, login status) goes: `output` normally, but
+/// `error_output` in a `--json` session so that `output` carries nothing but JSON.
+fn chatter_output<'a>(session_json: bool, output: &'a mut dyn Write, error_output: &'a mut dyn Write) -> &'a mut dyn Write {
+    if session_json { error_output } else { output }
+}
+
 /// Runs the prompt loop until `quit`/`exit` or end of input. Command output goes to `output`,
-/// errors to `error_output`; a failing line never ends the loop.
+/// errors to `error_output`; a failing line never ends the loop. In a `--json` session
+/// (`session_json`) prompts, help and login status also go to `error_output`, keeping `output`
+/// JSON-only. A per-line `--json` only changes that command's output.
 pub async fn run_repl<TReplSession: ReplSession, TInput: AsyncBufRead + Unpin>(
     repl_session: &mut TReplSession,
     input: TInput,
@@ -192,23 +200,24 @@ pub async fn run_repl<TReplSession: ReplSession, TInput: AsyncBufRead + Unpin>(
     let mut lines = input.lines();
     loop {
         if show_prompt {
-            write!(output, "{}", repl_session.prompt())?;
-            output.flush()?;
+            let chatter = chatter_output(session_json, output, error_output);
+            write!(chatter, "{}", repl_session.prompt())?;
+            chatter.flush()?;
         }
 
         let Some(line) = lines.next_line().await? else {
             if show_prompt {
-                writeln!(output)?;
+                writeln!(chatter_output(session_json, output, error_output))?;
             }
             break;
         };
 
         match parse_repl_line(&line) {
             Ok(ReplLine::Empty) => {}
-            Ok(ReplLine::Help) => writeln!(output, "{}", help_text())?,
+            Ok(ReplLine::Help) => writeln!(chatter_output(session_json, output, error_output), "{}", help_text())?,
             Ok(ReplLine::Quit) => break,
             Ok(ReplLine::Login { client_id_hex }) => match repl_session.login(&client_id_hex).await {
-                Ok(message) => writeln!(output, "{}", message)?,
+                Ok(message) => writeln!(chatter_output(session_json, output, error_output), "{}", message)?,
                 Err(error) => writeln!(error_output, "error: {:#}", error)?,
             },
             Ok(ReplLine::Command { command, json }) => match repl_session.run_command(&command, json || session_json).await {
@@ -377,6 +386,22 @@ mod tests {
         assert_eq!(fake_repl_session.commands_run.iter().map(|(_, json)| *json).collect::<Vec<_>>(), vec![false, true]);
         let (fake_repl_session, _, _) = run_script("trending\n", true, false).await;
         assert!(fake_repl_session.commands_run[0].1);
+    }
+
+    #[tokio::test]
+    async fn json_session_keeps_output_json_only() {
+        let (fake_repl_session, output, error_output) = run_script("help\nlogin 04bfbfacadd0\ntrending\n", true, true).await;
+        assert_eq!(fake_repl_session.commands_run.len(), 1);
+        assert_eq!(output, "ran Trending { limit: 20 }\n", "only command output belongs on stdout");
+        assert!(error_output.contains("Commands:"));
+        assert!(error_output.contains("logged in as 04bfbfacadd0"));
+        assert!(error_output.contains("guest> ") && error_output.contains("04bfbfac> "));
+    }
+
+    #[tokio::test]
+    async fn json_flag_before_post_text_is_an_option() {
+        let (fake_repl_session, _, _) = run_script("login 04bfbfacadd0\npost --json hello world\n", false, false).await;
+        assert_eq!(fake_repl_session.commands_run, vec![(Command::Post { text: words(&["hello", "world"]) }, true)]);
     }
 
     #[tokio::test]

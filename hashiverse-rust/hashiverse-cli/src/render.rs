@@ -15,11 +15,29 @@ const BLOCK_ELEMENTS: &[&str] = &["p", "div", "li", "ul", "ol", "blockquote", "p
 /// - `<a href>` → link text, followed by `<href>` when the two differ
 /// - `<img src>` → `[image: src]`
 /// - everything else → its text content
+///
+/// Post content comes from arbitrary network peers, so the result is passed through
+/// [`sanitize_for_terminal`] (covering both text nodes and attribute values).
 pub fn render_post_html_to_text(post_html: &str) -> String {
     let fragment = Html::parse_fragment(post_html);
     let mut output = String::new();
     render_children(fragment.root_element(), &mut output);
-    output.trim_end_matches('\n').to_string()
+    sanitize_for_terminal(output.trim_end_matches('\n'))
+}
+
+/// Makes untrusted text safe to print: control characters other than `\n` and `\t` (ESC, CR,
+/// BEL, C1 controls, …) are replaced by their visible `\u{…}` escape, so they cannot drive the
+/// terminal (cursor moves, OSC 52 clipboard writes, title changes, overwriting lines).
+pub fn sanitize_for_terminal(text: &str) -> String {
+    let mut sanitized = String::with_capacity(text.len());
+    for character in text.chars() {
+        if character.is_control() && character != '\n' && character != '\t' {
+            sanitized.extend(character.escape_unicode());
+        } else {
+            sanitized.push(character);
+        }
+    }
+    sanitized
 }
 
 fn ensure_line_break(output: &mut String) {
@@ -135,7 +153,7 @@ pub fn format_trending_text(cli_trending_hashtags: &[CliTrendingHashtag]) -> Str
     let count_width = cli_trending_hashtags.iter().map(|cli_trending_hashtag| cli_trending_hashtag.count.to_string().len()).max().unwrap_or(1);
     cli_trending_hashtags
         .iter()
-        .map(|cli_trending_hashtag| format!("{:>count_width$}  #{}", cli_trending_hashtag.count, cli_trending_hashtag.hashtag))
+        .map(|cli_trending_hashtag| format!("{:>count_width$}  #{}", cli_trending_hashtag.count, sanitize_for_terminal(&cli_trending_hashtag.hashtag)))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -214,6 +232,26 @@ mod tests {
         let card_html = convert_text_to_hashiverse_html_x_url_preview("Title", "A long description that must not be cut", "", "https://x.org/a");
         let post_html = format!("{}<p/>{} {}", card_html, hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html_x_hashtag("Tesla"), hashiverse_lib::tools::plain_text_post::convert_text_to_hashiverse_html_x_hashtag("ev"));
         assert_eq!(render_post_html_to_text(&post_html), "x.org\nTitle <https://x.org/a>\nA long description that must not be cut\n#Tesla #ev");
+    }
+
+    #[test]
+    fn control_characters_in_text_and_attributes_are_escaped() {
+        // OSC 52 clipboard write and a colour change. (The HTML parser itself turns `\r` into `\n`.)
+        assert_eq!(render_post_html_to_text("a\u{1b}]52;c;aGk=\u{7}b\u{1b}[31mc"), "a\\u{1b}]52;c;aGk=\\u{7}b\\u{1b}[31mc");
+        assert_eq!(render_post_html_to_text("<img src=\"x\u{1b}[2Jy\">"), "[image: x\\u{1b}[2Jy]");
+        assert_eq!(render_post_html_to_text("<mention client_id=\"\u{9b}31m\"></mention>"), "@\\u{9b}31m");
+    }
+
+    #[test]
+    fn line_breaks_and_tabs_survive_sanitising() {
+        assert_eq!(sanitize_for_terminal("a\nb\tc"), "a\nb\tc");
+        assert_eq!(sanitize_for_terminal("overwrite\rme"), "overwrite\\u{d}me");
+    }
+
+    #[test]
+    fn trending_hashtags_are_sanitised() {
+        let cli_trending_hashtags = vec![CliTrendingHashtag { hashtag: "x\u{1b}[31m".to_string(), count: 1 }];
+        assert_eq!(format_trending_text(&cli_trending_hashtags), "1  #x\\u{1b}[31m");
     }
 
     #[test]
