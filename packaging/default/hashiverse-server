@@ -1,0 +1,11 @@
+# Extra arguments for hashiverse-server; see `hashiverse-server --help` for all of them.
+# After editing, apply with: systemctl restart hashiverse-server
+#
+# --base-path is set by the systemd unit (/var/lib/hashiverse-server); don't repeat it here.
+#
+# Examples:
+#   --port 443
+#   --log-level info                         (error, warn, info, debug, trace)
+#   --max-post-database-size-megabytes 20480
+#   --passphrase-path /etc/hashiverse-server/passphrase
+HASHIVERSE_SERVER_ARGS="--log-level info"

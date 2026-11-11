@@ -1,0 +1,24 @@
+[Unit]
+Description=Hashiverse server (decentralized social network node)
+Documentation=https://www.hashiverse.com
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+# Extra arguments (log level, port, ...) live in this file; edit it, then `systemctl restart hashiverse-server`.
+EnvironmentFile=-/etc/default/hashiverse-server
+# The server identity (and its one-off ~5 hour proof-of-work) is persisted under --base-path,
+# so restarts and upgrades reuse it.
+ExecStart=/usr/bin/hashiverse-server --base-path /var/lib/hashiverse-server $HASHIVERSE_SERVER_ARGS
+# The server shuts down gracefully on Ctrl+C (SIGINT); systemd's default SIGTERM would just kill it.
+KillSignal=SIGINT
+TimeoutStopSec=30
+Restart=always
+RestartSec=5
+# A node holds many concurrent peer and client connections.
+LimitNOFILE=65536
+# Runs as root: it binds :443 and manages its ipset/iptables DDoS block list.
+
+[Install]
+WantedBy=multi-user.target

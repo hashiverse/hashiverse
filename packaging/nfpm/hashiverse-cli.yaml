@@ -1,0 +1,21 @@
+# nfpm config for the hashiverse-cli package; one config produces both .deb and .rpm.
+# Same environment variables as hashiverse-server.yaml.
+name: hashiverse-cli
+version: ${HASHIVERSE_PACKAGE_VERSION}
+arch: ${HASHIVERSE_PACKAGE_ARCH}
+platform: linux
+section: net
+priority: optional
+maintainer: James Jardine <mail@jimme.net>
+vendor: Hashiverse
+homepage: https://www.hashiverse.com
+license: MIT OR Apache-2.0
+description: |
+  Hashiverse command-line client — your open-source decentralized X/Twitter replacement.
+  Read posts by user or hashtag, see trending hashtags, and post, from the shell.
+
+contents:
+  - src: ${HASHIVERSE_BINARY_DIR}/hashiverse-cli
+    dst: /usr/bin/hashiverse-cli
+    file_info:
+      mode: 0755

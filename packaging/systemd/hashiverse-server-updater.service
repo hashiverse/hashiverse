@@ -1,0 +1,16 @@
+[Unit]
+Description=Upgrade hashiverse-server from the hashiverse package repository
+Documentation=https://www.hashiverse.com
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+# Runs once and exits; started daily by hashiverse-server-updater.timer, or by hand with
+# `systemctl start hashiverse-server-updater`.
+Type=oneshot
+ExecStart=/usr/libexec/hashiverse-server/hashiverse-server-updater
+
+[Install]
+# Lets the plain name control auto-updates: `systemctl disable --now hashiverse-server-updater`
+# turns them off, `systemctl enable --now hashiverse-server-updater` turns them back on.
+Also=hashiverse-server-updater.timer
