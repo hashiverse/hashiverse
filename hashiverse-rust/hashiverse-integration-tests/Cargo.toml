@@ -17,6 +17,8 @@ scopeguard = { workspace = true }
 parking_lot = { workspace = true }
 hashiverse-lib = { workspace = true }
 hashiverse-server-lib = { workspace = true }
+hashiverse-cli = { path = "../hashiverse-cli" }
+serde_json = "1.0.145"
 bytes = { workspace = true }
 hex = { workspace = true }
 tokio-util = { version = "0.7.14", features = ["codec", "rt"] }
