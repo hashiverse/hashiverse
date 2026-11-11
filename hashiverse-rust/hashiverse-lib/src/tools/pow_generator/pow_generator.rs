@@ -16,12 +16,14 @@ use crate::tools::pow::pow_measure_from_data_hash;
 use crate::tools::pow_required_estimator::PowRequiredEstimator;
 use crate::tools::time_provider::time_provider::{RealTimeProvider, TimeProvider};
 use crate::tools::types::{Hash, Pow, Salt};
+use futures::future::Either;
 use futures::stream::{FuturesUnordered, StreamExt};
 use log::trace;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use tokio_util::sync::CancellationToken;
 
 pub struct PowJobStatus {
     pub label: String,
@@ -163,6 +165,14 @@ pub trait PowGenerator: Send + Sync {
     /// to snapshot it for the UI.
     fn tracker(&self) -> &Arc<Mutex<JobTracker>>;
 
+    /// Optional token that aborts every search on this generator once cancelled: `generate` and
+    /// `generate_best_effort` then return an error, checked between chunks. Lets a process stop
+    /// promptly mid-search (e.g. a server stopped during its hours-long identity PoW) without
+    /// threading a token through every caller. Default: no token, never cancelled.
+    fn cancellation_token(&self) -> Option<&CancellationToken> {
+        None
+    }
+
     /// Snapshot of all concurrently in-flight tracked jobs.
     fn active_jobs(&self) -> Vec<PowJobStatus> {
         self.tracker().lock().unwrap().snapshot()
@@ -219,6 +229,11 @@ pub async fn run_pool<'a, G: PowGenerator + ?Sized>(
     pow_min: Pow,
     data_hash: Hash,
 ) -> anyhow::Result<(Salt, Pow, Hash)> {
+    let cancellation_token = generator.cancellation_token();
+    if cancellation_token.is_some_and(|cancellation_token| cancellation_token.is_cancelled()) {
+        anyhow::bail!("proof-of-work '{}' cancelled", label);
+    }
+
     let tracker = generator.tracker().clone();
     let guard = TrackedJobGuard::new(tracker, label, pow_min);
 
@@ -263,7 +278,23 @@ pub async fn run_pool<'a, G: PowGenerator + ?Sized>(
     }
 
     // Then, as each thread finishes, see if there is more work to do and repeat...
-    while let Some((slot, chunk_size, chunk_result)) = in_flight.next().await {
+    loop {
+        // Wait for the next chunk, or for cancellation. On cancellation, returning drops
+        // `in_flight`, discarding the outstanding chunks exactly as the early-exit path does.
+        let next_chunk = match cancellation_token {
+            Some(cancellation_token) => {
+                let cancelled = std::pin::pin!(cancellation_token.cancelled());
+                match futures::future::select(in_flight.next(), cancelled).await {
+                    Either::Left((next_chunk, _)) => next_chunk,
+                    Either::Right(_) => anyhow::bail!("proof-of-work '{}' cancelled", label),
+                }
+            }
+            None => in_flight.next().await,
+        };
+        let Some((slot, chunk_size, chunk_result)) = next_chunk else {
+            break;
+        };
+
         let chunk_best = chunk_result?;
         if chunk_best.1 > best.1 {
             best = chunk_best;

@@ -11,8 +11,7 @@ EnvironmentFile=-/etc/default/hashiverse-server
 # The server identity (and its one-off ~5 hour proof-of-work) is persisted under --base-path,
 # so restarts and upgrades reuse it.
 ExecStart=/usr/bin/hashiverse-server --base-path /var/lib/hashiverse-server $HASHIVERSE_SERVER_ARGS
-# The server shuts down gracefully on Ctrl+C (SIGINT); systemd's default SIGTERM would just kill it.
-KillSignal=SIGINT
+# systemd's default SIGTERM triggers the server's graceful shutdown; give it time to finish.
 TimeoutStopSec=30
 Restart=always
 RestartSec=5

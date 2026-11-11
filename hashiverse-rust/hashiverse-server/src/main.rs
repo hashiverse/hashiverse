@@ -27,17 +27,24 @@ async fn main() -> anyhow::Result<()> {
         .install_default()
         .expect("Failed to install aws-lc-rs as the crypto provider");
 
+    let cancellation_token = CancellationToken::new();
+    hashiverse_server_lib::tools::tools::spawn_shutdown_signal_handler(cancellation_token.clone())?;
+
     let environment_factory: Arc<dyn EnvironmentFactory> = Arc::new(DiskEnvironmentFactory::new(args.base_path.as_str()));
     let ddos_protection: Arc<dyn DdosProtection> = Arc::new(IpsetDdosProtection::new(config::SERVER_DDOS_IPSET_SET_NAME, config::SERVER_DDOS_SCORE_THRESHOLD, config::SERVER_DDOS_DECAY_PER_SECOND, config::SERVER_DDOS_BAD_REQUEST_PENALTY, config::SERVER_DDOS_MAX_CONNECTIONS_PER_IP, time_provider.clone()));
     let bootstrap_provider: Arc<dyn BootstrapProvider> = Arc::new(DnssecBootstrapProvider::new());
     let transport_factory = Arc::new(FullHttpsTransportFactory::new(ddos_protection, bootstrap_provider));
-    let runtime_services = Arc::new(RuntimeServices { time_provider, transport_factory, pow_generator: Arc::new(NativeParallelPowGenerator::new()) });
+    let pow_generator = Arc::new(NativeParallelPowGenerator::new().with_cancellation_token(cancellation_token.clone()));
+    let runtime_services = Arc::new(RuntimeServices { time_provider, transport_factory, pow_generator });
 
-    let cancellation_token = CancellationToken::new();
-
-    hashiverse_server_lib::tools::tools::spawn_ctrl_c_handler(cancellation_token.clone());
-
-    let hashiverse_server = HashiverseServer::new(runtime_services, environment_factory, args).await?;
+    let hashiverse_server = match HashiverseServer::new(runtime_services, environment_factory, args).await {
+        Ok(hashiverse_server) => hashiverse_server,
+        Err(_) if cancellation_token.is_cancelled() => {
+            log::warn!("stopped during startup; a server identity not yet created will be computed again on next start");
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    };
     hashiverse_server.run(cancellation_token).await;
 
     Ok(())
