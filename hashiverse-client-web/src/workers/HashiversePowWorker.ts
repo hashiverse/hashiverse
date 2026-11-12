@@ -1,7 +1,7 @@
 /**
  * Dedicated Web Worker for proof-of-work computation.
  *
- * A pool of these workers is spawned by {@link HashiverseWorker} at
+ * A pool of these workers is spawned by {@link "workers/HashiverseWorker"! | HashiverseWorker} at
  * startup and registered with the WASM runtime via `init_pow_workers()`.
  * The WASM layer dispatches PoW batches to them over `MessageChannel`,
  * keeping the main thread and the primary WASM worker unblocked during

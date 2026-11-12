@@ -6,7 +6,7 @@ import banner_not_logged_in from "../../media/banner_not_logged_in.svg";
 import { redirect_to_login_with_return } from "../../tools/PostLoginRedirect.ts";
 import { Banner } from "../timeline/Banner.tsx";
 
-interface Props {
+export interface Props {
 	message?: string;
 }
 

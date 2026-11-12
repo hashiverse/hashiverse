@@ -2,7 +2,7 @@ import { Avatar, type AvatarProps } from "@mantine/core";
 import type React from "react";
 import { Tools } from "./Tools.ts";
 
-interface UserImageControlProps extends Omit<AvatarProps, "src"> {
+export interface UserImageControlProps extends Omit<AvatarProps, "src"> {
 	client_id: string;
 	selfie?: string | null;
 	avatar?: string | null;

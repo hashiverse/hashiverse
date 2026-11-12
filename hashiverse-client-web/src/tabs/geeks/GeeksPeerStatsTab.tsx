@@ -7,7 +7,7 @@ import { Spinner } from "../../tools/Spinner.tsx";
 import { ErrorTab } from "../ErrorTab.tsx";
 import { TabHeader } from "../TabHeader.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 }
 

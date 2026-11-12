@@ -1,0 +1,46 @@
+#!/bin/sh
+# Upgrades hashiverse-server, and only hashiverse-server, from the hashiverse package repository.
+# Run daily by hashiverse-server-updater.timer. The package's post-install script restarts the
+# node onto the new binary when an upgrade happens.
+#
+# hashiverse-cli is never touched here; it updates with the system's normal apt/dnf upgrades.
+set -eu
+
+log() {
+    echo "hashiverse-server-updater: $*"
+}
+
+APT_SOURCES="/etc/apt/sources.list.d/hashiverse.sources"
+DNF_REPO="/etc/yum.repos.d/hashiverse.repo"
+
+if command -v apt-get >/dev/null 2>&1; then
+    if [ ! -f "$APT_SOURCES" ]; then
+        log "$APT_SOURCES not found; the hashiverse repository isn't configured, nothing to do"
+        exit 0
+    fi
+    export DEBIAN_FRONTEND=noninteractive
+    # Refresh only the hashiverse source. List-Cleanup=0 stops apt from deleting the cached
+    # package lists of every other repository, which this restricted update didn't fetch.
+    apt-get update \
+        -o Dir::Etc::sourcelist="$APT_SOURCES" \
+        -o Dir::Etc::sourceparts=- \
+        -o APT::Get::List-Cleanup=0
+    # --only-upgrade: never install it if absent. --force-confold: keep the operator's
+    # /etc/default/hashiverse-server edits. Lock timeout: wait out other apt runs.
+    apt-get install --only-upgrade -y \
+        -o DPkg::Lock::Timeout=600 \
+        -o Dpkg::Options::=--force-confdef \
+        -o Dpkg::Options::=--force-confold \
+        hashiverse-server
+    log "installed version: $(dpkg-query -W -f='${Version}' hashiverse-server)"
+elif command -v dnf >/dev/null 2>&1; then
+    if [ ! -f "$DNF_REPO" ]; then
+        log "$DNF_REPO not found; the hashiverse repository isn't configured, nothing to do"
+        exit 0
+    fi
+    dnf -y upgrade --refresh --repo hashiverse hashiverse-server
+    log "installed version: $(rpm -q --queryformat '%{VERSION}-%{RELEASE}' hashiverse-server)"
+else
+    log "neither apt-get nor dnf found; can't upgrade"
+    exit 1
+fi

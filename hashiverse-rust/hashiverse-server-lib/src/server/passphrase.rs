@@ -15,6 +15,19 @@
 use std::fs;
 use secrecy::SecretString;
 
+/// Where to look for a passphrase file when none is given explicitly, most secure first:
+/// secret files mount-injected by the container, then the working directory.
+pub const DEFAULT_PASSPHRASE_PATHS: &[&str] = &[
+    "/run/secrets/hashiverse_passphrase",
+    "/run/secrets/HASHIVERSE_PASSPHRASE",
+    "/mnt/secrets/hashiverse_passphrase",
+    "/mnt/secrets/HASHIVERSE_PASSPHRASE",
+    "/etc/secrets/hashiverse_passphrase",
+    "/etc/secrets/HASHIVERSE_PASSPHRASE",
+    "./.hashiverse_passphrase",
+    "./.HASHIVERSE_PASSPHRASE",
+];
+
 pub fn get_passphrase(passphrase_path: Option<String>) -> anyhow::Result<SecretString> {
     fn get_passphrase_from_file_if_exists(path: &str) -> Option<SecretString> {
         let contents = fs::read_to_string(path);
@@ -34,18 +47,44 @@ pub fn get_passphrase(passphrase_path: Option<String>) -> anyhow::Result<SecretS
     }
 
     // Else try the most secure routes - a secret file mount-injected by the container
-    if let Some(passphrase) = get_passphrase_from_file_if_exists("	/run/secrets/hashiverse_passphrase") { return Ok(passphrase); }
-    if let Some(passphrase) = get_passphrase_from_file_if_exists("	/run/secrets/HASHIVERSE_PASSPHRASE") { return Ok(passphrase); }
-    if let Some(passphrase) = get_passphrase_from_file_if_exists("	/mnt/secrets/hashiverse_passphrase") { return Ok(passphrase); }
-    if let Some(passphrase) = get_passphrase_from_file_if_exists("	/mnt/secrets/HASHIVERSE_PASSPHRASE") { return Ok(passphrase); }
-    if let Some(passphrase) = get_passphrase_from_file_if_exists("	/etc/secrets/hashiverse_passphrase") { return Ok(passphrase); }
-    if let Some(passphrase) = get_passphrase_from_file_if_exists("	/etc/secrets/HASHIVERSE_PASSPHRASE") { return Ok(passphrase); }
-    if let Some(passphrase) = get_passphrase_from_file_if_exists("	./.hashiverse_passphrase") { return Ok(passphrase); }
-    if let Some(passphrase) = get_passphrase_from_file_if_exists("	./.HASHIVERSE_PASSPHRASE") { return Ok(passphrase); }
+    for default_passphrase_path in DEFAULT_PASSPHRASE_PATHS {
+        if let Some(passphrase) = get_passphrase_from_file_if_exists(default_passphrase_path) { return Ok(passphrase); }
+    }
 
     // Else try an env variable
     if let Ok(passphrase) = std::env::var("HASHIVERSE_PASSPHRASE") { return Ok(SecretString::new(Box::from(passphrase))); }
 
     // Error!
     anyhow::bail!("no passphrase found - please (at worst) set the HASHIVERSE_PASSPHRASE environment variable to something memorable");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use secrecy::ExposeSecret;
+
+    // Regression: every default path used to start with a literal tab, so none was ever found.
+    #[test]
+    fn default_passphrase_paths_have_no_stray_whitespace() {
+        for default_passphrase_path in DEFAULT_PASSPHRASE_PATHS {
+            assert_eq!(default_passphrase_path.trim(), *default_passphrase_path, "whitespace in {:?}", default_passphrase_path);
+            assert!(default_passphrase_path.starts_with('/') || default_passphrase_path.starts_with("./"), "not a path: {:?}", default_passphrase_path);
+        }
+    }
+
+    #[test]
+    fn explicit_passphrase_path_is_read() {
+        let (_temp_dir, temp_dir_path) = hashiverse_lib::tools::tools::get_temp_dir().unwrap();
+        let passphrase_path = std::path::Path::new(&temp_dir_path).join("passphrase");
+        fs::write(&passphrase_path, "correct horse").unwrap();
+        let passphrase = get_passphrase(Some(passphrase_path.to_string_lossy().into_owned())).unwrap();
+        assert_eq!(passphrase.expose_secret(), "correct horse");
+    }
+
+    #[test]
+    fn missing_explicit_passphrase_path_is_an_error() {
+        let (_temp_dir, temp_dir_path) = hashiverse_lib::tools::tools::get_temp_dir().unwrap();
+        let passphrase_path = std::path::Path::new(&temp_dir_path).join("does-not-exist");
+        assert!(get_passphrase(Some(passphrase_path.to_string_lossy().into_owned())).is_err());
+    }
 }

@@ -1,7 +1,7 @@
 //! # HTTPS-transport ownership proof
 //!
 //! Produces and verifies the proof bytes carried in an `AnnounceV2` from / to an
-//! HTTPS server. The bytes are a postcard-encoded [`HttpsAcmeProof`] containing
+//! HTTPS server. The bytes are a postcard-encoded `HttpsAcmeProof` containing
 //! the announcer's currently-serving ACME-issued TLS chain — nothing else.
 //!
 //! Verification is purely offline:

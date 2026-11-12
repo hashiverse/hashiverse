@@ -5,7 +5,7 @@ import type { HashiverseClientWasmProxy } from "../../Hashiverse.ts";
 import { CollapsiblePanel } from "../../tools/CollapsiblePanel.tsx";
 import { StoredAccountsList } from "../../tools/StoredAccountsList.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	on_login: (hashiverse: HashiverseClientWasmProxy) => void;
 }

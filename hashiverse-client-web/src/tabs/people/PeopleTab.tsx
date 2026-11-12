@@ -9,7 +9,7 @@ import { TabHeader } from "../TabHeader.tsx";
 import { Banner } from "../timeline/Banner.tsx";
 import { TimelineControl } from "../timeline/TimelineControl.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	user_settings_cache: UserSettingsCache;
 }

@@ -7,7 +7,7 @@ import { Hashiverse, type HashiverseClientWasmProxy } from "../../Hashiverse.ts"
 import { CollapsiblePanel } from "../../tools/CollapsiblePanel.tsx";
 import { LOGIN_QUESTIONS_FIXED, LOGIN_QUESTIONS_VARIABLE, question_to_i18n_key } from "./login_questions.ts";
 
-interface Props {
+export interface Props {
 	on_login: (hashiverse: HashiverseClientWasmProxy) => void;
 }
 

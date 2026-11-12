@@ -25,7 +25,7 @@ import LoreDoc from '../../../layouts/LoreDoc.astro';
   <ul>
     <li><strong>Storage:</strong> 20 GB of disk space</li>
     <li><strong>Bandwidth:</strong> 1 TB per month</li>
-    <li><strong>OS:</strong> any modern Linux with Docker installed</li>
+    <li><strong>OS:</strong> Ubuntu/Debian or Fedora/RHEL (or any modern Linux with Docker)</li>
   </ul>
   <p>
     CPU and RAM requirements are minimal — the server is written in Rust and is designed to run
@@ -34,17 +34,64 @@ import LoreDoc from '../../../layouts/LoreDoc.astro';
 
     <h2>Installing and running the server</h2>
     <p>
-        An important point to mote is that when you fire up a server, it has to do some significant
+        An important point to note is that when you fire up a server, it has to do some significant
         Proof of Work before it is designated a trusted spot in the Hashiverse network.  So don't be
-        surprised if for the first few hours you CPU is at max and the logs keep talking about PoWs, iters, and ETA.
+        surprised if for the first few hours your CPU is at max and the logs keep talking about PoWs, iters, and ETA.
     </p>
     <p>
         We recommend any standard linux server.  Ubuntu works nicely, either 2024, or 2026.
         Paste the following into the startup script / user-data / cloud-init field when you
-        create your server (the name varies by provider). It installs Docker, opens the
-        firewall, writes the compose file, and brings the stack up.
+        create your server (the name varies by provider). It opens the firewall, adds the signed
+        Hashiverse package repository, and installs the server, which starts straight away.
     </p>
     <pre><code>#!/usr/bin/env bash
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y curl ca-certificates ufw
+
+ufw allow 22/tcp
+ufw allow from 0.0.0.0/0 to any port 443 proto tcp
+ufw --force enable
+
+curl -fsSL https://www.hashiverse.com/packages/hashiverse-packages.asc -o /usr/share/keyrings/hashiverse-packages.asc
+curl -fsSL https://www.hashiverse.com/packages/apt/hashiverse.sources -o /etc/apt/sources.list.d/hashiverse.sources
+curl -fsSL https://www.hashiverse.com/packages/apt/hashiverse-mirrors.txt -o /etc/apt/hashiverse-mirrors.txt
+
+apt-get update
+apt-get install -y hashiverse-server</code></pre>
+  <p>
+    On Fedora, Rocky, Alma or RHEL, add the repository and install with <code>dnf</code> instead
+    (and open port 443 in <code>firewalld</code>):
+  </p>
+  <pre><code>curl -fsSL https://www.hashiverse.com/packages/rpm/hashiverse.repo -o /etc/yum.repos.d/hashiverse.repo
+dnf install -y hashiverse-server</code></pre>
+  <p>
+    The server runs as the systemd service <code>hashiverse-server</code> and keeps itself up to
+    date: once a day, at a random time that differs from machine to machine so the network never
+    restarts all at once, it checks for a new version and restarts onto it. A few useful commands:
+  </p>
+  <ul>
+    <li><strong>Follow the logs:</strong> <code>journalctl -u hashiverse-server -f</code></li>
+    <li><strong>Settings:</strong> <code>/etc/default/hashiverse-server</code>, then <code>systemctl restart hashiverse-server</code></li>
+    <li><strong>Data and server identity:</strong> <code>/var/lib/hashiverse-server</code></li>
+    <li><strong>Turn off automatic updates:</strong> <code>systemctl disable --now hashiverse-server-updater.timer</code></li>
+  </ul>
+  <p>
+    The server's built-in DDoS protection uses <code>ipset</code> and <code>iptables</code> to drop
+    traffic from abusive IPs at the kernel level, so it runs as root, but in a systemd sandbox that
+    only grants it the networking capabilities it needs. <code>/var/lib/hashiverse-server</code> is
+    where the server persists its identity and stored encrypted posts — keep it safe if you care about
+    continuity, although Hashiverse is designed to heal itself if you destroy a server and fire up a new one.
+  </p>
+
+  <h3>Alternatively, with Docker</h3>
+  <p>
+    If you'd rather run the server in Docker, this startup script installs Docker, opens the
+    firewall, writes the compose file, and brings the stack up.
+  </p>
+  <pre><code>#!/usr/bin/env bash
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
@@ -62,6 +109,7 @@ services:
   hashiverse-server:
     image: ghcr.io/hashiverse/hashiverse-server:latest
     restart: unless-stopped
+    stop_grace_period: 30s
     ports:
       - "0.0.0.0:443:443"
     cap_add:
@@ -87,9 +135,7 @@ docker compose up -d</code></pre>
   <p>
     Watchtower will keep the server automatically updated as new versions are released.
     The <code>NET_ADMIN</code> capability is required for the server's built-in DDoS protection,
-    which uses <code>ipset</code> and <code>iptables</code> to drop traffic from abusive IPs at
-    the kernel level. The <code>./data</code> volume is where the server persists its identity
-    and stored encrypted posts — keep this safe if you care about continuity, although Hashiverse is
-      designed to heal itself if you destroy a server and fire up a new one.
+    and the <code>./data</code> volume is where the server persists its identity and stored
+    encrypted posts.
   </p>
 </LoreDoc>

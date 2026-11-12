@@ -18,7 +18,7 @@
 /// peers. A `BootstrapProvider` hands the client a starter list — hard-coded domain names,
 /// a file on disk, a DNS TXT record, whatever the deployment prefers — and the client uses
 /// those to make its first RPC. Once any successful peer exchange happens the
-/// [`crate::client::peer_tracker::PeerTracker`] takes over and the bootstrap list stops
+/// [`crate::client::peer_tracker::peer_tracker::PeerTracker`] takes over and the bootstrap list stops
 /// mattering.
 ///
 /// This trait is deliberately narrow so it is easy to stub in tests

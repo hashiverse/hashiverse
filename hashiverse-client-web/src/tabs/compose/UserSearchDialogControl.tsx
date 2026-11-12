@@ -8,7 +8,7 @@ import { search_mentions } from "../../tools/MentionStore.ts";
 import { UserImageControl } from "../../tools/UserImageControl.tsx";
 import { UserNameControl } from "../../tools/UserNameControl.tsx";
 
-interface Props {
+export interface Props {
 	ref_user_search_dialog_control_manager: React.RefObject<UserSearchDialogControlManager | null>;
 	hashiverse: HashiverseClientWasmProxy;
 }

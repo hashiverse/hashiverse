@@ -23,7 +23,7 @@ import type { UserSettingsCache } from "../../tools/UserSettingsCache.ts";
 import { open_compose } from "../compose/ComposeDialogStore.ts";
 import { ContentWarningOverlay } from "./ContentWarningOverlay.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	post: Post;
 	blur_images?: boolean;

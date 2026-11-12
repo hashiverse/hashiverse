@@ -6,7 +6,7 @@ import { NotLoggedInPanel } from "../login/NotLoggedInPanel.tsx";
 import { TabHeader } from "../TabHeader.tsx";
 import { PeopleTab } from "./PeopleTab.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	user_settings_cache: UserSettingsCache;
 }

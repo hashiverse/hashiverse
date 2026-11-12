@@ -27,7 +27,7 @@ import LoreDoc from '../../../layouts/LoreDoc.astro';
   <ul>
     <li><strong>Armazenamento:</strong> 20 GB de espaço em disco</li>
     <li><strong>Largura de banda:</strong> 1 TB por mês</li>
-    <li><strong>SO:</strong> qualquer Linux moderno com Docker instalado</li>
+    <li><strong>SO:</strong> Ubuntu/Debian ou Fedora/RHEL (ou qualquer Linux moderno com Docker)</li>
   </ul>
   <p>
     Os requisitos de CPU e RAM são mínimos — o servidor está escrito em Rust e foi desenhado para
@@ -44,10 +44,60 @@ import LoreDoc from '../../../layouts/LoreDoc.astro';
     <p>
         Recomendamos qualquer servidor Linux padrão. O Ubuntu funciona bem, seja 2024 ou 2026.
         Cola o seguinte no campo de startup script / user-data / cloud-init quando criares o teu
-        servidor (o nome varia consoante o fornecedor). Instala o Docker, abre a firewall, escreve
-        o ficheiro compose e levanta a stack.
+        servidor (o nome varia consoante o fornecedor). Abre a firewall, adiciona o repositório
+        de pacotes assinado do Hashiverse e instala o servidor, que arranca de imediato.
     </p>
     <pre><code>#!/usr/bin/env bash
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y curl ca-certificates ufw
+
+ufw allow 22/tcp
+ufw allow from 0.0.0.0/0 to any port 443 proto tcp
+ufw --force enable
+
+curl -fsSL https://www.hashiverse.com/packages/hashiverse-packages.asc -o /usr/share/keyrings/hashiverse-packages.asc
+curl -fsSL https://www.hashiverse.com/packages/apt/hashiverse.sources -o /etc/apt/sources.list.d/hashiverse.sources
+curl -fsSL https://www.hashiverse.com/packages/apt/hashiverse-mirrors.txt -o /etc/apt/hashiverse-mirrors.txt
+
+apt-get update
+apt-get install -y hashiverse-server</code></pre>
+  <p>
+    No Fedora, Rocky, Alma ou RHEL, adiciona antes o repositório e instala com <code>dnf</code>
+    (e abre a porta 443 na <code>firewalld</code>):
+  </p>
+  <pre><code>curl -fsSL https://www.hashiverse.com/packages/rpm/hashiverse.repo -o /etc/yum.repos.d/hashiverse.repo
+dnf install -y hashiverse-server</code></pre>
+  <p>
+    O servidor corre como o serviço systemd <code>hashiverse-server</code> e mantém-se
+    atualizado sozinho: uma vez por dia, a uma hora aleatória que difere de máquina para máquina
+    para que a rede nunca reinicie toda de uma vez, verifica se há uma nova versão e reinicia
+    com ela. Alguns comandos úteis:
+  </p>
+  <ul>
+    <li><strong>Acompanhar os logs:</strong> <code>journalctl -u hashiverse-server -f</code></li>
+    <li><strong>Definições:</strong> <code>/etc/default/hashiverse-server</code>, depois <code>systemctl restart hashiverse-server</code></li>
+    <li><strong>Dados e identidade do servidor:</strong> <code>/var/lib/hashiverse-server</code></li>
+    <li><strong>Desligar as atualizações automáticas:</strong> <code>systemctl disable --now hashiverse-server-updater.timer</code></li>
+  </ul>
+  <p>
+    A proteção contra DDoS integrada no servidor usa <code>ipset</code> e <code>iptables</code>
+    para descartar tráfego de IPs abusivos ao nível do kernel, por isso corre como root, mas
+    numa sandbox do systemd que só lhe concede as capacidades de rede de que precisa.
+    <code>/var/lib/hashiverse-server</code> é onde o servidor persiste a sua identidade e as
+    publicações cifradas que armazena — mantém-no em segurança se te importas com a
+    continuidade, embora o Hashiverse esteja desenhado para se auto-recuperar se destruíres um
+    servidor e arrancares com um novo.
+  </p>
+
+  <h3>Em alternativa, com Docker</h3>
+  <p>
+    Se preferires correr o servidor em Docker, este startup script instala o Docker, abre a
+    firewall, escreve o ficheiro compose e levanta a stack.
+  </p>
+  <pre><code>#!/usr/bin/env bash
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
@@ -65,6 +115,7 @@ services:
   hashiverse-server:
     image: ghcr.io/hashiverse/hashiverse-server:latest
     restart: unless-stopped
+    stop_grace_period: 30s
     ports:
       - "0.0.0.0:443:443"
     cap_add:
@@ -90,10 +141,7 @@ docker compose up -d</code></pre>
   <p>
     O Watchtower mantém o servidor automaticamente atualizado à medida que novas versões são
     lançadas. A capacidade <code>NET_ADMIN</code> é necessária para a proteção contra DDoS
-    integrada no servidor, que usa <code>ipset</code> e <code>iptables</code> para descartar
-    tráfego de IPs abusivos ao nível do kernel. O volume <code>./data</code> é onde o servidor
-    persiste a sua identidade e as publicações cifradas que armazena — mantém-no em segurança se
-    te importas com a continuidade, embora o Hashiverse esteja desenhado para se auto-recuperar
-    se destruíres um servidor e arrancares com um novo.
+    integrada no servidor, e o volume <code>./data</code> é onde o servidor persiste a sua
+    identidade e as publicações cifradas que armazena.
   </p>
 </LoreDoc>

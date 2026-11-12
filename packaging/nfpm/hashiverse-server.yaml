@@ -1,0 +1,67 @@
+# nfpm config for the hashiverse-server package; one config produces both .deb and .rpm.
+# Run from the repository root:
+#   HASHIVERSE_PACKAGE_VERSION=1.2.3 HASHIVERSE_PACKAGE_ARCH=amd64 HASHIVERSE_BINARY_DIR=hashiverse-rust/target/release \
+#     nfpm package --config packaging/nfpm/hashiverse-server.yaml --packager deb --target out/
+# HASHIVERSE_PACKAGE_ARCH uses Go names (amd64, arm64); nfpm maps them to x86_64/aarch64 for rpm.
+name: hashiverse-server
+version: ${HASHIVERSE_PACKAGE_VERSION}
+arch: ${HASHIVERSE_PACKAGE_ARCH}
+platform: linux
+section: net
+priority: optional
+maintainer: James Jardine <mail@jimme.net>
+vendor: Hashiverse
+homepage: https://www.hashiverse.com
+license: MIT OR Apache-2.0
+description: |
+  Hashiverse server — your open-source decentralized X/Twitter replacement.
+  Runs a Hashiverse node as the systemd service "hashiverse-server", started on install,
+  and keeps it up to date with a daily auto-update timer ("hashiverse-server-updater").
+
+depends:
+  - ipset
+  - iptables
+  - ca-certificates
+
+contents:
+  - src: ${HASHIVERSE_BINARY_DIR}/hashiverse-server
+    dst: /usr/bin/hashiverse-server
+    expand: true
+    file_info:
+      mode: 0755
+
+  - src: packaging/systemd/hashiverse-server.service
+    dst: /usr/lib/systemd/system/hashiverse-server.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hashiverse-server-updater.service
+    dst: /usr/lib/systemd/system/hashiverse-server-updater.service
+    file_info:
+      mode: 0644
+  - src: packaging/systemd/hashiverse-server-updater.timer
+    dst: /usr/lib/systemd/system/hashiverse-server-updater.timer
+    file_info:
+      mode: 0644
+
+  - src: packaging/scripts/hashiverse-server-updater
+    dst: /usr/libexec/hashiverse-server/hashiverse-server-updater
+    file_info:
+      mode: 0755
+
+  # Operator-edited settings: kept across upgrades.
+  - src: packaging/default/hashiverse-server
+    dst: /etc/default/hashiverse-server
+    type: config|noreplace
+    file_info:
+      mode: 0644
+
+  # Data and server identity. Not removed with the package.
+  - dst: /var/lib/hashiverse-server
+    type: dir
+    file_info:
+      mode: 0700
+
+scripts:
+  postinstall: packaging/scripts/postinstall.sh
+  preremove: packaging/scripts/preremove.sh
+  postremove: packaging/scripts/postremove.sh

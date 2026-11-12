@@ -49,7 +49,7 @@ pub type SharedPeerTracker = Arc<parking_lot::RwLock<PeerTracker>>;
 /// iteration primitives used throughout the client when it needs to answer "who should I
 /// talk to next about this [`Id`]?". When the list is empty (first launch, or after a
 /// reset), it seeds itself via a `BootstrapV1` RPC against the
-/// [`crate::transport::bootstrap_provider::BootstrapProvider`] addresses configured on the
+/// [`crate::transport::bootstrap_provider::bootstrap_provider::BootstrapProvider`] addresses configured on the
 /// transport.
 ///
 /// The tracker is the single source of truth for peer freshness: stale or bad peers get

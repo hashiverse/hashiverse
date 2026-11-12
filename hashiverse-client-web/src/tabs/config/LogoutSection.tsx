@@ -5,7 +5,7 @@ import { useNavigate } from "react-router";
 import { CollapsiblePanel } from "../../tools/CollapsiblePanel.tsx";
 import type { UserSettingsCache } from "../../tools/UserSettingsCache.ts";
 
-interface Props {
+export interface Props {
 	on_logout: () => void;
 	user_settings_cache: UserSettingsCache;
 }

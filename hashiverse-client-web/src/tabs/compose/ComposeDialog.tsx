@@ -10,7 +10,7 @@ import type { UserSettingsCache } from "../../tools/UserSettingsCache.ts";
 import { type ComposeOpenContext, register_compose_dialog } from "./ComposeDialogStore.ts";
 import { ComposeEditor, type ComposeEditorHandle } from "./ComposeEditor.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	user_settings_cache: UserSettingsCache;
 }

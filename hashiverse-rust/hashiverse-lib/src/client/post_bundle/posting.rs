@@ -60,7 +60,7 @@ struct SubmissionOutcome {
 
 /// Submit a post to the network.
 ///
-/// The parse + encode happen in the foreground, then [`post_to_locations`] is run as a background
+/// The parse + encode happen in the foreground, then `post_to_locations` is run as a background
 /// task that streams each successful server commit back over a channel. With
 /// `wait_for_all_submissions == true` the foreground drains every outcome before returning (so the
 /// returned token list and recent-posts pen are fully populated); with `false` it returns the

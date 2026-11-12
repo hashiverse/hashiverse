@@ -214,9 +214,9 @@ pub const SIGNATURE_BYTES: usize = 64;
 /// Every authenticated artefact in the protocol — RPC responses, peer announcements, encoded
 /// posts, post-bundle headers, meta posts — carries a `Signature` produced by the author's
 /// [`SignatureKey`] over a canonical byte representation of the artefact. Verification is
-/// performed with the matching [`VerificationKey`] (typically obtained from a [`Peer`]'s
+/// performed with the matching [`VerificationKey`] (typically obtained from a [`Peer`](crate::protocol::peer::Peer)'s
 /// identity). The concrete signing algorithm is Ed25519 via `ed25519-dalek`; post-quantum
-/// signatures (ML-DSA, FN-DSA) are layered on top via the PQ commitment on [`ClientId`]
+/// signatures (ML-DSA, FN-DSA) are layered on top via the PQ commitment on [`ClientId`](crate::tools::client_id::ClientId)
 /// rather than replacing this type.
 #[serde_as]
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
@@ -292,8 +292,8 @@ impl From<Signature> for [u8; SIGNATURE_BYTES] {
 
 /// A private Ed25519 signing key held by a single client identity.
 ///
-/// `SignatureKey` is the secret half of the identity established by [`ClientId`]: it is what
-/// a [`crate::client::key_locker::KeyLocker`] guards on behalf of the logged-in user and uses
+/// `SignatureKey` is the secret half of the identity established by [`ClientId`](crate::tools::client_id::ClientId): it is what
+/// a [`crate::client::key_locker::key_locker::KeyLocker`] guards on behalf of the logged-in user and uses
 /// to sign outbound posts, RPC responses, and peer announcements. Never serialize or leak this
 /// value across trust boundaries. The matching public half is obtained via
 /// [`SignatureKey::verification_key`] and is published freely as part of the client's identity.

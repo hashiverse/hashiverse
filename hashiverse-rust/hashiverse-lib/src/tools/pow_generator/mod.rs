@@ -23,11 +23,13 @@
 //!
 //! ## Shared loop
 //!
-//! [`pow_generator::generate_loop`] is the one-true batching loop used by both
-//! implementations: repeatedly call [`pow_generator::PowGenerator::generate_best_effort`]
-//! in 64K-attempt batches, update the tracker, and bail as soon as a batch returns
-//! `pow >= pow_min`. Every batch also yields to the runtime so on single-threaded targets
-//! other tasks still get a chance to run.
+//! [`pow_generator::run_pool`] is the one-true dispatch loop used by every
+//! implementation: it keeps one 4K-iteration chunk in flight per
+//! [`pow_generator::PowGenerator::pool_size`] slot via
+//! [`pow_generator::PowGenerator::run_chunk`], updates the tracker as chunks complete,
+//! and returns as soon as one reaches `pow >= pow_min`, or fails if the generator's
+//! cancellation token fires. Every chunk also yields to the runtime so on
+//! single-threaded targets other tasks still get a chance to run.
 
 pub mod pow_generator;
 pub mod native_parallel_pow_generator;

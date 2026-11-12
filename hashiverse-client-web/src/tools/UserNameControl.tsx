@@ -2,7 +2,7 @@ import { Text, type TextProps, Tooltip } from "@mantine/core";
 import type React from "react";
 import { useTranslation } from "react-i18next";
 
-interface UserNameControlProps {
+export interface UserNameControlProps {
 	client_id: string;
 	nickname?: string | null;
 	tooltip?: string | null;

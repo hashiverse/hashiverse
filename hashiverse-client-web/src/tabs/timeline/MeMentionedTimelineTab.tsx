@@ -4,7 +4,7 @@ import { useNavigate } from "react-router";
 import type { UserSettingsCache } from "../../tools/UserSettingsCache.ts";
 import { TabHeader } from "../TabHeader.tsx";
 
-interface Props {
+export interface Props {
 	user_settings_cache: UserSettingsCache;
 }
 

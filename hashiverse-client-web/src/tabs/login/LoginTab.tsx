@@ -12,7 +12,7 @@ import { PasskeySection } from "./PasskeySection.tsx";
 import { QuestionsSection } from "./QuestionsSection.tsx";
 import { StoredAccountsSection } from "./StoredAccountsSection.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	on_login: (hashiverse: HashiverseClientWasmProxy) => void;
 	on_logout: () => void;

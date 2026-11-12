@@ -8,7 +8,7 @@ import { Spinner } from "../../tools/Spinner.tsx";
 import type { UserSettingsCache } from "../../tools/UserSettingsCache.ts";
 import { PostPanel } from "./PostPanel.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	user_settings_cache: UserSettingsCache;
 	timeline_key: string;

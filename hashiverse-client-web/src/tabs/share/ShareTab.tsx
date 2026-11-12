@@ -14,7 +14,7 @@ function is_youtube_url(url: string): boolean {
 	}
 }
 
-interface Props {
+export interface Props {
 	user_settings_cache: UserSettingsCache;
 }
 

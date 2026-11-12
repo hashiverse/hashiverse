@@ -12,7 +12,78 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # apt/dnf packages of hashiverse-server and hashiverse-cli. Built on Rocky Linux 9 (glibc 2.34) so
+  # one binary runs on Debian 12+, Ubuntu 22.04+, RHEL/Rocky/Alma 9+ and Fedora. Must be --release:
+  # production servers reject the reduced proof-of-work of the other profiles.
+  build-packages:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            package_arch: amd64
+            nfpm_arch: x86_64
+            nfpm_sha256: a80d5f724ed70b192ffa8a2bde469c013cef559c8afa3441eb51dd9a918beb6b
+          - runner: ubuntu-24.04-arm
+            package_arch: arm64
+            nfpm_arch: arm64
+            nfpm_sha256: cfafa3bee852c45a52f2ebbfb063d715235f934d082dc64301a1b9957f3a4032
+    runs-on: ${{ matrix.runner }}
+    container: rockylinux:9
+    env:
+      NFPM_VERSION: 2.43.0
+    steps:
+      - name: Install build tools
+        run: dnf install -y --setopt=install_weak_deps=False gcc gcc-c++ make cmake perl git tar gzip
+
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/set-cargo-version-from-tag
+
+      - uses: ./.github/actions/install-rust-toolchain
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "hashiverse-packages-${{ matrix.package_arch }}"
+          workspaces: hashiverse-rust -> target
+
+      - name: Build release binaries
+        working-directory: hashiverse-rust
+        run: cargo build --release -p hashiverse-server -p hashiverse-cli
+
+      - name: Install nfpm
+        run: |
+          tarball="nfpm_${NFPM_VERSION}_Linux_${{ matrix.nfpm_arch }}.tar.gz"
+          curl -fsSL -o "/tmp/$tarball" "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/$tarball"
+          echo "${{ matrix.nfpm_sha256 }}  /tmp/$tarball" | sha256sum --check
+          tar -xzf "/tmp/$tarball" -C /usr/local/bin nfpm
+
+      - name: Build packages
+        env:
+          HASHIVERSE_PACKAGE_ARCH: ${{ matrix.package_arch }}
+          HASHIVERSE_BINARY_DIR: hashiverse-rust/target/release
+        run: |
+          # The workspace version, which set-cargo-version-from-tag set from the release tag.
+          # nfpm turns a prerelease "1.1.0-rc1" into "1.1.0~rc1", which sorts before "1.1.0".
+          export HASHIVERSE_PACKAGE_VERSION="$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^version = "\(.*\)"/\1/p' hashiverse-rust/Cargo.toml)"
+          echo "package version: $HASHIVERSE_PACKAGE_VERSION"
+          mkdir -p packages
+          for package in hashiverse-server hashiverse-cli; do
+            for packager in deb rpm; do
+              nfpm package --config "packaging/nfpm/$package.yaml" --packager "$packager" --target packages/
+            done
+          done
+          ls -l packages
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: packages-${{ matrix.package_arch }}
+          path: packages/
+          if-no-files-found: error
+
   build:
+    needs: build-packages
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -37,6 +108,9 @@ jobs:
 
       - name: Build Rust docs
         working-directory: hashiverse-rust
+        # Broken doc links fail the build; check locally with the same RUSTDOCFLAGS before tagging.
+        env:
+          RUSTDOCFLAGS: -D warnings
         # hashiverse-client-wasm only compiles for wasm32 (its hashiverse-lib imports are wasm-gated), so document it for that target
         # and drop its pages into the host doc tree (same toolchain, so the shared static.files match).
         run: |
@@ -95,6 +169,49 @@ jobs:
         run: |
           mkdir -p www/dist/dev/hashiverse-client-web
           cp -r hashiverse-client-web/docs/. www/dist/dev/hashiverse-client-web/
+
+      # --- apt/dnf package repository ---
+      # Stable releases publish to www.hashiverse.com/packages (mirrored to .eu and .ch); release
+      # candidates to www-prerelease.hashiverse.com/packages, via the deploy steps below.
+
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: packages-*
+          path: packages
+          merge-multiple: true
+
+      - name: Install repository tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gnupg apt-utils rpm createrepo-c
+
+      - name: Import package signing key
+        env:
+          PACKAGES_GPG_PRIVATE_KEY: ${{ secrets.PACKAGES_GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$PACKAGES_GPG_PRIVATE_KEY" ]; then
+            echo "secret PACKAGES_GPG_PRIVATE_KEY is not set" >&2
+            exit 1
+          fi
+          printf "%s\n" "$PACKAGES_GPG_PRIVATE_KEY" | gpg --batch --import
+          # The signing key must be the one whose public half is checked in, so it can't change silently.
+          expected_fingerprint="$(gpg --show-keys --with-colons packaging/hashiverse-packages.asc | awk -F: '/^fpr/ { print $10; exit }')"
+          secret_fingerprints="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ { print $10 }')"
+          if ! printf "%s\n" "$secret_fingerprints" | grep -qx "$expected_fingerprint"; then
+            echo "PACKAGES_GPG_PRIVATE_KEY is not the key in packaging/hashiverse-packages.asc ($expected_fingerprint)" >&2
+            exit 1
+          fi
+          echo "PACKAGES_GPG_FINGERPRINT=$expected_fingerprint" >> "$GITHUB_ENV"
+
+      - name: Build package repository
+        env:
+          PACKAGES_GPG_PASSPHRASE: ${{ secrets.PACKAGES_GPG_PASSPHRASE }}
+          HASHIVERSE_PACKAGE_CHANNEL: ${{ github.event.release.prerelease && 'rc' || 'stable' }}
+          # Empty means build-repo.sh's default: www.hashiverse.{com,eu,ch}.
+          HASHIVERSE_PACKAGE_MIRRORS: ${{ github.event.release.prerelease && 'https://www-prerelease.hashiverse.com/packages' || '' }}
+        run: |
+          bash packaging/build-repo.sh packages www/dist/packages "$PACKAGES_GPG_FINGERPRINT"
+          find www/dist/packages -type f | sort
 
       # --- Deploy ---
 

@@ -1,6 +1,6 @@
 import type React from "react";
 
-interface BannerProps {
+export interface BannerProps {
 	heading: React.ReactNode;
 	detail?: React.ReactNode;
 	image?: React.ReactNode;

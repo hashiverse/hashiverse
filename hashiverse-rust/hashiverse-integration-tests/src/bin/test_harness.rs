@@ -192,7 +192,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    hashiverse_server_lib::tools::tools::spawn_ctrl_c_handler(cancellation_token.clone());
+    hashiverse_server_lib::tools::tools::spawn_shutdown_signal_handler(cancellation_token.clone())?;
 
     while let Some(res) = join_set.join_next().await {
         match res {
