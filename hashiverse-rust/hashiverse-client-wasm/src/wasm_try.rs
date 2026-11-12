@@ -20,7 +20,7 @@ macro_rules! wasm_try {
 ///
 /// Replaces the deprecated `#[tsify(into_wasm_abi)]`: serialization now happens inside our
 /// function as an ordinary `Result`, so a failure unwinds normally instead of leaking the wasm heap
-/// (https://github.com/madonoharu/tsify/issues/65).  `tsify::Error` wraps a `serde_wasm_bindgen::Error`
+/// (<https://github.com/madonoharu/tsify/issues/65>).  `tsify::Error` wraps a `serde_wasm_bindgen::Error`
 /// holding a `JsValue` (not `Send + Sync`), hence the string conversion rather than a plain `?`.
 pub fn to_ts<T: tsify::Tsify + serde::Serialize>(value: &T) -> anyhow::Result<tsify::Ts<T>> {
     tsify::Tsify::into_ts(value).map_err(|e| anyhow::anyhow!("{}", e))

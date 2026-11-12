@@ -6,7 +6,7 @@ import { CollapsiblePanel } from "../../tools/CollapsiblePanel.tsx";
 import { redirect_to_login_with_return } from "../../tools/PostLoginRedirect.ts";
 import type { UserSettingsCache } from "../../tools/UserSettingsCache.ts";
 
-interface Props {
+export interface Props {
 	user_settings_cache: UserSettingsCache;
 }
 

@@ -15,7 +15,7 @@ import { LoginSection } from "./LoginSection.tsx";
 import { LogoutSection } from "./LogoutSection.tsx";
 import { StorageSection } from "./StorageSection.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	on_login: (hashiverse: HashiverseClientWasmProxy) => void;
 	on_logout: () => void;

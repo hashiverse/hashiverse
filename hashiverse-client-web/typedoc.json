@@ -12,6 +12,12 @@
 	"excludeProtected": false,
 	"excludeInternal": false,
 	"includeVersion": true,
+	"treatWarningsAsErrors": true,
+	"externalSymbolLinkMappings": {
+		"hashiverse-client-wasm": {
+			"HashiverseClientWasm": "/dev/hashiverse-rust/hashiverse_client_wasm/struct.HashiverseClientWasm.html"
+		}
+	},
 	"navigationLinks": {
 		"Hashiverse": "https://www.hashiverse.com"
 	}

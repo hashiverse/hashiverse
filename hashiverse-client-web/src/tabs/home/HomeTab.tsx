@@ -7,7 +7,7 @@ import { TrendingHashtagsGrid } from "../hashtags/TrendingHashtagsGrid.tsx";
 import { TabHeader } from "../TabHeader.tsx";
 import { Banner } from "../timeline/Banner.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 }
 

@@ -8,7 +8,7 @@ export interface YouTubeDialogControlManager {
 	modal_command_open: () => Promise<string | null>;
 }
 
-interface Props {
+export interface Props {
 	ref_manager: React.RefObject<YouTubeDialogControlManager | null>;
 }
 

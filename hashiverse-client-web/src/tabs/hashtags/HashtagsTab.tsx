@@ -11,7 +11,7 @@ import { Banner } from "../timeline/Banner.tsx";
 import { TimelineControl } from "../timeline/TimelineControl.tsx";
 import { TrendingHashtagsGrid } from "./TrendingHashtagsGrid.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	user_settings_cache: UserSettingsCache;
 }

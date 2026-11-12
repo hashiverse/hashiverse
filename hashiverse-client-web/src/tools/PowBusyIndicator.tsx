@@ -5,7 +5,7 @@ import { useNavigate } from "react-router";
 import type { HashiverseClientWasmProxy } from "../Hashiverse.ts";
 import { Spinner } from "./Spinner.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 }
 

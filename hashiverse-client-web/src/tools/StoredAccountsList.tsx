@@ -65,7 +65,7 @@ const AccountRow: React.FC<RowProps> = ({ key_public, hashiverse, on_select, on_
 	);
 };
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	on_login: (hashiverse: HashiverseClientWasmProxy) => void;
 	intro?: React.ReactNode;

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { HashiverseClientWasmProxy, PowJobStatusV1 } from "../../Hashiverse.ts";
 import { TabHeader } from "../TabHeader.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 }
 

@@ -34,7 +34,7 @@ bitflags! {
     }
 }
 
-/// An outbound RPC request, freshly encoded and ready to be sent over a [`crate::transport::TransportFactory`].
+/// An outbound RPC request, freshly encoded and ready to be sent over a [`crate::transport::transport::TransportFactory`].
 ///
 /// The "Tx" (transmit) side owns the encode path. Constructing one is expensive: in addition
 /// to compressing the payload and prefixing the header, `encode` performs a proof-of-work
@@ -42,7 +42,7 @@ bitflags! {
 /// sits in the wire header so the server can reject under-powered requests cheaply before
 /// doing any payload work. `pow_content_hash` is retained on the struct so the caller can
 /// later verify that the response was produced for *this* specific request (see
-/// [`RpcResponsePacketRx`]).
+/// [`RpcResponsePacketRx`](crate::protocol::rpc::rpc_response::RpcResponsePacketRx)).
 ///
 /// This type and its "Rx" counterpart [`RpcRequestPacketRx`] are intentionally separate so
 /// the encode side and the decode side cannot be accidentally mixed up.

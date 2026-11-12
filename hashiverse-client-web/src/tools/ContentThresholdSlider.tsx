@@ -25,7 +25,7 @@ function pos_to_value(pos: number): number {
 	return (THRESHOLD_STEPS as readonly number[])[Math.max(0, Math.min(pos, THRESHOLD_STEPS.length - 1))];
 }
 
-interface Props {
+export interface Props {
 	label: string;
 	icon: React.FC<{ size?: number }>;
 	value: number;

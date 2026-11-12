@@ -3,7 +3,7 @@ import { IconChevronDown } from "@tabler/icons-react";
 import type React from "react";
 import { useState } from "react";
 
-interface Props {
+export interface Props {
 	title: string;
 	children: React.ReactNode;
 	defaultOpen?: boolean;

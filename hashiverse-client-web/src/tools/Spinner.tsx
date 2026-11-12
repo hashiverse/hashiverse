@@ -1,7 +1,7 @@
 import type React from "react";
 import image_busy from "../media/busy.webp";
 
-interface Props {
+export interface Props {
 	size?: number;
 	style?: React.CSSProperties;
 }

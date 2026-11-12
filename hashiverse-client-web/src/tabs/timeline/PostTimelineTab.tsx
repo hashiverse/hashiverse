@@ -13,7 +13,7 @@ import { Banner } from "./Banner.tsx";
 import { PostPanel } from "./PostPanel.tsx";
 import { TimelineControl } from "./TimelineControl.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	user_settings_cache: UserSettingsCache;
 }

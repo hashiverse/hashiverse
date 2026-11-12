@@ -7,7 +7,7 @@ import type { UserSettingsCache } from "../../tools/UserSettingsCache.ts";
 import { ErrorTab } from "../ErrorTab.tsx";
 import { PostPanel } from "./PostPanel.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	user_settings_cache: UserSettingsCache;
 }

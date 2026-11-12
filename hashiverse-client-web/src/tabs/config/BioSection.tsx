@@ -10,7 +10,7 @@ import { Toast } from "../../tools/Toast.ts";
 import { Tools } from "../../tools/Tools.ts";
 import type { UserSettingsCache } from "../../tools/UserSettingsCache.ts";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	user_settings_cache: UserSettingsCache;
 }

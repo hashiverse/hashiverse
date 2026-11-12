@@ -108,6 +108,9 @@ jobs:
 
       - name: Build Rust docs
         working-directory: hashiverse-rust
+        # Broken doc links fail the build; check locally with the same RUSTDOCFLAGS before tagging.
+        env:
+          RUSTDOCFLAGS: -D warnings
         # hashiverse-client-wasm only compiles for wasm32 (its hashiverse-lib imports are wasm-gated), so document it for that target
         # and drop its pages into the host doc tree (same toolchain, so the shared static.files match).
         run: |

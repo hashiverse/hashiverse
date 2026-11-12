@@ -1,6 +1,6 @@
 //! # Server-stats subtrees
 //!
-//! Each subsystem contributes a JSON subtree to the [`PeerStatsRequestV1`]
+//! Each subsystem contributes a JSON subtree to the [`PeerStatsRequestV1`](hashiverse_lib::protocol::payload::payload::PeerStatsRequestV1)
 //! response via a free function named `<subsystem>_stats_subtree`. The
 //! top-level handler in [`crate::server::handlers::dispatch`] composes the
 //! full document by inserting each returned `serde_json::Value` at its own

@@ -6,7 +6,7 @@ export interface ComposeOpenContext {
 	share_url?: string;
 }
 
-type OpenFn = (context?: ComposeOpenContext) => void | Promise<void>;
+export type OpenFn = (context?: ComposeOpenContext) => void | Promise<void>;
 
 let _open: OpenFn | null = null;
 

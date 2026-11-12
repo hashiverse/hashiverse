@@ -17,8 +17,8 @@ use crate::tools::time::TimeMillis;
 /// cache, from a single network peer, or was stitched together from several peers after a
 /// healing round — it just calls `get_post_bundle`. The production implementation is
 /// [`crate::client::post_bundle::live_post_bundle_manager::LivePostBundleManager`], which
-/// checks local [`ClientStorage`] first, falls back to the best peer from
-/// [`crate::client::peer_tracker::PeerTracker`], and transparently heals missing posts.
+/// checks local [`ClientStorage`](crate::client::client_storage::client_storage::ClientStorage) first, falls back to the best peer from
+/// [`crate::client::peer_tracker::peer_tracker::PeerTracker`], and transparently heals missing posts.
 /// Tests swap in stub implementations that return canned bundles so the timeline logic can
 /// be exercised without any network.
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]

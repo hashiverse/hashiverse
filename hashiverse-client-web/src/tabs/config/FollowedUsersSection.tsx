@@ -32,7 +32,7 @@ const FollowedUserRow: React.FC<FollowedUserRowProps> = ({ id, hashiverse, on_re
 	);
 };
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	user_settings_cache: UserSettingsCache;
 }

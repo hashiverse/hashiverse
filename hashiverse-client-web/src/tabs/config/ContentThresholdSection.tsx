@@ -9,7 +9,7 @@ import { FEEDBACK_TYPE_CSAM, FEEDBACKS_NEGATIVE } from "../../tools/Feedback.ts"
 import { Toast } from "../../tools/Toast.ts";
 import type { ContentThresholds, UserSettingsCache } from "../../tools/UserSettingsCache.ts";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	user_settings_cache: UserSettingsCache;
 }

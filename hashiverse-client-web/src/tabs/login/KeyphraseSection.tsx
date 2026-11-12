@@ -6,7 +6,7 @@ import { useNavigate } from "react-router";
 import { Hashiverse, type HashiverseClientWasmProxy } from "../../Hashiverse.ts";
 import { CollapsiblePanel } from "../../tools/CollapsiblePanel.tsx";
 
-interface Props {
+export interface Props {
 	on_login: (hashiverse: HashiverseClientWasmProxy) => void;
 }
 

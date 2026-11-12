@@ -7,7 +7,7 @@ import { local_settings_reset } from "../../tools/LocalSettings.ts";
 import { Toast } from "../../tools/Toast.ts";
 import { Tools } from "../../tools/Tools.ts";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 }
 

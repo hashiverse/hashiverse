@@ -3,7 +3,7 @@ import type { HashiverseClientWasmProxy } from "../../Hashiverse.ts";
 import { TabHeader } from "../TabHeader.tsx";
 import { ComposeEditor } from "./ComposeEditor.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 }
 

@@ -37,7 +37,7 @@ use crate::protocol::posting::encoded_post_feedback::EncodedPostFeedbackV1;
 /// The wire-level discriminator for every RPC request the protocol supports.
 ///
 /// This `u16` value sits in the RPC request header so the server-side dispatcher can route
-/// each incoming [`crate::protocol::rpc::RpcRequestPacketRx`] to the correct handler
+/// each incoming [`crate::protocol::rpc::rpc_request::RpcRequestPacketRx`] to the correct handler
 /// without having to partially decode the payload first. The variants cover the three
 /// main subsystems: peer exchange (`PingV1`, `BootstrapV1`, `AnnounceV2`), posting and
 /// retrieval (`GetPostBundleV1`, `SubmitPostClaimV1`, `SubmitPostCommitV1`, feedback, heal,
@@ -84,7 +84,7 @@ impl PayloadRequestKind {
 /// Each variant pairs with a [`PayloadRequestKind`] of the same name minus the `Response`
 /// suffix (plus the unpaired `ErrorResponseV1`, which any handler may return on failure).
 /// The discriminator rides in the response header so the client knows which payload
-/// deserializer to use when it parses an [`crate::protocol::rpc::RpcResponsePacketRx`].
+/// deserializer to use when it parses an [`crate::protocol::rpc::rpc_response::RpcResponsePacketRx`].
 ///
 /// Additions go at the end of the enum to preserve backwards compatibility.
 #[derive(Debug, Display, PartialEq, Clone, FromRepr)]

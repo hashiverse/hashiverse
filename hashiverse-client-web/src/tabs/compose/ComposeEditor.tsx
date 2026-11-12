@@ -83,7 +83,7 @@ export interface ComposeEditorHandle {
 	insert_url_preview: (url: string) => void;
 }
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	restore_draft?: boolean;
 	on_posted?: () => void | Promise<void>;

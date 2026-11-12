@@ -5,7 +5,7 @@ import { useNavigate } from "react-router";
 import type { HashiverseClientWasmProxy, PeerInfoV1 } from "../../Hashiverse.ts";
 import { TabHeader } from "../TabHeader.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 }
 

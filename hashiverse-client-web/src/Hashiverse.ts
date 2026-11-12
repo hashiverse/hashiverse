@@ -2,7 +2,7 @@
  * Main-thread API facade for the hashiverse WASM client.
  *
  * All WASM work runs off the main thread inside a dedicated
- * {@link HashiverseWorker}.  This module spawns that worker, waits for
+ * {@link "workers/HashiverseWorker"! | HashiverseWorker}.  This module spawns that worker, waits for
  * it to initialise, and returns a {@link HashiverseClientWasmProxy} proxy whose
  * method calls are transparently forwarded over `MessageChannel` RPC.
  *
@@ -28,14 +28,14 @@ import { DeferredPromise } from "./tools/DeferredPromise.ts";
 import type { RPCRequest, RPCResponse } from "./tools/HashiverseWorkerRPC.ts";
 
 // biome-ignore lint/suspicious/noExplicitAny: required for conditional type inference in MethodKeys/WrapAsync
-type AnyFn = (...args: any[]) => any;
+export type AnyFn = (...args: any[]) => any;
 
-type MethodKeys<T> = {
+export type MethodKeys<T> = {
 	[K in keyof T]: T[K] extends AnyFn ? K : never;
 }[keyof T];
 
 // biome-ignore lint/suspicious/noExplicitAny: required for conditional type inference in MethodKeys/WrapAsync
-type WrapAsync<T extends AnyFn> = T extends (...args: infer A) => infer R ? (R extends Promise<any> ? T : (...args: A) => Promise<R>) : never;
+export type WrapAsync<T extends AnyFn> = T extends (...args: infer A) => infer R ? (R extends Promise<any> ? T : (...args: A) => Promise<R>) : never;
 
 /**
  * Async proxy type mirroring every public method on {@link HashiverseClientWasm},
@@ -43,7 +43,7 @@ type WrapAsync<T extends AnyFn> = T extends (...args: infer A) => infer R ? (R e
  * `Symbol.dispose`) are excluded and replaced with a JS-friendly `dispose()`.
  *
  * Calls on this proxy are forwarded over `MessageChannel` RPC to the
- * {@link HashiverseWorker}, which invokes the real {@link HashiverseClientWasm}
+ * {@link "workers/HashiverseWorker"! | HashiverseWorker}, which invokes the real {@link HashiverseClientWasm}
  * method inside its dedicated Web Worker.
  */
 export type HashiverseClientWasmProxy = {

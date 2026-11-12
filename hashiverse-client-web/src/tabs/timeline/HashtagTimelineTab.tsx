@@ -11,7 +11,7 @@ import { TabHeader } from "../TabHeader.tsx";
 import { Banner } from "./Banner.tsx";
 import { TimelineControl } from "./TimelineControl.tsx";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	user_settings_cache: UserSettingsCache;
 }

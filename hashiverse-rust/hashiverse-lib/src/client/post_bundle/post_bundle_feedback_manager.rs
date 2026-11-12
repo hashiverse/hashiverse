@@ -14,7 +14,7 @@ use crate::protocol::posting::encoded_post_bundle_feedback::EncodedPostBundleFee
 use crate::tools::buckets::BucketLocation;
 use crate::tools::time::TimeMillis;
 
-/// The counterpart to [`PostBundleManager`] that fetches the signed feedback attached to a
+/// The counterpart to [`PostBundleManager`](crate::client::post_bundle::post_bundle_manager::PostBundleManager) that fetches the signed feedback attached to a
 /// post bundle — the reactions, flags, and visibility hints that clients use to filter and
 /// rank the posts they display.
 ///

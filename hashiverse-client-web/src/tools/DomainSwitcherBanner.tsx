@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { get_alternate_domain_urls } from "../tabs/login/domains.ts";
 import { LOCAL_SETTINGS_KEY_PREFERRED_DOMAIN, local_settings_set } from "./LocalSettings.ts";
 
-interface Props {
+export interface Props {
 	hash_path: string;
 }
 

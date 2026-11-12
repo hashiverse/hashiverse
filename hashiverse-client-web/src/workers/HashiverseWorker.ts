@@ -2,12 +2,12 @@
  * Dedicated Web Worker that owns the {@link HashiverseClientWasm} instance.
  *
  * The main thread never loads WASM directly — it communicates with this
- * worker via `MessageChannel` RPC (see {@link HashiverseWorkerRPC} for the
+ * worker via `MessageChannel` RPC (see {@link "tools/HashiverseWorkerRPC"! | HashiverseWorkerRPC} for the
  * message types).  On startup the worker initialises WASM, spawns a pool
- * of {@link HashiversePowWorker} sub-workers for proof-of-work, then
+ * of {@link "workers/HashiversePowWorker"! | HashiversePowWorker} sub-workers for proof-of-work, then
  * signals readiness to the main thread.
  *
- * Every method call on {@link HashiverseClientWasmProxy} in the main thread arrives
+ * Every method call on {@link "Hashiverse"!HashiverseClientWasmProxy | HashiverseClientWasmProxy} in the main thread arrives
  * here as a `{ type: "call", method, args }` message, is dispatched to
  * the WASM client, and the result (or error) is posted back.
  *

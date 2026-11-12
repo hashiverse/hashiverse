@@ -21,7 +21,7 @@ function compute_reveal_delay(feedbacks: Uint32Array, triggered: FeedbackOption[
 	return max_delay;
 }
 
-interface Props {
+export interface Props {
 	feedbacks: Uint32Array | null;
 	is_own_post: boolean;
 	is_author_followed: boolean;

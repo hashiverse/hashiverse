@@ -61,7 +61,7 @@ use tokio::sync::watch;
 ///    bundle (`get_post_bundle_settled`).  The walk itself carries on to cache, heal and upload —
 ///    see [`crate::client::post_bundle::post_bundle_healing`].
 ///
-/// Concurrent requests for the same bundle share one walk via [`InflightPostBundleFetches`], so
+/// Concurrent requests for the same bundle share one walk via `InflightPostBundleFetches`, so
 /// a burst of timeline scrolls cannot fan out into redundant RPCs. The
 /// [`crate::client::caching::cache_radius_tracker::CacheRadiusTracker`] helps the caching
 /// role of a server decide how widely to mirror bundles.

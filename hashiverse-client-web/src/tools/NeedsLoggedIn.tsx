@@ -3,7 +3,7 @@ import { NotLoggedInPanel } from "../tabs/login/NotLoggedInPanel.tsx";
 import { TabHeader } from "../tabs/TabHeader.tsx";
 import type { UserSettingsCache } from "./UserSettingsCache.ts";
 
-type NeedsLoggedInProps = {
+export type NeedsLoggedInProps = {
 	user_settings_cache: UserSettingsCache;
 	children: React.ReactNode;
 };

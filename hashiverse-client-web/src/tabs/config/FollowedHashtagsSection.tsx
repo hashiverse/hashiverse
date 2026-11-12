@@ -8,7 +8,7 @@ import type { HashiverseClientWasmProxy } from "../../Hashiverse.ts";
 import { CollapsiblePanel } from "../../tools/CollapsiblePanel.tsx";
 import { Toast } from "../../tools/Toast.ts";
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 	on_settings_changed: () => void;
 }

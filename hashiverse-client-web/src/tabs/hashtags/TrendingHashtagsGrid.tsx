@@ -76,7 +76,7 @@ const OverflowMarquee: React.FC<{
 	);
 };
 
-interface Props {
+export interface Props {
 	hashiverse: HashiverseClientWasmProxy;
 }
 
