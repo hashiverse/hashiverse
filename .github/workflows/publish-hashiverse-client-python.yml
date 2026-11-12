@@ -176,14 +176,21 @@ jobs:
           source .venv/bin/activate
           python -m pip install --quiet --upgrade pip
 
-          # Retry briefly — PyPI propagation can lag a few seconds.
-          for i in 1 2 3 4 5; do
-            if pip install --pre "hashiverse-client==$pep440_version"; then
+          # PyPI's simple index can lag the upload by several minutes, so retry for ~15 minutes.
+          # --no-cache-dir so each attempt re-fetches the index rather than reusing a stale page.
+          installed=0
+          for i in $(seq 1 30); do
+            if pip install --pre --no-cache-dir "hashiverse-client==$pep440_version"; then
+              installed=1
               break
             fi
-            echo "install attempt $i failed, retrying..."
-            sleep 5
+            echo "install attempt $i failed, retrying in 30s..."
+            sleep 30
           done
+          if [ "$installed" != "1" ]; then
+            echo "::error::hashiverse-client==$pep440_version not installable from PyPI after 30 attempts"
+            exit 1
+          fi
 
           python - <<'PY'
           from importlib.metadata import version

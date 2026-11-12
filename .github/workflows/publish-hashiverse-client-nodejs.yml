@@ -279,26 +279,30 @@ jobs:
           scratch=$(mktemp -d)
           cd "$scratch"
           npm init -y >/dev/null
-          # The registry CDN can serve a stale packument for up to ~5 minutes
-          # after publish, so retry for ~6 minutes. --prefer-online makes npm
+          cat > smoke.mjs <<'JS'
+          import { HashiverseClient, convertTextToHashiverseHtmlXHashtag } from "@hashiverse/hashiverse-client-nodejs";
+          if (typeof HashiverseClient !== "function") throw new Error("HashiverseClient missing");
+          const out = convertTextToHashiverseHtmlXHashtag("RuStLang");
+          if (!out.includes("hashtag=\"rustlang\"")) throw new Error("helper broken: " + out);
+          console.log("ok: imported from npm");
+          JS
+          # The registry CDN can serve a stale packument for each package for 7+ minutes
+          # after publish, so retry for ~15 minutes. The root package can become visible before
+          # its platform subpackage, in which case npm silently skips the (optional) subpackage
+          # and the install "succeeds" — so an attempt only counts once the import works too,
+          # and each attempt starts from a clean node_modules. --prefer-online makes npm
           # revalidate metadata on every attempt instead of reusing its cache.
-          installed=0
-          for i in $(seq 1 12); do
-            if npm install "@hashiverse/hashiverse-client-nodejs@$version" --no-audit --no-fund --prefer-online; then
-              installed=1
+          verified=0
+          for i in $(seq 1 30); do
+            rm -rf node_modules package-lock.json
+            if npm install "@hashiverse/hashiverse-client-nodejs@$version" --no-audit --no-fund --prefer-online && node smoke.mjs; then
+              verified=1
               break
             fi
-            echo "install attempt $i failed, retrying in 30s..."
+            echo "install/import attempt $i failed, retrying in 30s..."
             sleep 30
           done
-          if [ "$installed" != "1" ]; then
-            echo "::error::@hashiverse/hashiverse-client-nodejs@$version not installable from npm after 12 attempts"
+          if [ "$verified" != "1" ]; then
+            echo "::error::@hashiverse/hashiverse-client-nodejs@$version not installable and importable from npm after 30 attempts"
             exit 1
           fi
-          node --input-type=module -e "
-            import { HashiverseClient, convertTextToHashiverseHtmlXHashtag } from '@hashiverse/hashiverse-client-nodejs';
-            if (typeof HashiverseClient !== 'function') throw new Error('HashiverseClient missing');
-            const out = convertTextToHashiverseHtmlXHashtag('RuStLang');
-            if (!out.includes('hashtag=\"rustlang\"')) throw new Error('helper broken: ' + out);
-            console.log('ok: imported ' + '$version' + ' from npm');
-          "
