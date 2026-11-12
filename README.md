@@ -10,6 +10,49 @@ Hashiverse is owned by you, the Hashiverse community. It is completely open-sour
 
 Live it right now at https://www.hashiverse.com
 
+## Run a server, or use the command line
+
+`hashiverse-server` and `hashiverse-cli` are published as signed apt/dnf packages (amd64 and arm64) for Debian 12+, Ubuntu 22.04+, RHEL/Rocky/Alma 9+ and Fedora.
+
+Debian / Ubuntu:
+
+```bash
+curl -fsSL https://www.hashiverse.com/packages/hashiverse-packages.asc -o /usr/share/keyrings/hashiverse-packages.asc
+curl -fsSL https://www.hashiverse.com/packages/apt/hashiverse.sources -o /etc/apt/sources.list.d/hashiverse.sources
+curl -fsSL https://www.hashiverse.com/packages/apt/hashiverse-mirrors.txt -o /etc/apt/hashiverse-mirrors.txt
+apt-get update
+apt-get install -y hashiverse-server hashiverse-cli
+```
+
+Fedora / RHEL / Rocky / Alma:
+
+```bash
+curl -fsSL https://www.hashiverse.com/packages/hashiverse-packages.asc -o /etc/pki/rpm-gpg/RPM-GPG-KEY-hashiverse
+curl -fsSL https://www.hashiverse.com/packages/rpm/hashiverse.repo -o /etc/yum.repos.d/hashiverse.repo
+dnf install -y hashiverse-server hashiverse-cli
+```
+
+Install either package or both.
+
+- `hashiverse-server`:
+  - It runs as the systemd service `hashiverse-server` and needs port 443 open.
+  - It updates itself once a day; turn that off with `systemctl disable --now hashiverse-server-updater.timer`.
+  - Settings are in `/etc/default/hashiverse-server`, and logs are at `journalctl -u hashiverse-server`.
+  - The full walkthrough, including firewall setup, is at [www.hashiverse.com/en/lore/contribute](https://www.hashiverse.com/en/lore/contribute/).
+- `hashiverse-cli`: see its [README](hashiverse-rust/hashiverse-cli/README.md).
+
+Release candidates are published the same way from `https://www-prerelease.hashiverse.com/packages` (use it in place of `https://www.hashiverse.com/packages` above). A machine set up from there follows release candidates only.
+
+## Repository layout
+
+| Path | What it is |
+|---|---|
+| [`hashiverse-rust/`](hashiverse-rust) | Rust workspace: the protocol (`hashiverse-lib`), the server (`hashiverse-server-lib`, `hashiverse-server`), the command-line client (`hashiverse-cli`), and the Rust, WASM, Python and Node.js clients |
+| [`hashiverse-client-web/`](hashiverse-client-web) | The web app at [app.hashiverse.com](https://app.hashiverse.com), in TypeScript/React over the WASM client |
+| [`www/`](www) | The website at [www.hashiverse.com](https://www.hashiverse.com), in Astro; it also hosts the docs and the apt/dnf repository |
+| [`packaging/`](packaging) | Linux packaging: nfpm configs, systemd units, the auto-updater, the signed-repository builder and a Docker end-to-end test |
+| [`docker/`](docker) | Dockerfile for the `hashiverse-server` image |
+| [`news-feeds/`](news-feeds) | Curated RSS feed list for seeding the network with news |
 
 ## Licence
 

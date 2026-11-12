@@ -33,18 +33,23 @@
 
 ```
 hashiverse/
-├── hashiverse-rust/       # Rust workspace (server, protocol, WASM client)
-├── hashiverse-client-web/ # TypeScript/React web client
-├── hashiverse-rust/hashiverse-client-python/ # Python API wrapping hashiverse-client
-├── www/                   # Static landing page assets
-└── doc/                   # Documentation
+├── hashiverse-rust/       # Rust workspace: protocol, server, CLI, and the Rust/WASM/Python/Node clients (crate table below)
+├── hashiverse-client-web/ # TypeScript/React web client (the app at app.hashiverse.com)
+├── www/                   # Astro website www.hashiverse.com (lore, dev docs; also hosts the apt/dnf repo under /packages)
+├── packaging/             # Linux packages of hashiverse-server and hashiverse-cli: nfpm configs, systemd units,
+│                          #   auto-updater, signed-repo builder (build-repo.sh) and a Docker end-to-end test (test/run-local.sh)
+├── docker/                # Dockerfile for the hashiverse-server image
+├── news-feeds/            # Curated OPML of RSS feeds for news-agent
+└── news-agent/            # Separate git repo (gitignored here): Python daemon mirroring RSS into hashiverse
 ```
+
+The packages are built and published by `.github/workflows/build-www.yml`: a `vX.Y.Z` release goes to the `stable` repo at `www.hashiverse.com/packages`, and a `vX.Y.Z-rcN` prerelease goes to the `rc` repo at `www-prerelease.hashiverse.com/packages`.
 
 ## Build & Test Commands
 
 ### Rust (run from `hashiverse-rust/`)
 
-The workspace `default-members` are the host-buildable crates (`hashiverse-lib`, `hashiverse-server-lib`, `hashiverse-server`, `hashiverse-client-rust`). The extension-only crates (`hashiverse-client-wasm`, `hashiverse-client-python`, `hashiverse-client-nodejs`) and the slow `hashiverse-integration-tests` are workspace members but excluded from the default selection. So bare `cargo` invocations (no `-p`, no `--workspace`) are safe and fast — they won't try to compile wasm-bindgen / pyo3-extension-module / napi against the host target.
+The workspace `default-members` are the host-buildable crates (`hashiverse-lib`, `hashiverse-server-lib`, `hashiverse-server`, `hashiverse-client-rust`, `hashiverse-cli`). The extension-only crates (`hashiverse-client-wasm`, `hashiverse-client-python`, `hashiverse-client-nodejs`) and the slow `hashiverse-integration-tests` are workspace members but excluded from the default selection. So bare `cargo` invocations (no `-p`, no `--workspace`) are safe and fast — they won't try to compile wasm-bindgen / pyo3-extension-module / napi against the host target.
 
 ```bash
 # Fast: does everything compile? (default-members only, no tests run)
@@ -112,9 +117,13 @@ npm run format       # Biome format only (writes fixes)
 | Crate | Role |
 |---|---|
 | `hashiverse-lib` | Core protocol logic shared by all |
-| `hashiverse-server` | Server binary and server-specific logic |
+| `hashiverse-server-lib` | Server logic (transports, storage, DDoS protection) |
+| `hashiverse-server` | Thin server binary over `hashiverse-server-lib` |
+| `hashiverse-client-rust` | Native Rust client with production defaults (sqlite storage, on-disk key locker, HTTPS, parallel PoW) |
+| `hashiverse-cli` | Command-line client (`post`, `user`, `hashtag`, `trending`, interactive prompt) over `hashiverse-client-rust` |
 | `hashiverse-client-wasm` | Browser WASM client wrapper |
-| `hashiverse-client-python` | Python client wrapper |
+| `hashiverse-client-python` | Python client wrapper (PyO3) |
+| `hashiverse-client-nodejs` | Node.js client wrapper (napi) |
 | `hashiverse-integration-tests` | End-to-end tests combining all crates |
 
 ### hashiverse-lib (Core)
@@ -128,7 +137,11 @@ Four top-level modules in `src/lib.rs`:
 
 ### hashiverse-server
 
-The standalone production hashiverse server.
+The standalone production hashiverse server. Shipped as a Docker image and as the apt/dnf package `hashiverse-server` (systemd service with a daily auto-updater; see `packaging/`). Packages must be `--release` builds: production servers reject the reduced PoW of other profiles.
+
+### hashiverse-cli
+
+Command-line client; see `hashiverse-rust/hashiverse-cli/README.md`. Also shipped as the apt/dnf package `hashiverse-cli`.
 
 ### test-harness
 
