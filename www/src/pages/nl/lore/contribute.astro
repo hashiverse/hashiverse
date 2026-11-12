@@ -67,7 +67,8 @@ apt-get install -y hashiverse-server</code></pre>
     Op Fedora, Rocky, Alma of RHEL voeg je in plaats daarvan de repository toe en installeer je
     met <code>dnf</code> (en open je poort 443 in <code>firewalld</code>):
   </p>
-  <pre><code>curl -fsSL https://www.hashiverse.com/packages/rpm/hashiverse.repo -o /etc/yum.repos.d/hashiverse.repo
+  <pre><code>curl -fsSL https://www.hashiverse.com/packages/hashiverse-packages.asc -o /etc/pki/rpm-gpg/RPM-GPG-KEY-hashiverse
+curl -fsSL https://www.hashiverse.com/packages/rpm/hashiverse.repo -o /etc/yum.repos.d/hashiverse.repo
 dnf install -y hashiverse-server</code></pre>
   <p>
     De server draait als de systemd-service <code>hashiverse-server</code> en houdt zichzelf
