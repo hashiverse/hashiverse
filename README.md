@@ -25,8 +25,8 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 ## Builds
 
 - [![build-app](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml)
-- [![build-www](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml) — the website, plus `hashiverse-server` and `hashiverse-cli` (amd64/arm64) as signed apt/dnf packages under `www.hashiverse.com/packages` (release candidates under `www-prerelease.hashiverse.com/packages`).
 - [![build-server](https://github.com/hashiverse/hashiverse/actions/workflows/build-server.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-server.yml)
+- [![build-www](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml) — the website, plus `hashiverse-server` and `hashiverse-cli` (amd64/arm64) as signed apt/dnf packages under `www.hashiverse.com/packages` (release candidates under `www-prerelease.hashiverse.com/packages`).
 
 ## Publishes
 
