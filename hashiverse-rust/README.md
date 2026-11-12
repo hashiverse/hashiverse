@@ -18,9 +18,9 @@ This is Hashiverse.
 
 ## Builds
 
-- [![build-server](https://github.com/hashiverse/hashiverse/actions/workflows/build-server.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-server.yml)
-- [![build-www](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml) — includes the `hashiverse-server` and `hashiverse-cli` apt/dnf packages (see [`packaging/`](../packaging))
-- [![publish-hashiverse-client-python](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml)
+- [![build-server](https://github.com/hashiverse/hashiverse/actions/workflows/build-server.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/build-server.yml)
+- [![build-www](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml) — includes the `hashiverse-server` and `hashiverse-cli` apt/dnf packages (see [`packaging/`](../packaging))
+- [![publish-hashiverse-client-python](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml)
 
 ## Tests
 

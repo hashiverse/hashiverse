@@ -10,7 +10,7 @@ This library is common to the associated hashiverse-server and hashiverse-client
 
 ## Publish
 
-[![publish-hashiverse-rust](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-rust.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-rust.yml) — published to [crates.io](https://crates.io/crates/hashiverse-lib) on release events, alongside `hashiverse-server-lib` and `hashiverse-client-rust`.
+[![publish-hashiverse-rust](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-rust.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-rust.yml) — published to [crates.io](https://crates.io/crates/hashiverse-lib) on release events, alongside `hashiverse-server-lib` and `hashiverse-client-rust`.
 
 ## Fuzzing
 

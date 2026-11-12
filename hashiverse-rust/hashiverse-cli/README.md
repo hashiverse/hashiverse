@@ -17,7 +17,7 @@ At the interactive prompt, type `help` to list the available commands.
 
 ## Building
 
-[![build-www](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml) as the apt/dnf package `hashiverse-cli`
+[![build-www](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml) as the apt/dnf package `hashiverse-cli`
 
 From `hashiverse-rust/` (nightly Rust, as pinned by `rust-toolchain.toml`):
 

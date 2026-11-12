@@ -4,7 +4,7 @@ This is the hashiverse client.
 
 ## Builds
 
-- [![build-app](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml)
+- [![build-app](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml)
 
 ## Checks
 
