@@ -6,7 +6,9 @@
 # Usage: install-test.sh <phase> <packages-base-url> <expected-server-version> <expected-cli-version>
 #
 #   install  configure the repo from <packages-base-url> and install both packages
-#   upgrade  run the auto-updater; expects ONLY hashiverse-server to reach the new version
+#   upgrade  re-fetch the repo config from <packages-base-url> (so pointing it at another repository
+#            switches channel, e.g. rc -> stable), run the auto-updater, and expect ONLY
+#            hashiverse-server to reach the new version
 #   remove   remove hashiverse-server; expects the node and updater stopped and disabled
 #
 # <packages-base-url> is the /packages directory (holding hashiverse-packages.asc, apt/, rpm/).
@@ -55,20 +57,29 @@ expect_versions() {
     pass "versions: server $server_version, cli $cli_version"
 }
 
+# The repository setup lines from the README.
+configure_repository() {
+    if [ "$family" = apt ]; then
+        curl -fsSL "$base_url/hashiverse-packages.asc" -o /usr/share/keyrings/hashiverse-packages.asc
+        curl -fsSL "$base_url/apt/hashiverse.sources" -o /etc/apt/sources.list.d/hashiverse.sources
+        curl -fsSL "$base_url/apt/hashiverse-mirrors.txt" -o /etc/apt/hashiverse-mirrors.txt
+    else
+        curl -fsSL "$base_url/hashiverse-packages.asc" -o /etc/pki/rpm-gpg/RPM-GPG-KEY-hashiverse
+        curl -fsSL "$base_url/rpm/hashiverse.repo" -o /etc/yum.repos.d/hashiverse.repo
+    fi
+}
+
 case "$phase" in
 install)
     if [ "$family" = apt ]; then
         export DEBIAN_FRONTEND=noninteractive
         apt-get update -qq
         apt-get install -y -qq curl ca-certificates >/dev/null
-        curl -fsSL "$base_url/hashiverse-packages.asc" -o /usr/share/keyrings/hashiverse-packages.asc
-        curl -fsSL "$base_url/apt/hashiverse.sources" -o /etc/apt/sources.list.d/hashiverse.sources
-        curl -fsSL "$base_url/apt/hashiverse-mirrors.txt" -o /etc/apt/hashiverse-mirrors.txt
+        configure_repository
         apt-get update
         apt-get install -y hashiverse-server hashiverse-cli
     else
-        curl -fsSL "$base_url/hashiverse-packages.asc" -o /etc/pki/rpm-gpg/RPM-GPG-KEY-hashiverse
-        curl -fsSL "$base_url/rpm/hashiverse.repo" -o /etc/yum.repos.d/hashiverse.repo
+        configure_repository
         dnf install -y hashiverse-server hashiverse-cli
     fi
     pass "installed with signature checks on"
@@ -115,6 +126,7 @@ install)
     ;;
 
 upgrade)
+    configure_repository
     echo "# operator edit" >> /etc/default/hashiverse-server
 
     if [ "$have_systemd" = true ]; then

@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# Local end-to-end test of the packaging, using Docker. Builds two versions of the packages
-# (with stand-in binaries unless real ones are given), two signed repositories, and runs
-# install-test.sh through install -> auto-upgrade -> remove in each target distro.
+# Local end-to-end test of the packaging, using Docker. Builds packages (with stand-in binaries)
+# for two stable versions and two release candidates, a signed repository for each, and runs
+# install-test.sh in each target distro through two lanes:
+#   stable  install 0.0.1 -> auto-upgrade to 0.0.2 -> remove
+#   rc      install 0.0.2-rc1 from the rc repo -> auto-upgrade to rc2 -> switch the box to the
+#           stable repo and auto-upgrade to 0.0.2 (an rc sorts before its final) -> remove
 #
 # Usage (from the repository root):
 #   packaging/test/run-local.sh [work-dir] [distro-image ...]
 #
-# The repo's mirror list puts a dead mirror first, to check that clients fail over.
+# Each repo's mirror list puts a dead mirror first, to check that clients fail over.
 # Images whose name contains "systemd" or "init" are run with systemd as PID 1 (privileged),
 # which additionally checks enable/start on install, restart on upgrade, and stop on removal.
 set -euo pipefail
@@ -19,10 +22,22 @@ if [ "${#images[@]}" -eq 0 ]; then
     images=(debian:12 ubuntu:22.04 rockylinux:9 fedora:latest jrei/systemd-debian:12 rockylinux/rockylinux:9-ubi-init)
 fi
 
+# Same algorithm as the production key (packaging/hashiverse-packages.asc); override to try others.
+test_key_algorithm="${HASHIVERSE_TEST_KEY_ALGORITHM:-ed25519}"
+
 version_1="0.0.1"
 version_2="0.0.2"
+rc_version_1="0.0.2-rc1"
+rc_version_2="0.0.2-rc2"
+all_versions="$version_1 $version_2 $rc_version_1 $rc_version_2"
 network="hashiverse-packaging-test"
 repo_container="hashiverse-packaging-test-repo"
+container="hashiverse-packaging-test-target"
+
+# The version dpkg and rpm report once installed: nfpm turns a semver prerelease "-rc1" into "~rc1".
+installed_form() {
+    echo "${1/-/"~"}"
+}
 
 rm -rf "$work_dir"
 mkdir -p "$work_dir"
@@ -34,7 +49,7 @@ docker_path() {
 }
 
 echo "=== stand-in binaries"
-for version in "$version_1" "$version_2"; do
+for version in $all_versions; do
     mkdir -p "$work_dir/bin-$version"
     cat > "$work_dir/bin-$version/hashiverse-cli" <<EOF
 #!/bin/sh
@@ -66,7 +81,7 @@ EOF
 done
 
 echo "=== nfpm packages"
-for version in "$version_1" "$version_2"; do
+for version in $all_versions; do
     mkdir -p "$work_dir/packages-$version"
     for package in hashiverse-server hashiverse-cli; do
         for packager in deb rpm; do
@@ -79,17 +94,25 @@ for version in "$version_1" "$version_2"; do
 done
 
 echo "=== signed repositories"
+# The dead first mirror (port 9) checks failover. Each channel is served from its own path, as
+# stable and rc are from their own hosts in production.
+cat > "$work_dir/build-repos.sh" <<EOF
+set -eu
+apt-get update -qq && apt-get install -y -qq gnupg apt-utils rpm createrepo-c >/dev/null
+gpg --batch --quick-gen-key --passphrase "" "Hashiverse Packages Test" $test_key_algorithm sign never
+for version in $version_1 $version_2; do
+    HASHIVERSE_PACKAGE_MIRRORS="http://127.0.0.1:9/packages http://$repo_container:8000/stable" \\
+        bash /src/packaging/build-repo.sh "/work/packages-\$version" "/work/repo-\$version" "Hashiverse Packages Test"
+done
+for version in $rc_version_1 $rc_version_2; do
+    HASHIVERSE_PACKAGE_CHANNEL=rc HASHIVERSE_PACKAGE_MIRRORS="http://127.0.0.1:9/packages http://$repo_container:8000/rc" \\
+        bash /src/packaging/build-repo.sh "/work/packages-\$version" "/work/repo-\$version" "Hashiverse Packages Test"
+done
+mkdir -p /work/serve
+EOF
 MSYS_NO_PATHCONV=1 docker run --rm \
     -v "$(docker_path "$repository_root"):/src:ro" -v "$(docker_path "$work_dir"):/work" \
-    -e HASHIVERSE_PACKAGE_MIRRORS="http://127.0.0.1:9/packages http://$repo_container:8000/current" \
-    ubuntu:24.04 bash -euc "
-        apt-get update -qq && apt-get install -y -qq gnupg apt-utils rpm createrepo-c >/dev/null
-        gpg --batch --quick-gen-key --passphrase '' 'Hashiverse Packages Test' rsa4096 sign never
-        for version in $version_1 $version_2; do
-            bash /src/packaging/build-repo.sh /work/packages-\$version /work/repo-\$version 'Hashiverse Packages Test'
-        done
-        mkdir -p /work/serve && cp -r /work/repo-$version_1 /work/serve/current
-    "
+    ubuntu:24.04 bash /work/build-repos.sh
 
 echo "=== repository server"
 docker network create "$network" >/dev/null 2>&1 || true
@@ -97,18 +120,15 @@ docker rm -f "$repo_container" >/dev/null 2>&1 || true
 MSYS_NO_PATHCONV=1 docker run -d --name "$repo_container" --network "$network" \
     -v "$(docker_path "$work_dir"):/work" -w /work/serve python:3-alpine python -m http.server 8000 >/dev/null
 
+# serve_version <stable|rc> <version>: publish that version's repository as the channel's current one.
 serve_version() {
-    MSYS_NO_PATHCONV=1 docker exec "$repo_container" sh -c "rm -rf /work/serve/current && cp -r /work/repo-$1 /work/serve/current"
+    MSYS_NO_PATHCONV=1 docker exec "$repo_container" sh -c "rm -rf /work/serve/$1 && cp -r /work/repo-$2 /work/serve/$1"
 }
 
-results=()
-for image in "${images[@]}"; do
-    echo "=== $image"
-    serve_version "$version_1"
-    container="hashiverse-packaging-test-target"
+start_target() {
+    local image="$1"
     docker rm -f "$container" >/dev/null 2>&1 || true
-
-    run_args=(--name "$container" --network "$network" -v "$(docker_path "$repository_root/packaging/test"):/test:ro")
+    local run_args=(--name "$container" --network "$network" -v "$(docker_path "$repository_root/packaging/test"):/test:ro")
     if [[ "$image" == *systemd* || "$image" == *init* ]]; then
         MSYS_NO_PATHCONV=1 docker run -d --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw "${run_args[@]}" "$image" >/dev/null
         for _ in $(seq 1 30); do
@@ -118,21 +138,46 @@ for image in "${images[@]}"; do
     else
         MSYS_NO_PATHCONV=1 docker run -d "${run_args[@]}" "$image" sleep infinity >/dev/null
     fi
+}
 
-    base_url="http://$repo_container:8000/current"
-    status="PASS"
-    if ! MSYS_NO_PATHCONV=1 docker exec "$container" sh /test/install-test.sh install "$base_url" "$version_1" "$version_1"; then
-        status="FAIL (install)"
-    else
-        serve_version "$version_2"
-        if ! MSYS_NO_PATHCONV=1 docker exec "$container" sh /test/install-test.sh upgrade "$base_url" "$version_2" "$version_1"; then
-            status="FAIL (upgrade)"
-        elif ! MSYS_NO_PATHCONV=1 docker exec "$container" sh /test/install-test.sh remove "$base_url" "" "$version_1"; then
-            status="FAIL (remove)"
-        fi
-    fi
-    docker rm -f "$container" >/dev/null
-    results+=("$status  $image")
+# install_test <phase> <stable|rc> <expected-server-version> <expected-cli-version>
+install_test() {
+    MSYS_NO_PATHCONV=1 docker exec "$container" sh /test/install-test.sh "$1" "http://$repo_container:8000/$2" "$3" "$4" >&2
+}
+
+# Each lane prints its result as its last line of stdout; everything else goes to stderr.
+stable_lane() {
+    serve_version stable "$version_1"
+    install_test install stable "$version_1" "$version_1" || { echo "FAIL (install)"; return; }
+    serve_version stable "$version_2"
+    install_test upgrade stable "$version_2" "$version_1" || { echo "FAIL (upgrade)"; return; }
+    install_test remove stable "" "$version_1" || { echo "FAIL (remove)"; return; }
+    echo "PASS"
+}
+
+rc_lane() {
+    local rc_1 rc_2
+    rc_1="$(installed_form "$rc_version_1")"
+    rc_2="$(installed_form "$rc_version_2")"
+    serve_version rc "$rc_version_1"
+    install_test install rc "$rc_1" "$rc_1" || { echo "FAIL (install)"; return; }
+    serve_version rc "$rc_version_2"
+    install_test upgrade rc "$rc_2" "$rc_1" || { echo "FAIL (upgrade rc)"; return; }
+    serve_version stable "$version_2"
+    install_test upgrade stable "$version_2" "$rc_1" || { echo "FAIL (rc -> stable)"; return; }
+    install_test remove stable "" "$rc_1" || { echo "FAIL (remove)"; return; }
+    echo "PASS"
+}
+
+results=()
+for image in "${images[@]}"; do
+    for lane in stable rc; do
+        echo "=== $image ($lane)"
+        start_target "$image"
+        status="$("${lane}_lane" | tail -n 1)"
+        docker rm -f "$container" >/dev/null
+        results+=("$status  $image ($lane)")
+    done
 done
 
 docker rm -f "$repo_container" >/dev/null

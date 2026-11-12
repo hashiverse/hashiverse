@@ -12,12 +12,16 @@
 #   PACKAGES_GPG_PASSPHRASE    passphrase for the signing key (optional)
 #   HASHIVERSE_PACKAGE_MIRRORS space-separated base URLs of the /packages directory on every
 #                              mirror, in failover order (default: www.hashiverse.{com,eu,ch})
+#   HASHIVERSE_PACKAGE_CHANNEL stable (default) or rc. Names the apt suite. The rc repository is
+#                              hosted separately (www-prerelease) but its client config keeps the
+#                              same file names and dnf repo id, so a box's channel is just which
+#                              host it fetched that config from, and the auto-updater is unchanged.
 #
 # Needs: gpg, apt-ftparchive (apt-utils), rpmsign (rpm), createrepo_c, gzip.
 #
 # Output:
 #   <output-dir>/hashiverse-packages.asc         public signing key
-#   <output-dir>/apt/dists/stable/...            apt metadata (InRelease, Release, Release.gpg, Packages)
+#   <output-dir>/apt/dists/<channel>/...         apt metadata (InRelease, Release, Release.gpg, Packages)
 #   <output-dir>/apt/pool/main/*.deb
 #   <output-dir>/apt/hashiverse.sources          client config -> /etc/apt/sources.list.d/
 #   <output-dir>/apt/hashiverse-mirrors.txt      client mirror list -> /etc/apt/
@@ -35,7 +39,16 @@ packages_dir="$(cd "$1" && pwd)"
 output_dir="$2"
 gpg_key_id="$3"
 mirrors="${HASHIVERSE_PACKAGE_MIRRORS:-https://www.hashiverse.com/packages https://www.hashiverse.eu/packages https://www.hashiverse.ch/packages}"
+channel="${HASHIVERSE_PACKAGE_CHANNEL:-stable}"
 architectures="amd64 arm64"
+
+case "$channel" in
+stable | rc) ;;
+*)
+    echo "HASHIVERSE_PACKAGE_CHANNEL must be stable or rc, not '$channel'" >&2
+    exit 2
+    ;;
+esac
 
 if [ -e "$output_dir" ]; then
     echo "output dir $output_dir already exists" >&2
@@ -85,7 +98,7 @@ cp "${deb_files[@]}" "$apt_dir/pool/main/"
 (
     cd "$apt_dir"
     for architecture in $architectures; do
-        binary_dir="dists/stable/main/binary-$architecture"
+        binary_dir="dists/$channel/main/binary-$architecture"
         mkdir -p "$binary_dir"
         apt-ftparchive --arch "$architecture" packages pool/main > "$binary_dir/Packages"
         gzip -9 --keep --no-name "$binary_dir/Packages"
@@ -94,16 +107,16 @@ cp "${deb_files[@]}" "$apt_dir/pool/main/"
     apt-ftparchive \
         -o APT::FTPArchive::Release::Origin=Hashiverse \
         -o APT::FTPArchive::Release::Label=Hashiverse \
-        -o APT::FTPArchive::Release::Suite=stable \
-        -o APT::FTPArchive::Release::Codename=stable \
+        -o APT::FTPArchive::Release::Suite="$channel" \
+        -o APT::FTPArchive::Release::Codename="$channel" \
         -o APT::FTPArchive::Release::Architectures="$architectures" \
         -o APT::FTPArchive::Release::Components=main \
         -o APT::FTPArchive::Release::Description="Hashiverse packages" \
-        release dists/stable > dists/stable/Release.tmp
-    mv dists/stable/Release.tmp dists/stable/Release
+        release "dists/$channel" > "dists/$channel/Release.tmp"
+    mv "dists/$channel/Release.tmp" "dists/$channel/Release"
 
-    gpg "${gpg_sign_args[@]}" --clearsign --output dists/stable/InRelease dists/stable/Release
-    gpg "${gpg_sign_args[@]}" --armor --detach-sign --output dists/stable/Release.gpg dists/stable/Release
+    gpg "${gpg_sign_args[@]}" --clearsign --output "dists/$channel/InRelease" "dists/$channel/Release"
+    gpg "${gpg_sign_args[@]}" --armor --detach-sign --output "dists/$channel/Release.gpg" "dists/$channel/Release"
 )
 
 # Client config. apt's mirror+file method tries the listed mirrors in order.
@@ -111,10 +124,10 @@ for mirror in $mirrors; do
     echo "$mirror/apt"
 done > "$apt_dir/hashiverse-mirrors.txt"
 
-cat > "$apt_dir/hashiverse.sources" <<'EOF'
+cat > "$apt_dir/hashiverse.sources" <<EOF
 Types: deb
 URIs: mirror+file:/etc/apt/hashiverse-mirrors.txt
-Suites: stable
+Suites: $channel
 Components: main
 Signed-By: /usr/share/keyrings/hashiverse-packages.asc
 EOF
@@ -141,7 +154,7 @@ gpg "${gpg_sign_args[@]}" --armor --detach-sign --output "$rpm_dir/repodata/repo
 # Client config. dnf fails over between the baseurls in order.
 {
     echo "[hashiverse]"
-    echo "name=Hashiverse"
+    echo "name=Hashiverse ($channel)"
     first=true
     for mirror in $mirrors; do
         if [ "$first" = true ]; then
