@@ -33,7 +33,9 @@ const prerelease_tag = import.meta.env.PUBLIC_PRERELEASE_TAG;
 const path_without_locale = Astro.url.pathname.replace(/^\/[a-z]{2}(\/|$)/, "/");
 const canonical_href = Astro.site ? new URL(`/${locale}${path_without_locale}`, Astro.site).href : `/${locale}${path_without_locale}`;
 const alternate_href = (l: string) => Astro.site ? new URL(`/${l}${path_without_locale}`, Astro.site).href : `/${l}${path_without_locale}`;
-const x_default_href = Astro.site ? new URL("/", Astro.site).href : "/";
+// x-default is /en/, the canonical of the site root (which serves the English home page).
+const x_default_href = Astro.site ? new URL("/en/", Astro.site).href : "/en/";
+const is_site_root = Astro.url.pathname === "/";
 
 const full_title = title === t.site.title_suffix ? t.site.title_suffix : `${title} — ${t.site.title_suffix}`;
 const og_image_alt = `${t.site.title_suffix} — ${description}`;
@@ -48,6 +50,19 @@ const software_application_schema = build_software_application_schema(t.site.def
 <html lang={locale}>
   <head>
     <meta charset="UTF-8" />
+    {is_site_root && (
+      <script is:inline define:vars={{ supported_locales }}>
+        (function () {
+          const langs = (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || "en"]);
+          let target = "en";
+          for (const raw of langs) {
+            const code = (raw || "").slice(0, 2).toLowerCase();
+            if (supported_locales.includes(code)) { target = code; break; }
+          }
+          window.location.replace("/" + target + "/");
+        })();
+      </script>
+    )}
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
     <title>{full_title}</title>

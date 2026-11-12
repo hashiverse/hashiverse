@@ -19,6 +19,8 @@ export default defineConfig({
   integrations: [
     mdx(),
     sitemap({
+      // The root serves the English home page with canonical /en/, so only /en/ is listed.
+      filter: (page) => page !== "https://www.hashiverse.com/",
       i18n: {
         defaultLocale: "en",
         locales: sitemap_locales,
