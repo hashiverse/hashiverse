@@ -5,6 +5,6 @@
 #
 # Examples:
 #   --port 443
-#   --log-level info                         (error, warn, info, debug, trace)
+#   --log-level trace                        (error, warn, info, debug, trace)
 #   --max-post-database-size-megabytes 20480
-HASHIVERSE_SERVER_ARGS="--log-level info"
+HASHIVERSE_SERVER_ARGS="--log-level trace"
