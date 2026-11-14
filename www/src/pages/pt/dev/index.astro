@@ -24,9 +24,14 @@ import { github as g } from '../../../github';
 │   ├── hashiverse-lib/                Protocolo principal — nativo + WASM
 │   ├── hashiverse-server-lib/         Biblioteca do servidor (infra reutilizável)
 │   ├── hashiverse-server/             Binário do servidor (wrapper fino)
+│   ├── hashiverse-client-rust/        Cliente Rust nativo
+│   ├── hashiverse-cli/                Cliente de linha de comandos
 │   ├── hashiverse-client-wasm/        Wrapper WASM para browser
+│   ├── hashiverse-client-python/      Cliente Python
+│   ├── hashiverse-client-nodejs/      Cliente Node.js
 │   └── hashiverse-integration-tests/  Testes ponto-a-ponto
 ├── hashiverse-client-web/             SPA TypeScript / React 19
+├── packaging/                         Pacotes apt/dnf (servidor, CLI)
 └── www/                               Este site (Astro)</code></pre>
 
   <h2>O design em duas camadas</h2>

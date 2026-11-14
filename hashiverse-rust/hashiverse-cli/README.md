@@ -17,7 +17,7 @@ At the interactive prompt, type `help` to list the available commands.
 
 ## Building
 
-[![build-www](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml) as the apt/dnf package `hashiverse-cli`
+[![build-www](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml) as the apt/dnf package `hashiverse-cli`
 
 From `hashiverse-rust/` (nightly Rust, as pinned by `rust-toolchain.toml`):
 
@@ -42,13 +42,18 @@ The CLI takes identity from environment variables only. It never prompts for sec
 
 `HASHIVERSE_PASSWORD` may be empty (`HASHIVERSE_PASSWORD=""`), but the variable must exist. An empty password leaves the saved key file effectively unprotected. Note that on Windows `cmd`, `set HASHIVERSE_PASSWORD=` deletes the variable rather than setting it to empty.
 
-The typical flow is to use the keyphrase once, then the profile from then on:
+The typical flow is to use the keyphrase once, then the profile from then on. Read the secrets with silent prompts so they stay out of your shell history, and unset them when you are done. The keyphrase must be unset before you set the profile, because setting both is an error:
 
 ```bash
-HASHIVERSE_KEYPHRASE="correct horse battery staple" HASHIVERSE_PASSWORD="s3cret" hashiverse-cli trending
+read -rs -p "Keyphrase: " HASHIVERSE_KEYPHRASE; echo
+read -rs -p "Password: " HASHIVERSE_PASSWORD; echo
+export HASHIVERSE_KEYPHRASE HASHIVERSE_PASSWORD
+hashiverse-cli trending
 # unlocked as 04bfbfac...e6a9
+unset HASHIVERSE_KEYPHRASE
 
-HASHIVERSE_PROFILE=04bfbfac...e6a9 HASHIVERSE_PASSWORD="s3cret" hashiverse-cli post "hello #hashiverse"
+HASHIVERSE_PROFILE=04bfbfac...e6a9 hashiverse-cli post "hello #hashiverse"
+unset HASHIVERSE_PASSWORD
 ```
 
 ## Commands

@@ -1,25 +1,8 @@
 ---
-import { supported_locales } from "../i18n/strings";
+// The site root serves the English home page so that link previews, fetchers and crawlers that
+// don't run JavaScript see real content. Its canonical is /en/ (Base.astro), and Base.astro sends
+// browsers on to their preferred language.
+import Home from "./en/index.astro";
 ---
 
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Hashiverse</title>
-    <meta name="robots" content="noindex" />
-    <script is:inline define:vars={{ supported_locales }}>
-      (function () {
-        const langs = (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || "en"]);
-        let target = "en";
-        for (const raw of langs) {
-          const code = (raw || "").slice(0, 2).toLowerCase();
-          if (supported_locales.includes(code)) { target = code; break; }
-        }
-        window.location.replace("/" + target + "/");
-      })();
-    </script>
-    <noscript><meta http-equiv="refresh" content="0; url=/en/" /></noscript>
-  </head>
-  <body></body>
-</html>
+<Home />

@@ -11,4 +11,5 @@ export const github = {
     integrationTests: `${rust}/hashiverse-integration-tests`,
     web: `${gh}/hashiverse-client-web`,
     python: `${rust}/hashiverse-client-python`,
+    cli: `${rust}/hashiverse-cli`,
 };

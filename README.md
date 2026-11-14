@@ -10,6 +10,49 @@ Hashiverse is owned by you, the Hashiverse community. It is completely open-sour
 
 Live it right now at https://www.hashiverse.com
 
+## Run a server, or use the command line
+
+`hashiverse-server` and `hashiverse-cli` are published as signed apt/dnf packages (amd64 and arm64) for Debian 12+, Ubuntu 22.04+, RHEL/Rocky/Alma 9+ and Fedora. The install commands below write to system directories, so run them in a root shell (e.g. `sudo -i`) or prefix each one with `sudo`.
+
+Debian / Ubuntu:
+
+```bash
+curl -fsSL https://www.hashiverse.com/packages/hashiverse-packages.asc -o /usr/share/keyrings/hashiverse-packages.asc
+curl -fsSL https://www.hashiverse.com/packages/apt/hashiverse.sources -o /etc/apt/sources.list.d/hashiverse.sources
+curl -fsSL https://www.hashiverse.com/packages/apt/hashiverse-mirrors.txt -o /etc/apt/hashiverse-mirrors.txt
+apt-get update
+apt-get install -y hashiverse-server hashiverse-cli
+```
+
+Fedora / RHEL / Rocky / Alma:
+
+```bash
+curl -fsSL https://www.hashiverse.com/packages/hashiverse-packages.asc -o /etc/pki/rpm-gpg/RPM-GPG-KEY-hashiverse
+curl -fsSL https://www.hashiverse.com/packages/rpm/hashiverse.repo -o /etc/yum.repos.d/hashiverse.repo
+dnf install -y hashiverse-server hashiverse-cli
+```
+
+Install either package or both.
+
+- `hashiverse-server`:
+  - It runs as the systemd service `hashiverse-server` and needs port 443 open.
+  - It updates itself once a day; turn that off with `systemctl disable --now hashiverse-server-updater.timer`.
+  - Settings are in `/etc/default/hashiverse-server`, and logs are at `journalctl -u hashiverse-server`.
+  - The full walkthrough, including firewall setup, is at [www.hashiverse.com/en/lore/contribute](https://www.hashiverse.com/en/lore/contribute/).
+- `hashiverse-cli`: see its [README](hashiverse-rust/hashiverse-cli/README.md).
+
+Release candidates are published the same way from `https://www-prerelease.hashiverse.com/packages` (use it in place of `https://www.hashiverse.com/packages` above). A machine set up from there follows release candidates only.
+
+## Repository layout
+
+| Path | What it is |
+|---|---|
+| [`hashiverse-rust/`](hashiverse-rust) | Rust workspace: the protocol (`hashiverse-lib`), the server (`hashiverse-server-lib`, `hashiverse-server`), the command-line client (`hashiverse-cli`), and the Rust, WASM, Python and Node.js clients |
+| [`hashiverse-client-web/`](hashiverse-client-web) | The web app at [app.hashiverse.com](https://app.hashiverse.com), in TypeScript/React over the WASM client |
+| [`www/`](www) | The website at [www.hashiverse.com](https://www.hashiverse.com), in Astro; it also hosts the docs and the apt/dnf repository |
+| [`packaging/`](packaging) | Linux packaging: nfpm configs, systemd units, the auto-updater, the signed-repository builder and a Docker end-to-end test |
+| [`docker/`](docker) | Dockerfile for the `hashiverse-server` image |
+| [`news-feeds/`](news-feeds) | Curated RSS feed list for seeding the network with news |
 
 ## Licence
 
@@ -24,16 +67,16 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 
 ## Builds
 
-- [![build-app](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml)
-- [![build-server](https://github.com/hashiverse/hashiverse/actions/workflows/build-server.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-server.yml)
-- [![build-www](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml) — the website, plus `hashiverse-server` and `hashiverse-cli` (amd64/arm64) as signed apt/dnf packages under `www.hashiverse.com/packages` (release candidates under `www-prerelease.hashiverse.com/packages`).
+- [![build-app](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/build-app.yml)
+- [![build-server](https://github.com/hashiverse/hashiverse/actions/workflows/build-server.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/build-server.yml)
+- [![build-www](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/build-www.yml) — the website, plus `hashiverse-server` and `hashiverse-cli` (amd64/arm64) as signed apt/dnf packages under `www.hashiverse.com/packages` (release candidates under `www-prerelease.hashiverse.com/packages`).
 
 ## Publishes
 
-- [![publish-hashiverse-rust](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-rust.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-rust.yml) — `hashiverse-lib`, `hashiverse-server-lib`, `hashiverse-client-rust` to [crates.io](https://crates.io/users/hashiverse).
-- [![publish-hashiverse-client-python](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml) — [`hashiverse-client`](https://pypi.org/project/hashiverse-client/) to PyPI.
-- [![publish-hashiverse-client-wasm](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-wasm.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-wasm.yml) — [`@hashiverse/hashiverse-client-wasm`](https://www.npmjs.com/package/@hashiverse/hashiverse-client-wasm) to npm (browser/bundler).
-- [![publish-hashiverse-client-nodejs](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-nodejs.yml/badge.svg)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-nodejs.yml) — [`@hashiverse/hashiverse-client-nodejs`](https://www.npmjs.com/package/@hashiverse/hashiverse-client-nodejs) to npm (native Node).
+- [![publish-hashiverse-rust](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-rust.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-rust.yml) — `hashiverse-lib`, `hashiverse-server-lib`, `hashiverse-client-rust` to [crates.io](https://crates.io/users/hashiverse).
+- [![publish-hashiverse-client-python](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-python.yml) — [`hashiverse-client`](https://pypi.org/project/hashiverse-client/) to PyPI.
+- [![publish-hashiverse-client-wasm](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-wasm.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-wasm.yml) — [`@hashiverse/hashiverse-client-wasm`](https://www.npmjs.com/package/@hashiverse/hashiverse-client-wasm) to npm (browser/bundler).
+- [![publish-hashiverse-client-nodejs](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-nodejs.yml/badge.svg?event=release)](https://github.com/hashiverse/hashiverse/actions/workflows/publish-hashiverse-client-nodejs.yml) — [`@hashiverse/hashiverse-client-nodejs`](https://www.npmjs.com/package/@hashiverse/hashiverse-client-nodejs) to npm (native Node).
 
 ## Translations
 

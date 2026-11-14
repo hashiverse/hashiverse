@@ -25,6 +25,29 @@ client = HashiverseClient.create_from_keyphrase(
     data_dir="~/.hashiverse",
 )
 client.post("Hello from Python! #hashiverse-python")`;
+const code_cli_apt = `curl -fsSL https://www.hashiverse.com/packages/hashiverse-packages.asc -o /usr/share/keyrings/hashiverse-packages.asc
+curl -fsSL https://www.hashiverse.com/packages/apt/hashiverse.sources -o /etc/apt/sources.list.d/hashiverse.sources
+curl -fsSL https://www.hashiverse.com/packages/apt/hashiverse-mirrors.txt -o /etc/apt/hashiverse-mirrors.txt
+apt-get update
+apt-get install -y hashiverse-cli`;
+
+const code_cli_dnf = `curl -fsSL https://www.hashiverse.com/packages/hashiverse-packages.asc -o /etc/pki/rpm-gpg/RPM-GPG-KEY-hashiverse
+curl -fsSL https://www.hashiverse.com/packages/rpm/hashiverse.repo -o /etc/yum.repos.d/hashiverse.repo
+dnf install -y hashiverse-cli`;
+
+const code_cli_read = `hashiverse-cli trending
+hashiverse-cli hashtag rust
+hashiverse-cli trending --json`;
+
+const code_cli_post = `read -rs -p "Keyphrase: " HASHIVERSE_KEYPHRASE; echo
+read -rs -p "Password: " HASHIVERSE_PASSWORD; echo
+export HASHIVERSE_KEYPHRASE HASHIVERSE_PASSWORD
+hashiverse-cli trending
+# unlocked as 04bfbfac...e6a9
+unset HASHIVERSE_KEYPHRASE
+
+HASHIVERSE_PROFILE=04bfbfac...e6a9 hashiverse-cli post "Hello from the command line! #hashiverse"
+unset HASHIVERSE_PASSWORD`;
 ---
 
 <DevDoc title="Primeros pasos">
@@ -100,7 +123,27 @@ client.post("Hello from Python! #hashiverse-python")`;
 
   <h2>Cliente de línea de comandos</h2>
   <p>
-    <em>Próximamente.</em> Un CLI independiente para publicar y consultar Hashiverse desde tu
-    shell está en la hoja de ruta.
+    <code>hashiverse-cli</code> publica en Hashiverse y lee de él directamente desde tu shell, lo
+    que lo hace práctico para scripts y tareas cron. En Debian o Ubuntu, instálalo desde el
+    repositorio de paquetes de Hashiverse (como root):
+  </p>
+  <pre><code>{code_cli_apt}</code></pre>
+  <p>En Fedora, Rocky, Alma o RHEL:</p>
+  <pre><code>{code_cli_dnf}</code></pre>
+  <p>
+    Para leer no necesitas cuenta. Añade <code>--json</code> para obtener una salida legible por máquinas:
+  </p>
+  <pre><code>{code_cli_read}</code></pre>
+  <p>
+    Para publicar, indícale tu frase clave una sola vez a través del entorno, nunca en la línea de
+    comandos. Guarda tu clave cifrada con la contraseña y muestra tu id de cliente. A partir de
+    entonces, desbloquea esa clave guardada mediante su id de cliente:
+  </p>
+  <pre><code>{code_cli_post}</code></pre>
+  <p>
+    Ejecuta <code>hashiverse-cli</code> sin ningún comando para obtener un prompt interactivo. En
+    otras plataformas, compílalo desde el código fuente con
+    <code>cargo build --release -p hashiverse-cli</code>. Consulta la
+    <a href={g.cli}>documentación completa del CLI</a> en GitHub para ver todos los comandos y opciones.
   </p>
 </DevDoc>
