@@ -12,7 +12,7 @@ Live it right now at https://www.hashiverse.com
 
 ## Run a server, or use the command line
 
-`hashiverse-server` and `hashiverse-cli` are published as signed apt/dnf packages (amd64 and arm64) for Debian 12+, Ubuntu 22.04+, RHEL/Rocky/Alma 9+ and Fedora.
+`hashiverse-server` and `hashiverse-cli` are published as signed apt/dnf packages (amd64 and arm64) for Debian 12+, Ubuntu 22.04+, RHEL/Rocky/Alma 9+ and Fedora. The install commands below write to system directories, so run them in a root shell (e.g. `sudo -i`) or prefix each one with `sudo`.
 
 Debian / Ubuntu:
 

@@ -40,10 +40,15 @@ const code_cli_read = `hashiverse-cli trending
 hashiverse-cli hashtag rust
 hashiverse-cli trending --json`;
 
-const code_cli_post = `HASHIVERSE_KEYPHRASE="my secret keyphrase" HASHIVERSE_PASSWORD="s3cret" hashiverse-cli trending
+const code_cli_post = `read -rs -p "Keyphrase: " HASHIVERSE_KEYPHRASE; echo
+read -rs -p "Password: " HASHIVERSE_PASSWORD; echo
+export HASHIVERSE_KEYPHRASE HASHIVERSE_PASSWORD
+hashiverse-cli trending
 # unlocked as 04bfbfac...e6a9
+unset HASHIVERSE_KEYPHRASE
 
-HASHIVERSE_PROFILE=04bfbfac...e6a9 HASHIVERSE_PASSWORD="s3cret" hashiverse-cli post "Hello from the command line! #hashiverse"`;
+HASHIVERSE_PROFILE=04bfbfac...e6a9 hashiverse-cli post "Hello from the command line! #hashiverse"
+unset HASHIVERSE_PASSWORD`;
 ---
 
 <DevDoc title="Getting Started">
