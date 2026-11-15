@@ -1,5 +1,12 @@
 name: mirror-app
 
+# Mirrors hashiverse/app to codeberg.org/hashiverse/app-eu and app-ch, each
+# with a Codeberg Pages "pages" branch carrying its .domains file.
+#
+# app.hashiverse.{eu,ch} are currently served from Bunny (mirror-app-v2.yml),
+# not Codeberg. This workflow is kept for future optionality of serving from
+# Codeberg Pages: the repos stay current so switching back is a DNS change.
+
 on:
   workflow_run:
     workflows: ["build-app"]

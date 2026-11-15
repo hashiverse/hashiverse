@@ -1,5 +1,12 @@
 name: mirror-www
 
+# Mirrors hashiverse/www to codeberg.org/hashiverse/www-eu and www-ch, each
+# with a Codeberg Pages "pages" branch carrying its .domains file.
+#
+# www.hashiverse.{eu,ch} are currently served from Bunny (mirror-www-v2.yml),
+# not Codeberg. This workflow is kept for future optionality of serving from
+# Codeberg Pages: the repos stay current so switching back is a DNS change.
+
 on:
   workflow_run:
     workflows: ["build-www"]

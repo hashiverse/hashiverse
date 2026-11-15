@@ -4,8 +4,8 @@ name: mirror-app-v2
 # Bunny Edge Storage zone "hashiverse-app", which is then served from the
 # app-eu and app-ch Pull Zones at app.hashiverse.{eu,ch}.
 #
-# Runs in parallel to the v1 mirror-app.yml during cutover. After ~1 week of
-# clean operation, the v1 workflow is removed.
+# mirror-app.yml keeps pushing the same content to Codeberg alongside this,
+# for future optionality of serving app.hashiverse.{eu,ch} from Codeberg Pages.
 
 on:
   workflow_run:

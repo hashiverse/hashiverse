@@ -4,8 +4,8 @@ name: mirror-www-v2
 # the Bunny Edge Storage zone "hashiverse-www", which is then served from the
 # www-eu and www-ch Pull Zones at www.hashiverse.{eu,ch}.
 #
-# Runs in parallel to the v1 mirror-www.yml during cutover. After ~1 week of
-# clean operation, the v1 workflow is removed.
+# mirror-www.yml keeps pushing the same content to Codeberg alongside this,
+# for future optionality of serving www.hashiverse.{eu,ch} from Codeberg Pages.
 
 on:
   workflow_run:
