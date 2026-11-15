@@ -4,14 +4,13 @@ name: mirror-www-v2
 # the Bunny Edge Storage zone "hashiverse-www", which is then served from the
 # www-eu and www-ch Pull Zones at www.hashiverse.{eu,ch}.
 #
-# Runs in parallel to the v1 mirror-www.yml during cutover. After ~1 week of
-# clean operation, the v1 workflow is removed.
+# mirror-www.yml keeps pushing the same content to Codeberg alongside this,
+# for future optionality of serving www.hashiverse.{eu,ch} from Codeberg Pages.
 
 on:
   workflow_run:
     workflows: ["build-www"]
     types: [completed]
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -21,13 +20,16 @@ jobs:
   mirror:
     runs-on: ubuntu-latest
     # workflow_run jobs run from the default branch with secrets. Only mirror a
-    # build that succeeded, came from this repo (not a fork), and ran on main.
-    # The leading event_name check preserves manual workflow_dispatch runs.
+    # build that succeeded, came from this repo (not a fork), and was triggered
+    # by a release. Don't filter on head_branch: for a release-triggered build
+    # it is the tag (e.g. v1.1.2), never "main". A prerelease build deploys to
+    # *-prerelease, so mirroring after one just re-syncs the unchanged canonical
+    # repo. The leading event_name check preserves manual workflow_dispatch runs.
     if: >-
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_repository.full_name == github.repository &&
-       github.event.workflow_run.head_branch == 'main')
+       github.event.workflow_run.event == 'release')
     steps:
       - name: Clone canonical dist
         run: git clone --branch main --depth 1 https://github.com/hashiverse/www.git dist
